@@ -1,0 +1,162 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is a **Vietnamese financial analytics dashboard** built with Streamlit, focusing on company financial analysis, bank sector analytics, and real estate RNAV calculations for the Vietnamese stock market. The application serves as a comprehensive tool for Dragon Capital's investment analysis workflows.
+
+## Essential Commands
+
+### Running the Application
+```bash
+# Main company dashboard (original)
+streamlit run Company_Dashboard.py
+
+# Refactored version (recommended)
+streamlit run Company_Dashboard_Refactored.py
+
+# Individual specialized pages
+streamlit run pages/Bank_Dashboard.py
+streamlit run pages/RNAV_Calculator_MongoDB.py
+streamlit run pages/Real_Estate_Dashboard_MongoDB.py
+streamlit run pages/Sector_Valuation.py
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Environment Setup
+Required environment variables in `.env`:
+```
+MONGODB_CONNECTION_STRING="your_mongodb_connection"
+OPENAI_API_KEY="your_openai_key" 
+PERPLEXITY_API_KEY="your_perplexity_key"
+```
+
+## High-Level Architecture
+
+### Core Application Structure
+- **Main Dashboard** (`Company_Dashboard.py`, `Company_Dashboard_Refactored.py`) - Primary financial analysis interface
+- **Specialized Pages** (`/pages/`) - Domain-specific dashboards (banking, real estate, sector comparison)  
+- **Core Modules** (`/core/`) - Refactored utilities for data loading and plotting
+  - `data_loader.py` - Centralized data loading with caching
+  - `plot_factory.py` - Standardized plotting functions
+  - `common_imports.py` - Consolidated imports and utilities
+- **Configuration** (`/config/`) - Centralized constants and settings
+  - `constants.py` - Financial metrics, plot settings, file mappings
+- **Utilities Layer** (`/utils/`) - Shared business logic and data processing
+- **Data Layer** (`/data/`) - Financial datasets and reference files
+- **Archive** (`/archive/`) - Disabled/legacy files
+
+### Key Architectural Patterns
+
+**Centralized Data Loading**: Use `DataLoader` class for consistent data access:
+```python
+from core.data_loader import data_loader
+df = data_loader.load_financial_statements()
+pivot_data = data_loader.pivot_financial_data(df, ticker)
+```
+
+**Standardized Plotting**: Use `PlotFactory` for consistent chart creation:
+```python
+from core.plot_factory import plot_factory
+fig = plot_factory.create_financial_plots(df, ticker, plot_config)
+```
+
+**Configuration Management**: All constants centralized in `/config/constants.py`:
+```python
+from config.constants import PLOTLY_CONFIG, FINANCIAL_CATEGORIES
+```
+
+**Multi-Source Data Integration**:
+- CSV files for historical financial data (via `DataLoader`)
+- MongoDB for real estate project data (via enhanced `mongodb_utils.py`)
+- SSI API for live Vietnamese stock prices (in `/utils/SSI_API.py`)
+- AI APIs (Perplexity/OpenAI) for project information enrichment
+
+**Refactored Code Organization**: 
+- Eliminated code duplication in plotting functions (reduced from 4 similar functions to 1 factory)
+- Centralized configuration reduces magic numbers
+- Standardized imports via `common_imports.py`
+- Cleaned file structure with archive for disabled files
+
+### Technology Stack
+- **Frontend**: Streamlit multi-page application
+- **Data Processing**: Pandas/NumPy with financial domain calculations
+- **Visualization**: Plotly for interactive charts
+- **Database**: MongoDB for persistent storage
+- **APIs**: SSI (Vietnamese stocks), Perplexity AI, OpenAI
+- **Market Focus**: Vietnamese stock exchange (VND currency, local regulations)
+
+### Critical Business Logic
+
+**Financial Metrics**: Handles Vietnamese market-specific calculations including Income Statement ratios, Balance Sheet analysis, Cash Flow metrics, and Bank-specific indicators (NIM, NPL, Cost of Funds).
+
+**RNAV Calculations**: Complex real estate valuation logic in `utils/RNAV_utils.py` including land value calculations, construction cost analysis, and project completion timeline modeling.
+
+**Vietnamese Market Adaptations**: VND currency formatting (billions/millions), local stock ticker formats, and banking sector regulatory compliance.
+
+### Data Dependencies
+
+**Static Data Sources** (manual updates required):
+- `/data/FA_processed.csv` - Financial statements
+- `/data/Val_processed.csv` - Valuation metrics  
+- `/data/BankSupp_processed.csv` - Banking supplement data
+- `/data/Classification.xlsx` - Sector classifications
+
+**Dynamic Data Sources**:
+- SSI API for real-time stock prices and candlestick data
+- MongoDB for real estate project database
+- AI APIs for project parameter estimation
+
+### External Service Dependencies
+
+**Critical APIs**: SSI Vietnamese stock data API, MongoDB connection, Perplexity AI for project lookup. The application implements graceful degradation when external services are unavailable, with cached data fallbacks and user-friendly error handling.
+
+## Development Notes
+
+- All financial calculations assume VND currency and Vietnamese accounting standards
+- Real estate features require active MongoDB connection
+- AI-powered project analysis is optional (degrades gracefully without API keys)
+- **Refactored Structure**: Use `Company_Dashboard_Refactored.py` for new development
+- **Data Loading**: Always use `data_loader` instance for consistency and caching
+- **Plotting**: Use `plot_factory` methods instead of custom plotting functions
+- **Configuration**: Reference `config/constants.py` instead of hardcoded values
+
+## Coding Guidelines for Claude
+
+When writing code for this repository:
+
+1. Jupyter/Interactive Style:
+   - Use `#%%` cell markers for code organization
+   - Assume pandas, numpy, and plotly are already imported
+   - Write code that can be run cell-by-cell in Jupyter
+
+2. Calculation Focus:
+   - Prioritize mathematical correctness and clarity
+   - Use vectorized pandas operations
+   - Don't add excessive try/except blocks
+   - Assume data exists and is in expected format
+
+3. Data Analysis Patterns:
+   ```python
+   # Good - direct calculation
+   df['metric'] = df['revenue'] / df['assets']
+   
+   # Avoid - over-engineered
+   def calculate_metric(df):
+       if 'revenue' not in df.columns:
+           raise ValueError("Missing revenue column")
+       # ... more checks
+   ```
+
+4. Variable Naming:
+   - Use descriptive names for financial metrics
+   - Keep DataFrame names short (df_q, df_a, etc.)
+   - Use standard financial abbreviations (ROE, ROA, NPAT)
+
+5. Output Style:
+   - Display DataFrames directly without wrapping
+   - Use simple print statements for quick checks
+   - Format numbers inline with f-strings when needed

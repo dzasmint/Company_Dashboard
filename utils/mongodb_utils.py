@@ -7,6 +7,12 @@ import certifi
 from pymongo import MongoClient
 import datetime
 from dotenv import load_dotenv
+from pathlib import Path
+import sys
+
+# Add parent directory to path for config imports
+sys.path.append(str(Path(__file__).parent.parent))
+from config.constants import MONGODB_COLLECTIONS, REAL_ESTATE_CONFIG, FINANCIAL_CONFIG
 
 
 @st.cache_resource
@@ -39,7 +45,7 @@ def load_companies_data():
         
         # Get database and collection names
         db_name = 'VietnamStocks'
-        collection_name = 'Companies'
+        collection_name = MONGODB_COLLECTIONS['companies']
         
         # Get database and collection
         db = client.get_database(db_name)
@@ -76,7 +82,7 @@ def load_projects_data():
         
         # Get database and collection names - using VietnamStocks database
         db_name = 'VietnamStocks'
-        collection_name = 'RealEstateProjects'
+        collection_name = MONGODB_COLLECTIONS['real_estate_projects']
         
         # Get database and collection
         db = client.get_database(db_name)
@@ -185,7 +191,7 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
         
         # Get database and collection
         db_name = 'VietnamStocks'
-        collection_name = 'RealEstateProjects'
+        collection_name = MONGODB_COLLECTIONS['real_estate_projects']
         
         db = client.get_database(db_name)
         collection = db.get_collection(collection_name)
@@ -212,8 +218,8 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             "sales_years": project_data.get('sales_years', 3),
             "revenue_booking_start_year": project_data.get('revenue_booking_start_year', 2025),
             "project_completion_year": project_data.get('project_completion_year', 2028),
-            "sga_percentage": project_data.get('sga_percentage', 0.1),
-            "wacc_rate": project_data.get('wacc_rate', 0.12),
+            "sga_percentage": project_data.get('sga_percentage', FINANCIAL_CONFIG['default_sga']),
+            "wacc_rate": project_data.get('wacc_rate', FINANCIAL_CONFIG['default_wacc']),
             "cost_of_debt": project_data.get('cost_of_debt', 0.08),  # New field for cost of debt
             "rnav_value": rnav_value,
             # Add new financial fields
