@@ -36,7 +36,8 @@ from utils.mongodb_utils import (
     get_projects_for_company, 
     get_project_data,
     save_project_to_mongodb,  # Add this missing import
-    get_companies_list       # Add this missing import
+    get_companies_list,       # Add this missing import
+    delete_project_from_mongodb  # Add delete function import
 )
 
 # Import RNAV utilities
@@ -78,7 +79,7 @@ st.set_page_config(
 )
 
 def main():
-    st.title("🧮 Real Estate RNAV Calculator - MongoDB Direct Edition 2PM")
+    st.title("🧮 Real Estate RNAV Calculator - MongoDB Direct Edition")
 
     # MongoDB connection status
     with st.sidebar:
@@ -218,7 +219,7 @@ def main():
                             st.metric("NSA", f"{int(selected_project_data['net_sellable_area']):,} m²")
                         with col2:
                             st.metric("ASP", f"{int(selected_project_data['average_selling_price']/1_000_000):,}M VND/m²")
-                            st.metric("GFA", f"{int(selected_project_data['gross_floor_area']):,} m²")
+                            st.metric("Project Ownership", f"{float(selected_project_data['project_ownership']) * 100:.1f} %")
                         with col3:
                             st.metric("Land Area", f"{int(selected_project_data['land_area']):,} m²")
                             st.metric("Completion", f"{int(selected_project_data['project_completion_year'])}")
@@ -229,9 +230,9 @@ def main():
                             # Show RNAV if available
                             if 'rnav_value' in selected_project_data and selected_project_data['rnav_value']:
                                 rnav_formatted = format_vnd_billions(selected_project_data['rnav_value'])
-                                st.metric("🏆 Stored RNAV", rnav_formatted)
+                                st.metric("Stored RNAV", rnav_formatted)
                             else:
-                                st.metric("🏆 RNAV Status", "Not calculated")
+                                st.metric("RNAV Status", "Not calculated")
                         
                         # Override preload_data with database data
                         preload_data = selected_project_data
@@ -488,7 +489,17 @@ def main():
             st.caption(f"📊 From database: **{preload_data['location']}**")
         else:
             st.caption("💡 Enter project location for better documentation")
-               
+
+        # Add project ownership input field
+        project_ownership = st.number_input(
+            "Project Ownership (enter 1 for 100% ownership)", 
+            min_value=0.0, 
+            value=float(preload_data.get('project_ownership', 1.0)) if preload_data and 'project_ownership' in preload_data else 1.0, 
+            step=0.01
+        )
+        if preload_data and 'project_ownership' in preload_data:
+            st.caption(f"📊 From database: **{float(preload_data['project_ownership']) * 100:.1f} %** ownership")
+
         # Total Units
         ai_total_units = project_info.get('total_units') if project_info else None
         total_units = st.number_input(
@@ -858,13 +869,13 @@ def main():
 
                     # Verify all schedules have the same length
                     schedules_info = {
-                        "selling_progress": len(selling_progress),
-                        "construction_payment": len(construction_payment), 
-                        "sga_payment": len(sga_payment),
-                        "tax_expense": len(tax_expense),
-                        "land_use_right_payment": len(land_use_right_payment),
+                       "selling_progress": len(selling_progress),
+                       "construction_payment": len(construction_payment), 
+                       "sga_payment": len(sga_payment),
+                       "tax_expense": len(tax_expense),
+                       "land_use_right_payment": len(land_use_right_payment),
                     }
-                    st.write("**Schedule Lengths:**", schedules_info)
+                    #st.write("**Schedule Lengths:**", schedules_info)
                     # Ensure all schedules have the same length
                     expected_length = num_years
                     if not all(length == expected_length for length in schedules_info.values()):
@@ -905,20 +916,21 @@ def main():
                     rnav_value = None
                 
                 # Debug: Show what will be saved
-                st.sidebar.markdown("---")
-                st.sidebar.subheader("🔍 Debug: Data to Save")
-                st.sidebar.write(f"**Project Name:** {project_name}")
-                st.sidebar.write(f"**Company:** {company_ticker} - {company_name}")
-                st.sidebar.write(f"**RNAV Value:** {format_vnd_billions(rnav_value) if rnav_value else 'None'}")
-                st.sidebar.write(f"**Total Revenue:** {format_vnd_billions(calculated_total_revenue)}")
-                st.sidebar.write(f"**Total PAT:** {format_vnd_billions(calculated_total_PAT)}")
-                st.sidebar.write(f"**Location:** {location if location else 'Not specified'}")
+                #st.sidebar.markdown("---")
+                #st.sidebar.subheader("🔍 Debug: Data to Save")
+                #st.sidebar.write(f"**Project Name:** {project_name}")
+                #st.sidebar.write(f"**Company:** {company_ticker} - {company_name}")
+                #st.sidebar.write(f"**RNAV Value:** {format_vnd_billions(rnav_value) if rnav_value else 'None'}")
+                #st.sidebar.write(f"**Total Revenue:** {format_vnd_billions(calculated_total_revenue)}")
+                #st.sidebar.write(f"**Total PAT:** {format_vnd_billions(calculated_total_PAT)}")
+                #st.sidebar.write(f"**Location:** {location if location else 'Not specified'}")
                 
                 # Collect current project data including location, total revenue, and total PAT
                 current_project_data = {
                     'company_ticker': company_ticker,
                     'company_name': company_name,
                     'location': location,  # Include location in saved data
+                    'project_ownership': project_ownership,  # Include ownership in saved data
                     'total_units': total_units,
                     'average_unit_size': average_unit_size,
                     'average_selling_price': asp,
@@ -966,6 +978,52 @@ def main():
                     st.rerun()
                 else:
                     st.sidebar.error(save_result["message"])
+        
+        # Add Delete Project section
+        if selected_project_data and project_name and selected_company_ticker != 'MANUAL':
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("🗑️ Delete Project")
+            
+            st.sidebar.warning(f"⚠️ **Delete existing project:** {project_name}")
+            st.sidebar.error("🚨 **This action cannot be undone!**")
+            
+            # Add confirmation checkbox
+            confirm_delete = st.sidebar.checkbox(
+                f"I confirm I want to permanently delete '{project_name}' from {selected_company_ticker}",
+                key="confirm_delete"
+            )
+            
+            # Delete button (only enabled if confirmed)
+            if st.sidebar.button(
+                "🗑️ Delete Project from MongoDB", 
+                type="secondary",
+                disabled=not confirm_delete,
+                help="Permanently delete this project from the database"
+            ):
+                if confirm_delete:
+                    # Perform the deletion
+                    with st.spinner("Deleting project..."):
+                        delete_result = delete_project_from_mongodb(selected_company_ticker, project_name)
+                        
+                    if delete_result["success"]:
+                        st.sidebar.success(f"✅ {delete_result['message']}")
+                        st.sidebar.info(f"🗑️ Project '{project_name}' has been permanently deleted from {selected_company_ticker}")
+                        
+                        # Clear the session state to prevent confusion
+                        if 'preload_project_data' in st.session_state:
+                            del st.session_state['preload_project_data']
+                        if 'preload_project_name' in st.session_state:
+                            del st.session_state['preload_project_name']
+                        
+                        # Refresh the page to show updated project list
+                        st.rerun()
+                    else:
+                        st.sidebar.error(f"❌ {delete_result['message']}")
+                else:
+                    st.sidebar.error("❌ Please confirm deletion by checking the box above")
+            
+            if not confirm_delete:
+                st.sidebar.caption("💡 Check the confirmation box above to enable the delete button")
     else:
         st.sidebar.info("💾 MongoDB not available - Cannot save projects")
 
@@ -1042,13 +1100,13 @@ def main():
     
     # Verify all schedules have the same length
     schedules_info = {
-        "selling_progress": len(selling_progress),
-        "construction_payment": len(construction_payment), 
-        "sga_payment": len(sga_payment),
-        "tax_expense": len(tax_expense),
-        "land_use_right_payment": len(land_use_right_payment),
+       "selling_progress": len(selling_progress),
+       "construction_payment": len(construction_payment), 
+       "sga_payment": len(sga_payment),
+       "tax_expense": len(tax_expense),
+       "land_use_right_payment": len(land_use_right_payment),
     }
-    st.write("**Schedule Lengths:**", schedules_info)
+    #st.write("**Schedule Lengths:**", schedules_info)
     # Ensure all schedules have the same length
     expected_length = num_years
     if not all(length == expected_length for length in schedules_info.values()):
@@ -1062,6 +1120,8 @@ def main():
     # Create two parallel columns for P&L Schedule and RNAV Calculation
     pnl_col, rnav_col = st.columns(2)
     
+    st.markdown("---")
+
     with pnl_col:
         st.header("P&L Schedule")
         # Create a copy and modify year labels to avoid duplicates
@@ -1152,6 +1212,7 @@ def main():
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Current RNAV", format_vnd_billions(display_rnav_value))
+            st.metric("Current RNAV to Company", format_vnd_billions(display_rnav_value * project_ownership))
             st.metric("Total Revenue", format_vnd_billions(total_revenue))
             st.metric("Total PAT", format_vnd_billions(total_estimated_PAT))
         with col2:
@@ -1159,6 +1220,11 @@ def main():
                 "Stored RNAV", 
                 format_vnd_billions(stored_rnav),
                 delta=format_vnd_billions(display_rnav_value - stored_rnav)
+            )
+            st.metric(
+                "Stored RNAV to Company", 
+                format_vnd_billions(stored_rnav * project_ownership),
+                delta=format_vnd_billions(display_rnav_value * project_ownership - stored_rnav * project_ownership)
             )
             # Show stored total revenue and PAT if available
             if 'total_revenue' in selected_project_data:

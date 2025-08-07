@@ -10,3 +10,7 @@ openai
 google-api-python-client
 pymongo
 certifi
+pytesseract
+pdf2image
+pillow
+reportlab

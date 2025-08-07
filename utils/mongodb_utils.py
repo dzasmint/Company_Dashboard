@@ -165,6 +165,50 @@ def get_projects_for_company(company_ticker):
     
     return sorted(company_projects['project_name'].tolist())
 
+def get_financials_for_company(company_ticker, selected_quarter):
+    """Get financial data for a specific company from CompanyFinancials collection"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return pd.DataFrame()
+        
+        # Get database and collection names
+        db_name = 'VietnamStocks'
+        collection_name = 'CompanyFinancials'
+        
+        # Get database and collection
+        db = client.get_database(db_name)
+        collection = db.get_collection(collection_name)
+        
+        # Query financials for specific company ticker and Type = "P"
+        query = {"Ticker": company_ticker, "Type": "P"}
+        financials_cursor = collection.find(query)
+        
+        financials_list = list(financials_cursor)
+        
+        if not financials_list:
+            return pd.DataFrame()
+        
+        # Convert to DataFrame
+        df_financials = pd.DataFrame(financials_list)
+        
+        # Remove MongoDB ObjectId if present
+        if '_id' in df_financials.columns:
+            df_financials = df_financials.drop('_id', axis=1)
+        
+        # Handle date conversion for Date column if it exists
+        # Date format is like "2025Q1", "2025Q2", etc.
+        
+        # Filter by selected quarter if specified
+        if selected_quarter and selected_quarter != "All" and 'Date' in df_financials.columns:
+            df_financials = df_financials[df_financials['Date'] == selected_quarter]
+        
+        return df_financials
+        
+    except Exception as e:
+        st.error(f"❌ Error loading financial data for {company_ticker} from MongoDB: {str(e)}")
+        return pd.DataFrame()
+
 def get_project_data(company_ticker, project_name):
     """Get specific project data"""
     df_projects = load_projects_data()
@@ -202,6 +246,7 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             "company_ticker": project_data.get('company_ticker', 'MANUAL'),
             "company_name": project_data.get('company_name', 'Manual Entry'),
             "location": project_data.get('location', ''),  # Include location field
+            "project_ownership": project_data.get('project_ownership', 1.0),  # New field for project ownership
             "total_units": project_data.get('total_units', 0),
             "net_sellable_area": project_data.get('total_units', 0) * project_data.get('average_unit_size', 0),
             "average_unit_size": project_data.get('average_unit_size', 0),
@@ -261,5 +306,54 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
         
     except Exception as e:
         return {"success": False, "message": f"Error saving to MongoDB: {str(e)}"}
+
+def delete_project_from_mongodb(company_ticker, project_name):
+    """Delete a project from MongoDB database"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return {"success": False, "message": "Failed to connect to MongoDB"}
+        
+        # Get database and collection
+        db_name = 'VietnamStocks'
+        collection_name = 'RealEstateProjects'
+        
+        db = client.get_database(db_name)
+        collection = db.get_collection(collection_name)
+        
+        # Check if project exists before deletion
+        existing_project = collection.find_one({
+            "project_name": project_name,
+            "company_ticker": company_ticker
+        })
+        
+        if not existing_project:
+            return {
+                "success": False, 
+                "message": f"Project '{project_name}' not found for company '{company_ticker}'"
+            }
+        
+        # Delete the project
+        result = collection.delete_one({
+            "project_name": project_name,
+            "company_ticker": company_ticker
+        })
+        
+        if result.deleted_count == 1:
+            return {
+                "success": True, 
+                "message": f"Project '{project_name}' successfully deleted from company '{company_ticker}'"
+            }
+        else:
+            return {
+                "success": False, 
+                "message": f"Failed to delete project '{project_name}' - no documents were deleted"
+            }
+        
+    except Exception as e:
+        return {
+            "success": False, 
+            "message": f"Error deleting project from MongoDB: {str(e)}"
+        }
 
 # %%
