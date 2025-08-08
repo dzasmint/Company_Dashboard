@@ -61,6 +61,8 @@ class RealEstateFinancialModel:
     
     def __init__(self):
         """Initialize the financial model"""
+        # Initialize MongoDB connection first
+        self.db_client = init_mongodb_connection()
         self.initialize_session_state()
         self.setup_sidebar()
         
