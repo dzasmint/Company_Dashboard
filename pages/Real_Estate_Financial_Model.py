@@ -1079,9 +1079,13 @@ class RealEstateFinancialModel:
         # RNAV Valuation
         st.subheader("RNAV Valuation")
         
+        total_rnav = 0  # Initialize total_rnav
         if st.session_state.project_data is not None and not st.session_state.project_data.empty:
-            total_rnav = st.session_state.project_data['rnav_value'].sum()
-            st.metric("Total RNAV", f"{total_rnav:,.0f}B VND")
+            if 'rnav_value' in st.session_state.project_data.columns:
+                total_rnav = st.session_state.project_data['rnav_value'].sum()
+                st.metric("Total RNAV", f"{total_rnav/1e9:,.0f}B VND")
+            else:
+                st.info("RNAV values not available in project data")
         else:
             st.info("Sync project data to calculate RNAV")
         
@@ -1094,7 +1098,7 @@ class RealEstateFinancialModel:
                 dcf_value['value_per_share'],
                 multiples_value['pe_value'],
                 multiples_value['pb_value'],
-                total_rnav * 1e9 / 1e9 if st.session_state.project_data is not None else 0  # Placeholder
+                total_rnav  # Use the initialized total_rnav
             ]
         })
         
