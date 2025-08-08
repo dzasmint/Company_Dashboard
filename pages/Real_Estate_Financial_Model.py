@@ -22,13 +22,6 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-# Load environment variables from parent directory
-env_path = os.path.join(parent_dir, '.env')
-if os.path.exists(env_path):
-    load_dotenv(env_path)
-else:
-    st.error(f"⚠️ .env file not found at {env_path}")
-
 # Import utilities
 from utils.mongodb_utils import (
     init_mongodb_connection,
@@ -154,6 +147,44 @@ class RealEstateFinancialModel:
         if st.sidebar.button("📰 Fetch Latest Reports"):
             self.fetch_analyst_reports()
             
+    def load_historical_data_from_csv(self, ticker):
+        """Load historical financial data from FA_processed.csv"""
+        try:
+            # Load FA data
+            fa_path = os.path.join(parent_dir, 'data', 'FA_processed.csv')
+            df_fa = pd.read_csv(fa_path)
+            
+            # Filter for selected ticker
+            ticker_data = df_fa[df_fa['TICKER'] == ticker].copy()
+            
+            if ticker_data.empty:
+                st.warning(f"No historical data found for {ticker}")
+                return
+            
+            # Pivot data to create time series
+            pivot_data = ticker_data.pivot_table(
+                index='DATE',
+                columns='KEYCODE',
+                values='VALUE',
+                aggfunc='first'
+            )
+            
+            # Sort by date
+            pivot_data.sort_index(inplace=True)
+            
+            # Store in session state
+            st.session_state.historical_data = pivot_data
+            
+            # Also create a summary table with key metrics
+            latest_date = pivot_data.index[-1] if len(pivot_data) > 0 else None
+            
+            if latest_date:
+                st.success(f"✅ Loaded historical data for {ticker} up to {latest_date}")
+            
+        except Exception as e:
+            st.error(f"Error loading historical data: {e}")
+            st.session_state.historical_data = None
+    
     def load_real_estate_companies(self):
         """Load list of all companies from FA_processed.csv"""
         try:
@@ -316,6 +347,10 @@ class RealEstateFinancialModel:
         if not st.session_state.selected_company:
             st.info("👈 Please select a company from the sidebar to begin")
             return
+        
+        # Automatically load historical data when a company is selected
+        if st.session_state.historical_data is None:
+            self.load_historical_data_from_csv(st.session_state.selected_company)
             
         # Create tabs for different sections
         tabs = st.tabs([
@@ -358,28 +393,35 @@ class RealEstateFinancialModel:
         st.header("Historical Financial Analysis")
         
         if st.session_state.historical_data is None:
-            st.info("Click 'Refresh Financial Data' to load historical data")
+            st.info("Loading historical data...")
             return
             
         df = st.session_state.historical_data
         
-        # Display key metrics
+        # Display key metrics using FA_processed column names
         col1, col2, col3, col4 = st.columns(4)
         
+        # Map FA_processed KEYCODE to display names
         with col1:
-            latest_revenue = df['revenue'].iloc[-1] if 'revenue' in df.columns else 0
-            st.metric("Latest Revenue", f"{latest_revenue:,.0f}B VND")
+            latest_revenue = df['Sales'].iloc[-1] if 'Sales' in df.columns else 0
+            st.metric("Latest Revenue", f"{latest_revenue/1e9:,.0f}B VND")
             
         with col2:
-            latest_profit = df['net_income'].iloc[-1] if 'net_income' in df.columns else 0
-            st.metric("Latest Net Income", f"{latest_profit:,.0f}B VND")
+            latest_profit = df['NPAT'].iloc[-1] if 'NPAT' in df.columns else 0
+            st.metric("Latest Net Income", f"{latest_profit/1e9:,.0f}B VND")
             
         with col3:
-            gross_margin = (df['gross_profit'].iloc[-1] / df['revenue'].iloc[-1] * 100) if 'gross_profit' in df.columns else 0
+            if 'Gross_Profit' in df.columns and 'Sales' in df.columns and df['Sales'].iloc[-1] != 0:
+                gross_margin = (df['Gross_Profit'].iloc[-1] / df['Sales'].iloc[-1] * 100)
+            else:
+                gross_margin = 0
             st.metric("Gross Margin", f"{gross_margin:.1f}%")
             
         with col4:
-            roe = (df['net_income'].iloc[-1] / df['total_equity'].iloc[-1] * 100) if 'total_equity' in df.columns else 0
+            if 'NPAT' in df.columns and 'Total_Equity' in df.columns and df['Total_Equity'].iloc[-1] != 0:
+                roe = (df['NPAT'].iloc[-1] / df['Total_Equity'].iloc[-1] * 100)
+            else:
+                roe = 0
             st.metric("ROE", f"{roe:.1f}%")
         
         # Historical trends chart
@@ -387,18 +429,18 @@ class RealEstateFinancialModel:
         
         fig = go.Figure()
         
-        if 'revenue' in df.columns:
+        if 'Sales' in df.columns:
             fig.add_trace(go.Bar(
                 x=df.index,
-                y=df['revenue'],
+                y=df['Sales']/1e9,  # Convert to billions
                 name='Revenue',
                 yaxis='y'
             ))
             
-        if 'net_income' in df.columns:
+        if 'NPAT' in df.columns:
             fig.add_trace(go.Scatter(
                 x=df.index,
-                y=df['net_income'],
+                y=df['NPAT']/1e9,  # Convert to billions
                 name='Net Income',
                 yaxis='y2',
                 line=dict(color='red', width=2)
@@ -414,9 +456,24 @@ class RealEstateFinancialModel:
         
         st.plotly_chart(fig, use_container_width=True)
         
-        # Display historical data table
+        # Display historical data table with selected key metrics
         st.subheader("Historical Financial Data")
-        st.dataframe(df, use_container_width=True)
+        
+        # Select and display key columns if they exist
+        key_columns = ['Sales', 'Gross_Profit', 'EBITDA', 'NPAT', 'Total_Assets', 'Total_Equity', 'Total_Debt', 'Operating_Cash_Flow']
+        available_columns = [col for col in key_columns if col in df.columns]
+        
+        if available_columns:
+            display_df = df[available_columns].copy()
+            # Convert to billions for better readability
+            for col in display_df.columns:
+                display_df[col] = display_df[col] / 1e9
+            
+            # Format the dataframe
+            display_df = display_df.round(1)
+            st.dataframe(display_df, use_container_width=True)
+        else:
+            st.dataframe(df, use_container_width=True)
     
     def render_assumptions_interface(self):
         """Render Excel-like assumptions input interface"""
