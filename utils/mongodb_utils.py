@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 from pathlib import Path
 import sys
 
+# Load environment variables at module import
+load_dotenv()
+
 # Add parent directory to path for config imports
 sys.path.append(str(Path(__file__).parent.parent))
 from config.constants import MONGODB_COLLECTIONS, REAL_ESTATE_CONFIG, FINANCIAL_CONFIG
@@ -17,8 +20,11 @@ from config.constants import MONGODB_COLLECTIONS, REAL_ESTATE_CONFIG, FINANCIAL_
 
 @st.cache_resource
 def init_mongodb_connection():
-    """Initialize MongoDB connection"""
+    """Initialize MongoDB connection with graceful error handling"""
     try:
+        # Load environment variables again in case they weren't loaded
+        load_dotenv()
+        
         # Get MongoDB connection string from .env file
         connection_string = os.getenv('MONGODB_CONNECTION_STRING')
         
@@ -26,14 +32,40 @@ def init_mongodb_connection():
             st.error("❌ MONGODB_CONNECTION_STRING not found in .env file. Please add it to your .env file.")
             return None
         
-        # Create MongoDB client with SSL certificate verification
-        client = MongoClient(connection_string, tlsCAFile=certifi.where())
+        # Create MongoDB client with SSL certificate verification and increased timeout settings
+        client = MongoClient(
+            connection_string, 
+            tlsCAFile=certifi.where(),
+            serverSelectionTimeoutMS=30000,  # 30 second timeout (increased from 5s)
+            connectTimeoutMS=30000,          # 30 second connection timeout (increased from 10s)
+            socketTimeoutMS=30000            # 30 second socket timeout (increased from 10s)
+        )
         
         # Test connection
         client.admin.command('ping')
         return client
     except Exception as e:
-        st.error(f"❌ Error connecting to MongoDB: {str(e)}")
+        error_msg = str(e)
+        
+        # Provide more specific error messages based on the error type
+        if "timed out" in error_msg.lower():
+            st.error("❌ **MongoDB Connection Timeout**")
+            st.warning("""
+            **Possible causes:**
+            1. **IP not whitelisted**: Check MongoDB Atlas Network Access settings
+            2. **Network/Firewall blocking**: Corporate firewall may be blocking MongoDB ports (27017)
+            3. **Internet connectivity issues**: Check your internet connection
+            
+            **To fix:**
+            - Go to MongoDB Atlas → Network Access → Add your current IP address
+            - Or add 0.0.0.0/0 to allow all IPs (less secure, only for development)
+            """)
+        elif "authentication failed" in error_msg.lower():
+            st.error("❌ **MongoDB Authentication Failed**")
+            st.warning("Check your username and password in the connection string")
+        else:
+            st.error(f"❌ Error connecting to MongoDB: {error_msg}")
+        
         return None
 
 def load_companies_data():
@@ -41,6 +73,7 @@ def load_companies_data():
     try:
         client = init_mongodb_connection()
         if client is None:
+            # Return empty DataFrame when MongoDB is not available
             return pd.DataFrame()
         
         # Get database and collection names
@@ -70,7 +103,9 @@ def load_companies_data():
         return df
         
     except Exception as e:
-        st.error(f"❌ Error loading companies data from MongoDB: {str(e)}")
+        # Don't show error for connection issues - already handled in init_mongodb_connection
+        if "timed out" not in str(e).lower():
+            st.error(f"❌ Error loading companies data from MongoDB: {str(e)}")
         return pd.DataFrame()
 
 def load_projects_data():
@@ -78,6 +113,7 @@ def load_projects_data():
     try:
         client = init_mongodb_connection()
         if client is None:
+            # Return empty DataFrame when MongoDB is not available
             return pd.DataFrame()
         
         # Get database and collection names - using VietnamStocks database

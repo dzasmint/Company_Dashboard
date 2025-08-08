@@ -1,6 +1,11 @@
 from dotenv import load_dotenv
 import requests
 import re
+import os
+import streamlit as st
+import json
+from typing import Dict, List, Any
+from datetime import datetime
 
 
 def get_project_basic_info_perplexity(project_name: str, api_key: str, model: str = "sonar-pro"):
@@ -320,3 +325,259 @@ def parse_perplexity_response(response_text):
                 break
     
     return result
+
+
+def analyze_earnings_commentary(ticker: str, period: str = "latest") -> Dict[str, Any]:
+    """
+    Analyze earnings commentary and management discussion for a Vietnamese company
+    
+    Args:
+        ticker: Company ticker symbol
+        period: Period to analyze (e.g., "Q3 2024", "latest")
+    
+    Returns:
+        Dictionary containing analysis results
+    """
+    load_dotenv()
+    api_key = os.getenv("PERPLEXITY_API_KEY")
+    
+    if not api_key:
+        return {"error": "Perplexity API key not configured"}
+    
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    prompt = f"""Analyze the latest earnings commentary and management discussion for Vietnamese company {ticker}.
+
+Please provide:
+
+1. **Key Financial Highlights**: Revenue, profit, margins for {period}
+2. **Management Commentary**: Key points from management discussion
+3. **Business Segments Performance**: How each segment performed
+4. **Future Guidance**: Management outlook and targets
+5. **Key Risks Mentioned**: Risks highlighted by management
+6. **Strategic Initiatives**: New projects or strategies mentioned
+7. **Sentiment Analysis**: Overall tone (Positive/Neutral/Negative)
+
+Focus on:
+- Real estate project updates and launches
+- Pre-sales and handover schedules
+- Land bank acquisitions
+- Partnership announcements
+- Regulatory impacts
+
+Provide specific numbers and quotes where available."""
+
+    payload = {
+        "model": "sonar-pro",
+        "messages": [
+            {"role": "system", "content": "You are a financial analyst specializing in Vietnamese real estate companies."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 2000,
+        "temperature": 0.3
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        if "choices" in data and len(data["choices"]) > 0:
+            content = data["choices"][0]["message"]["content"]
+            
+            # Parse the response into structured format
+            return {
+                "ticker": ticker,
+                "period": period,
+                "key_points": content,
+                "sentiment": extract_sentiment(content),
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {"error": "Unexpected API response format"}
+            
+    except Exception as e:
+        return {"error": f"Failed to analyze earnings: {str(e)}"}
+
+
+def parse_sell_side_reports(ticker: str, num_reports: int = 5) -> Dict[str, Any]:
+    """
+    Parse and summarize sell-side analyst reports for a Vietnamese company
+    
+    Args:
+        ticker: Company ticker symbol
+        num_reports: Number of recent reports to analyze
+    
+    Returns:
+        Dictionary containing parsed insights
+    """
+    load_dotenv()
+    api_key = os.getenv("PERPLEXITY_API_KEY")
+    
+    if not api_key:
+        return {"error": "Perplexity API key not configured"}
+    
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    prompt = f"""Analyze recent sell-side analyst reports for Vietnamese real estate company {ticker}.
+
+Please extract and summarize:
+
+1. **Consensus Estimates**:
+   - Revenue forecasts (next 3 years)
+   - Earnings forecasts (EPS)
+   - Target prices from major brokers
+   - Buy/Hold/Sell recommendations
+
+2. **Key Investment Thesis**:
+   - Bull case arguments
+   - Bear case concerns
+   - Major catalysts identified
+
+3. **Project Pipeline Analysis**:
+   - New project launches expected
+   - Revenue recognition timeline
+   - Pre-sales targets
+
+4. **Valuation Metrics**:
+   - P/E, P/B, EV/EBITDA multiples
+   - RNAV estimates
+   - Discount to NAV
+
+5. **Risk Factors**:
+   - Regulatory risks
+   - Market risks
+   - Execution risks
+
+6. **Recent Rating Changes**:
+   - Upgrades/downgrades
+   - Target price revisions
+
+Focus on reports from:
+- SSI Securities
+- HSC Securities  
+- VCSC
+- MBS Securities
+- VNDirect
+
+Provide specific numbers and broker names where available."""
+
+    payload = {
+        "model": "sonar-pro",
+        "messages": [
+            {"role": "system", "content": "You are an equity research analyst aggregating sell-side views on Vietnamese stocks."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 2000,
+        "temperature": 0.3
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        if "choices" in data and len(data["choices"]) > 0:
+            content = data["choices"][0]["message"]["content"]
+            
+            # Parse into structured format
+            return parse_sellside_content(content, ticker)
+        else:
+            return {"error": "Unexpected API response format"}
+            
+    except Exception as e:
+        return {"error": f"Failed to parse sell-side reports: {str(e)}"}
+
+
+def extract_sentiment(text: str) -> str:
+    """Extract sentiment from text analysis"""
+    positive_keywords = ["strong", "growth", "improvement", "beat", "exceed", "positive", "optimistic", "robust"]
+    negative_keywords = ["weak", "decline", "miss", "concern", "risk", "challenge", "difficult", "negative"]
+    
+    text_lower = text.lower()
+    positive_count = sum(1 for word in positive_keywords if word in text_lower)
+    negative_count = sum(1 for word in negative_keywords if word in text_lower)
+    
+    if positive_count > negative_count * 1.5:
+        return "Positive"
+    elif negative_count > positive_count * 1.5:
+        return "Negative"
+    else:
+        return "Neutral"
+
+
+def parse_sellside_content(content: str, ticker: str) -> Dict[str, Any]:
+    """Parse sell-side report content into structured format"""
+    
+    # Extract consensus numbers using regex
+    revenue_pattern = r"revenue.*?(\d+\.?\d*)\s*(billion|trillion|B|T)"
+    eps_pattern = r"EPS.*?(\d+\.?\d*)"
+    target_pattern = r"target.*?(\d+,?\d*)"
+    
+    consensus = {}
+    
+    # Try to extract revenue forecasts
+    revenue_matches = re.findall(revenue_pattern, content, re.IGNORECASE)
+    if revenue_matches:
+        consensus["revenue_forecasts"] = [float(m[0]) for m in revenue_matches[:3]]
+    
+    # Try to extract EPS
+    eps_matches = re.findall(eps_pattern, content, re.IGNORECASE)
+    if eps_matches:
+        consensus["eps_forecasts"] = [float(m) for m in eps_matches[:3]]
+    
+    # Try to extract target prices
+    target_matches = re.findall(target_pattern, content, re.IGNORECASE)
+    if target_matches:
+        consensus["target_prices"] = [float(m.replace(",", "")) for m in target_matches]
+    
+    # Extract risks and opportunities
+    risks = []
+    opportunities = []
+    
+    # Simple keyword-based extraction
+    lines = content.split("\n")
+    for line in lines:
+        line_lower = line.lower()
+        if "risk" in line_lower or "concern" in line_lower:
+            risks.append(line.strip())
+        elif "opportunity" in line_lower or "catalyst" in line_lower:
+            opportunities.append(line.strip())
+    
+    return {
+        "ticker": ticker,
+        "consensus": consensus,
+        "risks": risks[:5],  # Top 5 risks
+        "opportunities": opportunities[:5],  # Top 5 opportunities
+        "full_content": content,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+def get_financial_statements_ssi(ticker: str, period: str = "quarterly") -> Dict[str, Any]:
+    """
+    Fetch financial statements from SSI API or similar Vietnamese data source
+    
+    Args:
+        ticker: Company ticker
+        period: "quarterly" or "annual"
+    
+    Returns:
+        Dictionary containing financial statement data
+    """
+    # This is a placeholder - would need actual SSI API integration
+    # For now, return mock structure
+    return {
+        "ticker": ticker,
+        "period": period,
+        "data": None,
+        "message": "SSI API integration required for live data"
+    }
