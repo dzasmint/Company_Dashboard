@@ -155,17 +155,44 @@ class RealEstateFinancialModel:
             self.fetch_analyst_reports()
             
     def load_real_estate_companies(self):
-        """Load list of real estate companies"""
+        """Load list of real estate companies from FA_processed.csv"""
         try:
-            df_companies = load_companies_data()
-            if not df_companies.empty:
+            # Load FA data from CSV
+            fa_path = os.path.join(parent_dir, 'data', 'FA_processed.csv')
+            if not os.path.exists(fa_path):
+                st.error(f"FA_processed.csv not found at {fa_path}")
+                return []
+            
+            df_fa = pd.read_csv(fa_path)
+            
+            # Get unique tickers that have real estate in their sector
+            # First, load classification data to identify real estate companies
+            class_path = os.path.join(parent_dir, 'data', 'Classification.xlsx')
+            if os.path.exists(class_path):
+                df_class = pd.read_excel(class_path)
                 # Filter for real estate companies
-                real_estate = df_companies[
-                    df_companies['sector'].str.contains('Real Estate|Property', case=False, na=False)
-                ]
-                if not real_estate.empty:
-                    return [f"{row['ticker']} - {row['company_name']}" 
-                           for _, row in real_estate.iterrows()]
+                real_estate_tickers = df_class[
+                    df_class['ICB_Industry'].str.contains('Real Estate|Property|Construction', case=False, na=False)
+                ]['Ticker'].unique()
+                
+                # Filter FA data for these tickers
+                available_tickers = df_fa['Ticker'].unique()
+                real_estate_available = [t for t in real_estate_tickers if t in available_tickers]
+                
+                # Create display names with company names if available
+                display_names = []
+                for ticker in sorted(real_estate_available):
+                    company_name = df_class[df_class['Ticker'] == ticker]['Company_Name'].values
+                    if len(company_name) > 0:
+                        display_names.append(f"{ticker} - {company_name[0]}")
+                    else:
+                        display_names.append(ticker)
+                
+                return display_names
+            else:
+                # Fallback: just return all unique tickers from FA data
+                return sorted(df_fa['Ticker'].unique().tolist())
+                
         except Exception as e:
             st.error(f"Error loading companies: {e}")
         return []
