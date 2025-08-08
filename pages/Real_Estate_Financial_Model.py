@@ -22,6 +22,13 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+# Load environment variables from parent directory
+env_path = os.path.join(parent_dir, '.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    st.error(f"⚠️ .env file not found at {env_path}")
+
 # Import utilities
 from utils.mongodb_utils import (
     init_mongodb_connection,
