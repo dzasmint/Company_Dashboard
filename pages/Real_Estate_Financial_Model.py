@@ -155,22 +155,42 @@ class RealEstateFinancialModel:
                 self.db_client = init_mongodb_connection()
             
             if self.db_client is None:
+                st.warning("MongoDB connection not available")
                 st.session_state.project_data = pd.DataFrame()
                 return
             
-            # Load all projects from MongoDB
-            df_all_projects = load_projects_data()
+            # Get database and collection directly
+            db_name = 'VietnamStocks'
+            collection_name = 'real_estate_projects'
             
-            if df_all_projects.empty:
+            db = self.db_client.get_database(db_name)
+            collection = db.get_collection(collection_name)
+            
+            # Query projects for this ticker
+            projects_cursor = collection.find({'company_ticker': ticker})
+            projects_list = list(projects_cursor)
+            
+            if not projects_list:
+                # Try without filtering first to see if there are any projects
+                all_projects = list(collection.find({}))
+                if all_projects:
+                    # Show available tickers for debugging
+                    available_tickers = set()
+                    for p in all_projects:
+                        if 'company_ticker' in p:
+                            available_tickers.add(p['company_ticker'])
+                    st.info(f"No projects found for {ticker}. Available tickers in MongoDB: {', '.join(sorted(available_tickers))}")
+                else:
+                    st.info(f"No projects found in MongoDB collection '{collection_name}'")
                 st.session_state.project_data = pd.DataFrame()
                 return
             
-            # Filter projects for the selected company ticker
-            if 'company_ticker' in df_all_projects.columns:
-                company_projects = df_all_projects[df_all_projects['company_ticker'] == ticker].copy()
-            else:
-                # If company_ticker column doesn't exist, create empty dataframe
-                company_projects = pd.DataFrame()
+            # Convert to DataFrame
+            company_projects = pd.DataFrame(projects_list)
+            
+            # Remove MongoDB ObjectId if present
+            if '_id' in company_projects.columns:
+                company_projects = company_projects.drop('_id', axis=1)
             
             # Store in session state
             st.session_state.project_data = company_projects
@@ -180,6 +200,8 @@ class RealEstateFinancialModel:
             
         except Exception as e:
             st.error(f"Error loading project data: {e}")
+            import traceback
+            st.error(traceback.format_exc())
             st.session_state.project_data = pd.DataFrame()
     
     def load_historical_data_from_csv(self, ticker):
