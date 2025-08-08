@@ -147,6 +147,41 @@ class RealEstateFinancialModel:
         if st.sidebar.button("📰 Fetch Latest Reports"):
             self.fetch_analyst_reports()
             
+    def load_project_data_from_mongodb(self, ticker):
+        """Load project data from MongoDB for the selected ticker"""
+        try:
+            # Initialize MongoDB connection if not done
+            if not hasattr(self, 'db_client') or self.db_client is None:
+                self.db_client = init_mongodb_connection()
+            
+            if self.db_client is None:
+                st.session_state.project_data = pd.DataFrame()
+                return
+            
+            # Load all projects from MongoDB
+            df_all_projects = load_projects_data()
+            
+            if df_all_projects.empty:
+                st.session_state.project_data = pd.DataFrame()
+                return
+            
+            # Filter projects for the selected company ticker
+            if 'company_ticker' in df_all_projects.columns:
+                company_projects = df_all_projects[df_all_projects['company_ticker'] == ticker].copy()
+            else:
+                # If company_ticker column doesn't exist, create empty dataframe
+                company_projects = pd.DataFrame()
+            
+            # Store in session state
+            st.session_state.project_data = company_projects
+            
+            if not company_projects.empty:
+                st.success(f"✅ Loaded {len(company_projects)} projects for {ticker}")
+            
+        except Exception as e:
+            st.error(f"Error loading project data: {e}")
+            st.session_state.project_data = pd.DataFrame()
+    
     def load_historical_data_from_csv(self, ticker):
         """Load historical financial data from FA_processed.csv"""
         try:
@@ -575,14 +610,14 @@ class RealEstateFinancialModel:
         """Render project pipeline and timeline"""
         st.header("Project Pipeline Analysis")
         
+        # Automatically load project data from MongoDB if not loaded
         if st.session_state.project_data is None:
-            st.info("Click 'Sync Project Data' to load project information")
-            return
-            
+            self.load_project_data_from_mongodb(st.session_state.selected_company)
+        
         df_projects = st.session_state.project_data
         
-        if df_projects.empty:
-            st.warning("No projects found for this company")
+        if df_projects is None or df_projects.empty:
+            st.info("No projects found for this company in MongoDB. You can add projects using the 'Sync Project Data' button in the sidebar.")
             return
         
         # Project summary metrics
@@ -592,15 +627,15 @@ class RealEstateFinancialModel:
             st.metric("Total Projects", len(df_projects))
             
         with col2:
-            total_units = df_projects['total_units'].sum()
-            st.metric("Total Units", f"{total_units:,}")
+            total_units = df_projects['total_units'].sum() if 'total_units' in df_projects.columns else 0
+            st.metric("Total Units", f"{int(total_units):,}")
             
         with col3:
-            total_nsa = df_projects['net_sellable_area'].sum()
+            total_nsa = df_projects['net_sellable_area'].sum() if 'net_sellable_area' in df_projects.columns else 0
             st.metric("Total NSA", f"{total_nsa:,.0f} sqm")
             
         with col4:
-            avg_price = df_projects['average_selling_price'].mean()
+            avg_price = df_projects['average_selling_price'].mean() if 'average_selling_price' in df_projects.columns else 0
             st.metric("Avg Price/sqm", f"{avg_price:,.0f}M VND")
         
         # Project timeline visualization
@@ -653,14 +688,57 @@ class RealEstateFinancialModel:
         # Project details table
         st.subheader("Project Details")
         
+        # Define columns to display based on what's typically in MongoDB
         display_columns = [
             'project_name', 'location', 'total_units', 'net_sellable_area',
             'average_selling_price', 'construction_start_year', 
-            'project_completion_year', 'rnav_value'
+            'project_completion_year', 'rnav_value', 'last_updated'
         ]
         
+        # Check which columns are actually available
         available_columns = [col for col in display_columns if col in df_projects.columns]
-        st.dataframe(df_projects[available_columns], use_container_width=True)
+        
+        if available_columns:
+            # Create a display dataframe with formatting
+            display_df = df_projects[available_columns].copy()
+            
+            # Format numeric columns for better display
+            if 'net_sellable_area' in display_df.columns:
+                display_df['net_sellable_area'] = display_df['net_sellable_area'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+            if 'total_units' in display_df.columns:
+                display_df['total_units'] = display_df['total_units'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "N/A")
+            if 'average_selling_price' in display_df.columns:
+                display_df['average_selling_price'] = display_df['average_selling_price'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+            if 'rnav_value' in display_df.columns:
+                display_df['rnav_value'] = display_df['rnav_value'].apply(lambda x: f"{x/1e9:,.1f}B" if pd.notna(x) and x > 0 else "N/A")
+            
+            # Rename columns for better display
+            column_rename = {
+                'project_name': 'Project Name',
+                'location': 'Location',
+                'total_units': 'Total Units',
+                'net_sellable_area': 'NSA (sqm)',
+                'average_selling_price': 'Avg Price (M VND/sqm)',
+                'construction_start_year': 'Construction Start',
+                'project_completion_year': 'Completion Year',
+                'rnav_value': 'RNAV (VND)',
+                'last_updated': 'Last Updated'
+            }
+            
+            display_df = display_df.rename(columns=column_rename)
+            
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            # If no standard columns found, display all available columns
+            st.dataframe(
+                df_projects,
+                use_container_width=True,
+                hide_index=True
+            )
     
     def render_revenue_forecast(self):
         """Render revenue forecast based on project pipeline"""
