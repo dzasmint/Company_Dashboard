@@ -159,9 +159,9 @@ class RealEstateFinancialModel:
                 st.session_state.project_data = pd.DataFrame()
                 return
             
-            # Get database and collection directly
+            # Get database and collection - using correct collection name
             db_name = 'VietnamStocks'
-            collection_name = 'real_estate_projects'
+            collection_name = 'RealEstateProjects'  # Correct collection name with capital letters
             
             db = self.db_client.get_database(db_name)
             collection = db.get_collection(collection_name)
@@ -179,7 +179,16 @@ class RealEstateFinancialModel:
                     for p in all_projects:
                         if 'company_ticker' in p:
                             available_tickers.add(p['company_ticker'])
-                    st.info(f"No projects found for {ticker}. Available tickers in MongoDB: {', '.join(sorted(available_tickers))}")
+                    if available_tickers:
+                        st.info(f"No projects found for {ticker}. Projects exist for: {', '.join(sorted(available_tickers))}")
+                    else:
+                        st.info("Projects found but no company_ticker field. Displaying all projects.")
+                        # If no company_ticker field, show all projects
+                        company_projects = pd.DataFrame(all_projects)
+                        if '_id' in company_projects.columns:
+                            company_projects = company_projects.drop('_id', axis=1)
+                        st.session_state.project_data = company_projects
+                        return
                 else:
                     st.info(f"No projects found in MongoDB collection '{collection_name}'")
                 st.session_state.project_data = pd.DataFrame()
@@ -192,6 +201,10 @@ class RealEstateFinancialModel:
             if '_id' in company_projects.columns:
                 company_projects = company_projects.drop('_id', axis=1)
             
+            # Handle date conversion if needed
+            if 'last_updated' in company_projects.columns:
+                company_projects['last_updated'] = pd.to_datetime(company_projects['last_updated'], errors='coerce')
+            
             # Store in session state
             st.session_state.project_data = company_projects
             
@@ -200,8 +213,6 @@ class RealEstateFinancialModel:
             
         except Exception as e:
             st.error(f"Error loading project data: {e}")
-            import traceback
-            st.error(traceback.format_exc())
             st.session_state.project_data = pd.DataFrame()
     
     def load_historical_data_from_csv(self, ticker):

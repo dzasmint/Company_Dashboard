@@ -3,7 +3,8 @@
     "allow": [
       "Bash(py -m streamlit run:*)",
       "Bash(streamlit run:*)",
-      "Bash(python test_mongodb_connection.py:*)"
+      "Bash(python test_mongodb_connection.py:*)",
+      "Bash(pkill:*)"
     ],
     "deny": []
   }
