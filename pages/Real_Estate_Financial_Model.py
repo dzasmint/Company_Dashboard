@@ -155,7 +155,7 @@ class RealEstateFinancialModel:
             self.fetch_analyst_reports()
             
     def load_real_estate_companies(self):
-        """Load list of real estate companies from FA_processed.csv"""
+        """Load list of all companies from FA_processed.csv"""
         try:
             # Load FA data from CSV
             fa_path = os.path.join(parent_dir, 'data', 'FA_processed.csv')
@@ -165,33 +165,31 @@ class RealEstateFinancialModel:
             
             df_fa = pd.read_csv(fa_path)
             
-            # Get unique tickers that have real estate in their sector
-            # First, load classification data to identify real estate companies
+            # Get all unique tickers (column name is TICKER in uppercase)
+            tickers = sorted(df_fa['TICKER'].unique().tolist())
+            
+            # Try to get company names from Classification.xlsx if available
             class_path = os.path.join(parent_dir, 'data', 'Classification.xlsx')
             if os.path.exists(class_path):
-                df_class = pd.read_excel(class_path)
-                # Filter for real estate companies
-                real_estate_tickers = df_class[
-                    df_class['ICB_Industry'].str.contains('Real Estate|Property|Construction', case=False, na=False)
-                ]['Ticker'].unique()
-                
-                # Filter FA data for these tickers
-                available_tickers = df_fa['Ticker'].unique()
-                real_estate_available = [t for t in real_estate_tickers if t in available_tickers]
-                
-                # Create display names with company names if available
-                display_names = []
-                for ticker in sorted(real_estate_available):
-                    company_name = df_class[df_class['Ticker'] == ticker]['Company_Name'].values
-                    if len(company_name) > 0:
-                        display_names.append(f"{ticker} - {company_name[0]}")
-                    else:
-                        display_names.append(ticker)
-                
-                return display_names
+                try:
+                    df_class = pd.read_excel(class_path)
+                    # Create a mapping of ticker to name
+                    ticker_name_map = dict(zip(df_class['TICKER'], df_class['NAME']))
+                    
+                    # Create display names with company names if available
+                    display_names = []
+                    for ticker in tickers:
+                        if ticker in ticker_name_map:
+                            display_names.append(f"{ticker} - {ticker_name_map[ticker]}")
+                        else:
+                            display_names.append(ticker)
+                    return display_names
+                except:
+                    # If there's any issue with classification file, just return tickers
+                    return tickers
             else:
-                # Fallback: just return all unique tickers from FA data
-                return sorted(df_fa['Ticker'].unique().tolist())
+                # Return just the tickers if no classification file
+                return tickers
                 
         except Exception as e:
             st.error(f"Error loading companies: {e}")
