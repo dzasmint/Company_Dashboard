@@ -4,7 +4,7 @@ import re
 import os
 import streamlit as st
 import json
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 
@@ -581,3 +581,382 @@ def get_financial_statements_ssi(ticker: str, period: str = "quarterly") -> Dict
         "data": None,
         "message": "SSI API integration required for live data"
     }
+
+
+class PerplexityProjectResearcher:
+    """Use Perplexity to research and enrich real estate project information"""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        """Initialize Perplexity client with API key"""
+        self.api_key = api_key or os.getenv('PERPLEXITY_API_KEY')
+        if not self.api_key:
+            raise ValueError("PERPLEXITY_API_KEY not found. Please set it in .env file or pass it directly.")
+    
+    def research_project_details(self, 
+                                project_name: str, 
+                                company_name: str,
+                                location_hint: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Research detailed information about a specific real estate project
+        
+        Args:
+            project_name: Name of the project to research
+            company_name: Developer company name
+            location_hint: Optional location information from financial statements
+            
+        Returns:
+            Dictionary containing researched project details
+        """
+        
+        url = "https://api.perplexity.ai/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Build search query
+        search_query = f'"{project_name}" {company_name} Vietnam real estate'
+        if location_hint:
+            search_query += f' {location_hint}'
+        
+        prompt = f"""Research the Vietnamese real estate project: {project_name} by {company_name}.
+
+SEARCH STRATEGY:
+1. Search for: {search_query}
+2. Look for official developer websites, real estate portals, and news articles
+3. Check Vietnamese real estate sites: batdongsan.com.vn, nhatot.com, propzy.vn
+4. Search for project brochures, marketing materials, and announcements
+
+EXTRACT THE FOLLOWING INFORMATION:
+
+**Location Details:**
+- Exact address (street, ward, district, city)
+- Nearby landmarks or major roads
+- Distance to city center or CBD
+
+**Project Specifications:**
+- Total land area (m²)
+- Gross Floor Area (GFA) in m²
+- Net Sellable Area (NSA) in m²
+- Number of buildings/towers/blocks
+- Total number of units (breakdown by type if available)
+- Unit types and sizes (studio, 1BR, 2BR, 3BR, villas, etc.)
+- Number of floors per building
+- Parking capacity
+
+**Development Timeline:**
+- Project announcement date
+- Construction start date
+- Expected completion date
+- Handover schedule by phase
+- Current construction progress (%)
+
+**Pricing Information:**
+- Current selling price range (VND/m²)
+- Average selling price (VND/m²)
+- Total project value estimate
+- Payment schedule offered
+
+**Developer Information:**
+- Joint venture partners (if any)
+- Ownership percentage
+- Main contractor
+- Project architect/designer
+
+**Legal Status:**
+- Land use rights status
+- Construction permit status
+- Pink book availability for buyers
+
+**Amenities & Facilities:**
+- Swimming pool, gym, playground
+- Commercial/retail area
+- Schools, hospitals nearby
+
+**Sales Status:**
+- Units sold to date
+- Remaining inventory
+- Sales launch phases
+
+Return the information in this JSON format:
+{{
+    "project_name": "{project_name}",
+    "location": {{
+        "address": "full address",
+        "district": "district name",
+        "city": "city name",
+        "coordinates": {{
+            "lat": null,
+            "lng": null
+        }}
+    }},
+    "specifications": {{
+        "land_area_sqm": 50000,
+        "gfa_sqm": 200000,
+        "nsa_sqm": 150000,
+        "total_units": 2000,
+        "unit_breakdown": {{
+            "studio": 200,
+            "1br": 800,
+            "2br": 700,
+            "3br": 300
+        }},
+        "buildings": 4,
+        "floors_per_building": 35
+    }},
+    "timeline": {{
+        "announcement_date": "2023-Q1",
+        "construction_start": "2023-Q3",
+        "expected_completion": "2026-Q4",
+        "current_progress_pct": 25
+    }},
+    "pricing": {{
+        "min_price_per_sqm": 45000000,
+        "max_price_per_sqm": 65000000,
+        "avg_price_per_sqm": 55000000,
+        "estimated_project_value": 8000000000000
+    }},
+    "developer": {{
+        "main_developer": "{company_name}",
+        "jv_partners": [],
+        "ownership_pct": 100,
+        "main_contractor": "contractor name"
+    }},
+    "sales": {{
+        "units_sold": 1200,
+        "sales_rate_pct": 60,
+        "launch_phases": 3,
+        "current_phase": 2
+    }},
+    "sources": ["list of sources used"],
+    "confidence_score": 0.85,
+    "last_updated": "2024-12",
+    "data_gaps": ["list any missing critical information"]
+}}
+
+If information is not found, use null instead of making up values.
+Focus on accuracy over completeness.
+"""
+
+        payload = {
+            "model": "sonar-pro",
+            "messages": [
+                {"role": "system", "content": "You are a real estate market researcher specializing in Vietnamese property developments. Always return valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 2000,
+            "temperature": 0.2,
+            "stream": False
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "choices" in data and len(data["choices"]) > 0:
+                content = data["choices"][0]["message"]["content"]
+                
+                # Parse JSON from response
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                return json.loads(content)
+            else:
+                return {"error": "Unexpected API response format"}
+                
+        except json.JSONDecodeError as e:
+            return {
+                "error": f"Failed to parse JSON response: {str(e)}",
+                "project_name": project_name,
+                "raw_response": content if 'content' in locals() else None
+            }
+        except Exception as e:
+            return {
+                "error": f"Failed to research project: {str(e)}",
+                "project_name": project_name
+            }
+    
+    def discover_additional_projects(self, 
+                                    company_name: str,
+                                    company_ticker: str,
+                                    known_projects: List[str]) -> List[Dict[str, Any]]:
+        """
+        Discover additional projects not found in financial statements
+        
+        Args:
+            company_name: Developer company name
+            company_ticker: Stock ticker
+            known_projects: List of project names already discovered
+            
+        Returns:
+            List of additional projects discovered
+        """
+        
+        url = "https://api.perplexity.ai/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        known_projects_str = ", ".join(known_projects) if known_projects else "none"
+        
+        prompt = f"""Search for ALL real estate projects by {company_name} ({company_ticker}) in Vietnam.
+
+KNOWN PROJECTS (already found):
+{known_projects_str}
+
+SEARCH INSTRUCTIONS:
+1. Search news articles, press releases, and announcements
+2. Check batdongsan.com.vn, cafef.vn, vnexpress.net
+3. Look for projects in planning, under development, or completed
+4. Include joint ventures where {company_name} is a partner
+5. Search for land bank acquisitions and future developments
+
+FIND ADDITIONAL PROJECTS NOT IN THE LIST ABOVE.
+
+For each NEW project found, provide:
+- Project name
+- Location (city/province, district)
+- Status (planning/approved/under construction/completed)
+- Announcement date or year
+- Brief description
+- Source of information
+
+Return as JSON:
+{{
+    "additional_projects": [
+        {{
+            "project_name": "Project Name",
+            "location": "District, City",
+            "status": "under_construction",
+            "announcement_date": "2024-Q1",
+            "description": "Brief description",
+            "estimated_units": 1000,
+            "source": "Source URL or publication"
+        }}
+    ],
+    "total_projects_found": 10,
+    "search_date": "2024-12"
+}}
+
+Only include projects NOT in the known projects list.
+"""
+
+        payload = {
+            "model": "sonar-pro",
+            "messages": [
+                {"role": "system", "content": "You are a real estate market researcher. Find additional projects not in the provided list."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 2000,
+            "temperature": 0.3,
+            "stream": False
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "choices" in data and len(data["choices"]) > 0:
+                content = data["choices"][0]["message"]["content"]
+                
+                # Parse JSON from response
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                result = json.loads(content)
+                return result.get("additional_projects", [])
+            else:
+                return []
+                
+        except Exception as e:
+            st.error(f"Failed to discover additional projects: {str(e)}")
+            return []
+    
+    def estimate_project_parameters(self, 
+                                   project_name: str,
+                                   location: str,
+                                   project_type: str = "apartment") -> Dict[str, Any]:
+        """
+        Estimate project parameters based on location and type
+        
+        Args:
+            project_name: Name of the project
+            location: Location (district, city)
+            project_type: Type of project (apartment, villa, mixed-use)
+            
+        Returns:
+            Dictionary with estimated parameters
+        """
+        
+        url = "https://api.perplexity.ai/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        prompt = f"""Estimate parameters for project: {project_name} in {location}.
+Project type: {project_type}
+
+Based on similar projects in {location}, estimate:
+
+1. **Land area**: Typical plot size for {project_type} projects in this area
+2. **Average unit size**: Based on market preferences in {location}
+3. **Selling price per m²**: Current market prices for new {project_type} in {location}
+4. **Construction cost per m²**: Standard construction costs for {project_type}
+5. **Land cost per m²**: Recent land prices in {location}
+6. **Development timeline**: Typical timeline for {project_type} projects
+
+Use 2024 market data and return estimates as JSON:
+{{
+    "land_area_sqm": 10000,
+    "avg_unit_size_sqm": 75,
+    "selling_price_per_sqm": 50000000,
+    "construction_cost_per_sqm": 25000000,
+    "land_cost_per_sqm": 30000000,
+    "development_years": 3,
+    "confidence": "medium",
+    "comparable_projects": ["list of comparable projects used"]
+}}
+"""
+
+        payload = {
+            "model": "sonar",
+            "messages": [
+                {"role": "system", "content": "You are a real estate valuation expert for Vietnamese markets."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.3,
+            "stream": False
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "choices" in data and len(data["choices"]) > 0:
+                content = data["choices"][0]["message"]["content"]
+                
+                # Parse JSON from response
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                
+                return json.loads(content)
+            else:
+                return {}
+                
+        except Exception as e:
+            return {
+                "error": f"Failed to estimate parameters: {str(e)}",
+                "project_name": project_name
+            }

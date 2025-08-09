@@ -7,6 +7,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import os
 import sys
+import io
 from dotenv import load_dotenv
 import requests
 import json
@@ -51,6 +52,9 @@ from utils.perplexity_utils import (
     analyze_earnings_commentary,
     parse_sell_side_reports
 )
+from utils.project_pipeline_manager import ProjectPipelineManager
+from utils.claude_project_extractor import ClaudeProjectExtractor
+from utils.comprehensive_revenue_analyzer import ComprehensiveRevenueAnalyzer
 # from core.data_loader import data_loader
 # from config.constants import FINANCIAL_CONFIG, REAL_ESTATE_CONFIG
 
@@ -396,7 +400,8 @@ class RealEstateFinancialModel:
     
     def render_main_interface(self):
         """Render the main modeling interface"""
-        st.title("🏢 Real Estate Financial Model")
+        st.title("🏢 Real Estate Financial Model - AI Agent Edition 🤖")
+        st.caption("Enhanced with Claude AI for financial statement analysis and Perplexity for market research")
         
         if not st.session_state.selected_company:
             st.info("👈 Please select a company from the sidebar to begin")
@@ -405,6 +410,7 @@ class RealEstateFinancialModel:
         # Create tabs for different sections
         tabs = st.tabs([
             "📊 Historical Analysis",
+            "🤖 AI Project Discovery",
             "🎯 Assumptions",
             "🏗️ Project Pipeline",
             "📈 Revenue Forecast",
@@ -418,24 +424,27 @@ class RealEstateFinancialModel:
             self.render_historical_analysis()
             
         with tabs[1]:
-            self.render_assumptions_interface()
+            self.render_ai_discovery()
             
         with tabs[2]:
-            self.render_project_pipeline()
+            self.render_assumptions_interface()
             
         with tabs[3]:
-            self.render_revenue_forecast()
+            self.render_project_pipeline()
             
         with tabs[4]:
-            self.render_financial_projections()
+            self.render_revenue_forecast()
             
         with tabs[5]:
-            self.render_valuation()
+            self.render_financial_projections()
             
         with tabs[6]:
-            self.render_research_insights()
+            self.render_valuation()
             
         with tabs[7]:
+            self.render_research_insights()
+            
+        with tabs[8]:
             self.render_export_interface()
     
     def render_historical_analysis(self):
@@ -617,30 +626,1187 @@ class RealEstateFinancialModel:
         else:
             st.dataframe(df, use_container_width=True)
     
+    def render_ai_discovery(self):
+        """Render AI-powered project discovery interface"""
+        st.header("🤖 AI-Powered Project Discovery")
+        
+        # Initialize pipeline manager - with force reload option
+        force_reload = st.sidebar.button("🔄 Reload AI Agents", help="Click if you see parameter errors")
+        
+        if 'pipeline_manager' not in st.session_state or force_reload:
+            try:
+                # Force reimport to get latest changes
+                import importlib
+                import utils.project_pipeline_manager
+                import utils.claude_project_extractor
+                import utils.perplexity_utils
+                
+                # Reload all related modules
+                importlib.reload(utils.claude_project_extractor)
+                importlib.reload(utils.perplexity_utils) 
+                importlib.reload(utils.project_pipeline_manager)
+                
+                from utils.project_pipeline_manager import ProjectPipelineManager
+                
+                st.session_state.pipeline_manager = ProjectPipelineManager()
+                if force_reload:
+                    st.sidebar.success("✅ AI Agents reloaded successfully")
+            except Exception as e:
+                st.error(f"Failed to initialize AI agents: {str(e)}")
+                st.info("Please ensure ANTHROPIC_API_KEY and PERPLEXITY_API_KEY are set in your .env file")
+                return
+        
+        # Create tabs for different AI methods
+        discovery_tabs = st.tabs([
+            "📄 Claude AI - Financial Statements",
+            "🌐 Perplexity - Web Research",
+            "🔀 Merge Results",
+            "💰 Financial Modeling",
+            "📊 Discovery History"
+        ])
+        
+        with discovery_tabs[0]:
+            self.render_claude_discovery()
+        
+        with discovery_tabs[1]:
+            self.render_perplexity_discovery()
+        
+        with discovery_tabs[2]:
+            self.render_merge_results()
+            
+        with discovery_tabs[3]:
+            self.render_financial_modeling()
+            
+        with discovery_tabs[4]:
+            self.render_discovery_history()
+    
+    def render_claude_discovery(self):
+        """Render Claude AI interface for PDF analysis"""
+        st.subheader("📄 Extract Projects from Documents using Claude AI")
+        st.info("""
+        Upload one or multiple PDF documents to extract real estate projects using Claude 3.5 Sonnet.
+        Supports **Financial Statements**, **Analyst Reports**, and **Company Presentations**.
+        Document types are automatically detected.
+        """)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # Multiple file uploader
+            uploaded_files = st.file_uploader(
+                "Choose PDF documents",
+                type=['pdf'],
+                accept_multiple_files=True,
+                help="Upload one or more PDFs (Financial Statements, Analyst Reports, Company Presentations)",
+                key="claude_pdf_uploads"
+            )
+        
+        with col2:
+            # Company info
+            company_name = st.text_input(
+                "Company Name",
+                value=st.session_state.selected_company or "",
+                help="Full company name",
+                key="claude_company_name"
+            )
+            
+            company_ticker = st.text_input(
+                "Stock Ticker",
+                value=st.session_state.selected_company or "",
+                help="Stock ticker symbol",
+                key="claude_ticker"
+            )
+            
+            if uploaded_files:
+                st.info(f"📚 {len(uploaded_files)} document(s) uploaded")
+        
+        if uploaded_files and company_name and company_ticker:
+            if st.button("🤖 Extract Projects from All Documents", type="primary", use_container_width=True):
+                # Process multiple documents
+                extraction_results = st.session_state.pipeline_manager.claude_extractor.process_multiple_documents(
+                    pdf_files=uploaded_files,
+                    company_name=company_name,
+                    company_ticker=company_ticker
+                )
+                
+                # Display extraction summary
+                summary = extraction_results.get('summary', {})
+                
+                # Show overall results
+                if summary.get('successful_extractions', 0) > 0:
+                    st.success(f"✅ Successfully processed {summary['successful_extractions']}/{summary['total_documents']} documents")
+                    
+                    # Store combined projects
+                    st.session_state.claude_projects = extraction_results.get('all_projects', [])
+                    st.session_state.claude_extraction_results = extraction_results
+                    st.session_state.claude_metadata = {
+                        'company_name': company_name,
+                        'company_ticker': company_ticker,
+                        'extraction_date': pd.Timestamp.now().isoformat(),
+                        'documents_processed': summary['successful_extractions']
+                    }
+                    
+                    # Display summary metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Documents Processed", f"{summary['successful_extractions']}/{summary['total_documents']}")
+                    with col2:
+                        st.metric("Unique Projects Found", summary.get('total_unique_projects', 0))
+                    with col3:
+                        combined_metrics = extraction_results.get('combined_metrics', {})
+                        avg_confidence = combined_metrics.get('average_confidence', 0)
+                        st.metric("Avg Confidence", f"{avg_confidence:.0%}")
+                    with col4:
+                        doc_types = combined_metrics.get('document_types', {})
+                        st.metric("Document Types", len(doc_types))
+                    
+                    # Show document-by-document summary
+                    if extraction_results.get('document_summaries'):
+                        with st.expander("📋 Document Processing Details", expanded=True):
+                            doc_summary_df = pd.DataFrame(extraction_results['document_summaries'])
+                            doc_summary_df['extraction_quality'] = doc_summary_df['extraction_quality'].apply(lambda x: f"{x:.0%}")
+                            st.dataframe(doc_summary_df, use_container_width=True)
+                    
+                    # Show any failed extractions
+                    if extraction_results.get('failed_extractions'):
+                        with st.expander(f"⚠️ Failed Extractions ({len(extraction_results['failed_extractions'])})", expanded=False):
+                            for failed in extraction_results['failed_extractions']:
+                                st.error(f"**{failed['file_name']}**: {failed['error']}")
+                                if 'suggestion' in failed:
+                                    st.info(f"💡 {failed['suggestion']}")
+                    
+                    # Show combined project table
+                    if st.session_state.claude_projects:
+                        st.subheader("📊 All Extracted Projects")
+                        
+                        # Create enhanced summary table with source information
+                        projects_for_table = []
+                        for project in st.session_state.claude_projects:
+                            project_entry = {
+                                'Project Name': project.get('project_name', 'Unknown'),
+                                'Location': project.get('location', 'N/A'),
+                                'Stage': project.get('stage', project.get('development_stage', 'N/A')),
+                                'Total Units': project.get('total_units', 0),
+                                'Source Doc': project.get('source_document', 'Unknown'),
+                                'Doc Type': project.get('source_type', 'Unknown').replace('_', ' ').title()
+                            }
+                            
+                            # Add value column based on available data
+                            if project.get('book_value_vnd'):
+                                project_entry['Value (B VND)'] = project['book_value_vnd'] / 1e9
+                            elif project.get('nav_value_vnd'):
+                                project_entry['NAV (B VND)'] = project['nav_value_vnd'] / 1e9
+                            elif project.get('presales_value_vnd'):
+                                project_entry['Presales (B VND)'] = project['presales_value_vnd'] / 1e9
+                            
+                            projects_for_table.append(project_entry)
+                        
+                        summary_df = pd.DataFrame(projects_for_table)
+                        
+                        # Format numeric columns
+                        if 'Total Units' in summary_df.columns:
+                            summary_df['Total Units'] = summary_df['Total Units'].apply(lambda x: f"{int(x):,}" if x else "N/A")
+                        for col in ['Value (B VND)', 'NAV (B VND)', 'Presales (B VND)']:
+                            if col in summary_df.columns:
+                                summary_df[col] = summary_df[col].apply(lambda x: f"{x:.1f}" if x else "N/A")
+                        
+                        st.dataframe(summary_df, use_container_width=True)
+                else:
+                    # All extractions failed
+                    st.error(f"❌ Failed to process any documents. {len(extraction_results.get('failed_extractions', []))} document(s) failed.")
+        else:
+            if not uploaded_files:
+                st.info("👆 Please upload one or more PDF documents")
+            elif not company_name or not company_ticker:
+                st.warning("Please enter company details")
+    
+    def render_perplexity_discovery(self):
+        """Render Perplexity web research interface"""
+        st.subheader("🌐 Discover Projects from Web using Perplexity AI")
+        st.info("Search the web for real estate projects using Perplexity's research capabilities")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            company_name = st.text_input(
+                "Company Name",
+                value=st.session_state.selected_company or "",
+                key="perplexity_company_name",
+                help="Enter the company name to research"
+            )
+        
+        with col2:
+            company_ticker = st.text_input(
+                "Stock Ticker",
+                value=st.session_state.selected_company or "",
+                key="perplexity_ticker",
+                help="Stock ticker symbol"
+            )
+        
+        if company_name and company_ticker:
+            if st.button("🔍 Research Projects with Perplexity", type="primary", use_container_width=True):
+                with st.spinner("Researching projects from web sources..."):
+                    # Discover all projects from web (no known_projects parameter needed)
+                    all_web_projects = st.session_state.pipeline_manager.discover_all_projects_from_web(
+                        company_name=company_name,
+                        company_ticker=company_ticker
+                    )
+                    
+                    if all_web_projects:
+                        st.session_state.perplexity_projects = all_web_projects
+                        st.session_state.perplexity_metadata = {
+                            'company_name': company_name,
+                            'company_ticker': company_ticker,
+                            'source': 'web_research',
+                            'total_projects': len(all_web_projects)
+                        }
+                        
+                        st.success(f"✅ Perplexity found {len(all_web_projects)} projects from web research")
+                        
+                        # Categorize projects
+                        current_projects = [p for p in all_web_projects if p.get('status') != 'future']
+                        future_projects = [p for p in all_web_projects if p.get('status') == 'future']
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Current Projects", len(current_projects))
+                        with col2:
+                            st.metric("Future Projects", len(future_projects))
+                        
+                        # Display projects
+                        st.subheader("Projects Found from Web Research")
+                        
+                        # Convert to DataFrame for display
+                        if all_web_projects:
+                            display_data = []
+                            for proj in all_web_projects:
+                                display_data.append({
+                                    'Project Name': proj.get('project_name', 'Unknown'),
+                                    'Location': proj.get('location', 'N/A'),
+                                    'Status': proj.get('status', 'N/A'),
+                                    'Units': proj.get('estimated_units', 'N/A'),
+                                    'Source': proj.get('source', 'Web'),
+                                    'Description': proj.get('description', '')[:100] + '...' if proj.get('description') else ''
+                                })
+                            
+                            df = pd.DataFrame(display_data)
+                            st.dataframe(df, use_container_width=True)
+                            
+                            # Option to enrich with detailed research
+                            if st.button("🔬 Get Detailed Information", type="secondary"):
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
+                                
+                                enriched_projects = []
+                                for i, project in enumerate(all_web_projects):
+                                    progress = (i + 1) / len(all_web_projects)
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"Researching details for {project.get('project_name')}...")
+                                    
+                                    # Research detailed information
+                                    detailed = st.session_state.pipeline_manager.perplexity_researcher.research_project_details(
+                                        project_name=project.get('project_name'),
+                                        company_name=company_name,
+                                        location_hint=project.get('location')
+                                    )
+                                    
+                                    # Merge with existing data
+                                    enriched = {**project, **detailed} if 'error' not in detailed else project
+                                    enriched_projects.append(enriched)
+                                
+                                st.session_state.perplexity_projects = enriched_projects
+                                progress_bar.empty()
+                                status_text.empty()
+                                st.success("✅ Enrichment complete")
+                                st.rerun()
+                    else:
+                        st.warning("No projects found from web research")
+        else:
+            st.info("👆 Please enter company details to search")
+    
+    def render_merge_results(self):
+        """Render interface to merge Claude and Perplexity results"""
+        st.subheader("🔀 AI-Powered Merge & Database Comparison")
+        st.info("Claude AI will intelligently merge results from both sources and compare with existing database projects")
+        
+        # Check if we have results from both sources
+        has_claude = 'claude_projects' in st.session_state
+        has_perplexity = 'perplexity_projects' in st.session_state
+        
+        if not has_claude and not has_perplexity:
+            st.info("Run Claude AI and/or Perplexity research first to generate results to merge")
+            return
+        
+        # Display available sources
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if has_claude:
+                st.success("✅ Claude Results")
+                st.metric("Document Projects", len(st.session_state.claude_projects))
+            else:
+                st.info("No Claude results")
+        
+        with col2:
+            if has_perplexity:
+                st.success("✅ Perplexity Results")
+                st.metric("Web Projects", len(st.session_state.perplexity_projects))
+            else:
+                st.info("No Perplexity results")
+        
+        with col3:
+            # Get existing database projects count
+            ticker = st.session_state.claude_metadata.get('company_ticker', '') if has_claude else ''
+            if ticker:
+                existing_projects = st.session_state.pipeline_manager.mongo_helper.get_real_estate_projects(ticker)
+                st.info("📊 Database Projects")
+                st.metric("Existing", len(existing_projects))
+            else:
+                existing_projects = []
+        
+        # Merge button
+        if st.button("🤖 AI Merge & Compare with Database", type="primary", use_container_width=True):
+            # Get company info
+            company_name = st.session_state.claude_metadata.get('company_name', '') if has_claude else ''
+            company_ticker = st.session_state.claude_metadata.get('company_ticker', '') if has_claude else ''
+            
+            if not company_ticker and has_perplexity:
+                company_ticker = st.session_state.perplexity_metadata.get('company_ticker', '')
+                company_name = st.session_state.perplexity_metadata.get('company_name', '')
+            
+            # Step 1: AI-powered merge of Claude and Perplexity results
+            with st.spinner("🤖 Using Claude AI to intelligently merge results..."):
+                claude_projects = st.session_state.claude_projects if has_claude else []
+                perplexity_projects = st.session_state.perplexity_projects if has_perplexity else []
+                
+                merge_result = st.session_state.pipeline_manager.claude_extractor.merge_claude_perplexity_results(
+                    claude_projects=claude_projects,
+                    perplexity_projects=perplexity_projects,
+                    company_name=company_name,
+                    company_ticker=company_ticker
+                )
+                
+                merged_projects = merge_result.get('merged_projects', [])
+                merge_summary = merge_result.get('merge_summary', {})
+                
+                st.session_state.merged_projects = merged_projects
+                st.session_state.merge_metadata = merge_result.get('metadata', {})
+                st.session_state.merge_summary = merge_summary
+            
+            # Step 2: Compare with database
+            with st.spinner("📊 Comparing with existing database projects..."):
+                comparison_result = st.session_state.pipeline_manager.claude_extractor.compare_with_database_projects(
+                    merged_projects=merged_projects,
+                    existing_projects=existing_projects
+                )
+                
+                st.session_state.comparison_result = comparison_result
+            
+            # Display results
+            st.success("✅ AI Analysis Complete!")
+            
+            # Show merge summary
+            st.subheader("🔀 Merge Analysis")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Unique Projects", merge_summary.get('total_unique_projects', 0))
+            with col2:
+                st.metric("High Confidence", merge_summary.get('high_confidence_projects', 0))
+            with col3:
+                st.metric("In Both Sources", merge_summary.get('projects_in_both', 0))
+            with col4:
+                st.metric("Claude Only", merge_summary.get('projects_only_in_claude', 0))
+            
+            # Show database comparison
+            comp_summary = comparison_result.get('comparison_summary', {})
+            
+            if comp_summary.get('new_discoveries', 0) > 0:
+                st.subheader(f"🆕 New Projects Discovered ({comp_summary['new_discoveries']})")
+                
+                new_projects = comparison_result.get('new_projects', [])
+                if new_projects:
+                    new_df = pd.DataFrame(new_projects)
+                    st.dataframe(new_df, use_container_width=True)
+                    
+                    # Highlight significance
+                    if comp_summary.get('significance_notes'):
+                        st.info(f"💡 {comp_summary['significance_notes']}")
+            
+            if comp_summary.get('updates_found', 0) > 0:
+                with st.expander(f"📝 Updated Projects ({comp_summary['updates_found']})"):
+                    updated_projects = comparison_result.get('updated_projects', [])
+                    for update in updated_projects:
+                        st.write(f"**{update['project_name']}**")
+                        for change in update.get('updates', []):
+                            st.write(f"  • {change}")
+            
+            # Show all merged projects
+            with st.expander("📊 All Merged Projects", expanded=True):
+                display_data = []
+                for proj in merged_projects:
+                    display_data.append({
+                        'Project Name': proj.get('project_name', 'Unknown'),
+                        'Location': proj.get('location', 'N/A'),
+                        'Confidence': f"{proj.get('confidence_score', 0):.0%}",
+                        'Book Value (B VND)': f"{(proj.get('book_value_vnd') or 0)/1e9:.0f}" if proj.get('book_value_vnd') else 'N/A',
+                        'Market Value (B VND)': f"{(proj.get('market_value_vnd') or 0)/1e9:.0f}" if proj.get('market_value_vnd') else 'N/A',
+                        'Total Units': proj.get('total_units') or 'N/A',
+                        'Stage': proj.get('stage', 'N/A'),
+                        'Sources': ', '.join(proj.get('data_sources', [])),
+                        'Notes': proj.get('merge_notes', '')
+                    })
+                
+                df = pd.DataFrame(display_data)
+                st.dataframe(df, use_container_width=True)
+            
+            # Save options
+            st.subheader("💾 Save Options")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("💾 Save All to Database", type="secondary", use_container_width=True):
+                    success = st.session_state.pipeline_manager.save_projects_to_mongodb(
+                        projects=merged_projects,
+                        ticker=company_ticker,
+                        mode="merge"
+                    )
+                    if success:
+                        st.success("✅ Saved all projects to MongoDB")
+            
+            with col2:
+                if comp_summary.get('new_discoveries', 0) > 0:
+                    if st.button("🆕 Save Only New Projects", type="secondary", use_container_width=True):
+                        new_projects_to_save = []
+                        new_project_names = [p['project_name'] for p in comparison_result.get('new_projects', [])]
+                        
+                        for proj in merged_projects:
+                            if proj.get('project_name') in new_project_names:
+                                new_projects_to_save.append(proj)
+                        
+                        if new_projects_to_save:
+                            success = st.session_state.pipeline_manager.save_projects_to_mongodb(
+                                projects=new_projects_to_save,
+                                ticker=company_ticker,
+                                mode="append"
+                            )
+                            if success:
+                                st.success(f"✅ Saved {len(new_projects_to_save)} new projects")
+            
+            with col3:
+                if st.button("📥 Export to Excel", type="secondary", use_container_width=True):
+                    # Create comprehensive Excel export
+                    import io
+                    buffer = io.BytesIO()
+                    
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        # All projects sheet
+                        df.to_excel(writer, sheet_name='All Projects', index=False)
+                        
+                        # New discoveries sheet
+                        if comparison_result.get('new_projects'):
+                            new_df = pd.DataFrame(comparison_result['new_projects'])
+                            new_df.to_excel(writer, sheet_name='New Discoveries', index=False)
+                        
+                        # Summary sheet
+                        summary_data = {
+                            'Metric': ['Total Unique Projects', 'High Confidence', 'Medium Confidence', 
+                                      'Projects in Both Sources', 'New Discoveries', 'Updated Projects'],
+                            'Value': [
+                                merge_summary.get('total_unique_projects', 0),
+                                merge_summary.get('high_confidence_projects', 0),
+                                merge_summary.get('medium_confidence_projects', 0),
+                                merge_summary.get('projects_in_both', 0),
+                                comp_summary.get('new_discoveries', 0),
+                                comp_summary.get('updates_found', 0)
+                            ]
+                        }
+                        summary_df = pd.DataFrame(summary_data)
+                        summary_df.to_excel(writer, sheet_name='Summary', index=False)
+                    
+                    buffer.seek(0)
+                    
+                    st.download_button(
+                        label="📥 Download Excel Report",
+                        data=buffer,
+                        file_name=f"{company_ticker}_project_analysis_{pd.Timestamp.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+    
+    def _similar_project_names(self, name1: str, name2: str) -> bool:
+        """Check if two project names are similar (likely the same project)"""
+        # Simple similarity check - can be enhanced
+        name1_clean = name1.lower().replace(' ', '').replace('-', '').replace('_', '')
+        name2_clean = name2.lower().replace(' ', '').replace('-', '').replace('_', '')
+        
+        # Check if one contains the other
+        if name1_clean in name2_clean or name2_clean in name1_clean:
+            return True
+        
+        # Check if they share significant parts
+        words1 = set(name1.lower().split())
+        words2 = set(name2.lower().split())
+        common = words1.intersection(words2)
+        
+        # If they share more than 50% of words, consider them similar
+        if len(common) > 0:
+            similarity = len(common) / min(len(words1), len(words2))
+            return similarity > 0.5
+        
+        return False
+    
+    def render_financial_modeling(self):
+        """Render AI-powered comprehensive financial modeling interface"""
+        st.subheader("💰 AI-Powered Comprehensive Financial Modeling")
+        st.info("""
+        AI analyzes ALL revenue streams of the company from financial statements and web research:
+        • Real Estate Development (from discovered projects)
+        • Construction Services
+        • Property Management
+        • Rental/Leasing Income
+        • Other Business Segments
+        
+        The model creates a comprehensive forecast combining all revenue sources.
+        """)
+        
+        # Initialize comprehensive revenue analyzer
+        if 'comprehensive_analyzer' not in st.session_state:
+            try:
+                st.session_state.comprehensive_analyzer = ComprehensiveRevenueAnalyzer()
+            except Exception as e:
+                st.error(f"Failed to initialize Comprehensive Revenue Analyzer: {str(e)}")
+                st.info("Please ensure ANTHROPIC_API_KEY is set in your .env file")
+                return
+        
+        # Get available data
+        projects = st.session_state.get('merged_projects') or st.session_state.get('claude_projects') or []
+        has_projects = len(projects) > 0
+        
+        st.write(f"📊 Available data: {len(projects)} real estate projects discovered")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # Company information
+            company_name = st.text_input(
+                "Company Name",
+                value=st.session_state.get('selected_company', ''),
+                key="modeling_company_name"
+            )
+            
+            company_ticker = st.text_input(
+                "Stock Ticker",
+                value=st.session_state.get('selected_company', ''),
+                key="modeling_ticker"
+            )
+        
+        with col2:
+            # Forecast parameters
+            forecast_years = st.number_input(
+                "Forecast Years",
+                min_value=1,
+                max_value=10,
+                value=5,
+                key="modeling_forecast_years"
+            )
+            
+            current_year = st.number_input(
+                "Current Year",
+                min_value=2020,
+                max_value=2030,
+                value=datetime.now().year,
+                key="modeling_current_year"
+            )
+        
+        # Historical financial data (optional)
+        with st.expander("📈 Historical Financial Data (Optional)", expanded=False):
+            st.info("Upload historical financial data for more accurate analysis")
+            
+            # Option to use MongoDB data
+            use_mongodb = st.checkbox("Use data from MongoDB", value=True)
+            
+            financial_data = None
+            if use_mongodb and company_ticker:
+                try:
+                    # Try to load financial data from MongoDB
+                    financial_data = get_financials_for_company(company_ticker)
+                    if financial_data:
+                        st.success(f"✅ Loaded financial data for {company_ticker}")
+                except:
+                    st.warning("Could not load financial data from MongoDB")
+        
+        # Data source selection
+        st.write("### 📚 Data Sources for Revenue Analysis")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Option to upload financial statements for revenue extraction
+            uploaded_file = st.file_uploader(
+                "Upload Financial Statement PDF for revenue extraction",
+                type=['pdf'],
+                help="Upload financial statements to extract ALL revenue streams",
+                key="revenue_pdf_upload"
+            )
+        
+        with col2:
+            # Option to use existing session data
+            use_session_data = st.checkbox(
+                "Use data from Claude/Perplexity discovery",
+                value=True if has_projects else False,
+                help="Use previously discovered project and revenue data"
+            )
+        
+        # Run comprehensive analysis button
+        if st.button("🤖 Analyze ALL Revenue Streams & Generate Comprehensive Model", type="primary", use_container_width=True):
+            
+            revenue_streams_from_pdf = {}
+            revenue_streams_from_web = {}
+            
+            # Step 1: Extract revenue streams from PDF if provided
+            if uploaded_file:
+                with st.spinner("📄 Extracting revenue streams from financial statements..."):
+                    try:
+                        # Extract text from PDF
+                        pdf_text = st.session_state.pipeline_manager.claude_extractor.extract_text_from_pdf(uploaded_file)
+                        
+                        if pdf_text:
+                            # Extract revenue streams and projects
+                            extraction_result = st.session_state.pipeline_manager.claude_extractor.extract_revenue_and_projects(
+                                document_text=pdf_text,
+                                company_name=company_name,
+                                company_ticker=company_ticker
+                            )
+                            
+                            if 'revenue_analysis' in extraction_result:
+                                revenue_streams_from_pdf = extraction_result['revenue_analysis']
+                                st.success(f"✅ Extracted {len(revenue_streams_from_pdf.get('revenue_streams', []))} revenue streams from PDF")
+                                
+                                # Also get projects if available
+                                if 'real_estate_projects' in extraction_result and not has_projects:
+                                    projects = extraction_result['real_estate_projects']
+                                    st.info(f"Also found {len(projects)} real estate projects")
+                        else:
+                            st.warning("Could not extract text from PDF")
+                            
+                    except Exception as e:
+                        st.error(f"Error extracting from PDF: {str(e)}")
+            
+            # Step 2: Research revenue streams from web (optional)
+            if st.session_state.get('perplexity_enabled', False):
+                with st.spinner("🌐 Researching revenue streams from web..."):
+                    try:
+                        revenue_streams_from_web = st.session_state.comprehensive_analyzer.research_revenue_streams_from_web(
+                            company_name=company_name,
+                            company_ticker=company_ticker,
+                            perplexity_client=st.session_state.get('pipeline_manager')
+                        )
+                        if revenue_streams_from_web:
+                            st.info("✅ Web research completed")
+                    except Exception as e:
+                        st.warning(f"Web research skipped: {str(e)}")
+            
+            # Step 3: Merge all revenue data
+            with st.spinner("🔀 Merging revenue streams from all sources..."):
+                try:
+                    # Prepare comprehensive revenue model
+                    comprehensive_model = st.session_state.comprehensive_analyzer.merge_revenue_streams(
+                        pdf_streams=revenue_streams_from_pdf,
+                        web_streams=revenue_streams_from_web,
+                        project_data=projects
+                    )
+                    
+                    # Store in session state
+                    st.session_state.comprehensive_model = comprehensive_model
+                    
+                    # Display comprehensive revenue streams
+                    st.success("✅ Comprehensive revenue model created successfully")
+                    
+                    # Show all identified revenue streams
+                    if 'revenue_streams' in comprehensive_model:
+                        st.write("### 📊 Complete Revenue Stream Analysis")
+                        
+                        # Create detailed revenue breakdown
+                        revenue_data = []
+                        total_revenue = sum(s.get('revenue_2023', 0) for s in comprehensive_model['revenue_streams'])
+                        
+                        for stream in comprehensive_model['revenue_streams']:
+                            # Handle both field names for percentage
+                            percentage = stream.get('revenue_percentage') or stream.get('percentage_of_total', 0)
+                            
+                            revenue_data.append({
+                                'Business Segment': stream.get('segment_name', 'Unknown'),
+                                'Revenue (B VND)': stream.get('revenue_2023', 0) / 1e9 if stream.get('revenue_2023') else 0,
+                                '% of Total': percentage,
+                                'Type': stream.get('type', 'non_recurring'),
+                                'Gross Margin': f"{stream.get('gross_margin', 0)*100:.1f}%" if stream.get('gross_margin') else 'N/A',
+                                'YoY Growth': f"{stream.get('growth_rate', 0)*100:.1f}%" if stream.get('growth_rate') else 'N/A'
+                            })
+                        
+                        streams_df = pd.DataFrame(revenue_data)
+                        st.dataframe(streams_df, use_container_width=True)
+                        
+                        # Show revenue mix visualization
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Pie chart of revenue segments
+                            fig_pie = go.Figure(data=[go.Pie(
+                                labels=[s['Business Segment'] for s in revenue_data],
+                                values=[s['Revenue (B VND)'] for s in revenue_data],
+                                hole=0.3
+                            )])
+                            fig_pie.update_layout(
+                                title="Revenue by Segment",
+                                height=400
+                            )
+                            st.plotly_chart(fig_pie, use_container_width=True)
+                        
+                        with col2:
+                            # Revenue type breakdown
+                            if 'revenue_mix' in comprehensive_model:
+                                mix = comprehensive_model['revenue_mix']
+                                fig_mix = go.Figure(data=[go.Bar(
+                                    x=['Recurring', 'Non-Recurring', 'Semi-Recurring'],
+                                    y=[mix.get('recurring_percentage', 0),
+                                       mix.get('non_recurring_percentage', 0),
+                                       mix.get('semi_recurring_percentage', 0)],
+                                    marker_color=['green', 'blue', 'orange']
+                                )])
+                                fig_mix.update_layout(
+                                    title="Revenue Type Mix (%)",
+                                    yaxis_title="Percentage",
+                                    height=400
+                                )
+                                st.plotly_chart(fig_mix, use_container_width=True)
+                        
+                        # Show real estate project details if available
+                        if projects:
+                            st.write("### 🏗️ Real Estate Project Pipeline")
+                            st.write(f"Total {len(projects)} projects contributing to Real Estate Development revenue")
+                            
+                            # Quick project summary
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                total_units = sum(p.get('total_units', 0) for p in projects)
+                                st.metric("Total Units", f"{total_units:,}")
+                            with col2:
+                                total_value = sum(p.get('book_value_vnd', 0) for p in projects) / 1e12
+                                st.metric("Total Book Value", f"{total_value:.1f}T VND")
+                            with col3:
+                                stages = [p.get('stage', 'unknown') for p in projects]
+                                st.metric("Active Projects", len([s for s in stages if s in ['construction', 'presales']]))
+                    
+                except Exception as e:
+                    st.error(f"Error analyzing revenue streams: {str(e)}")
+                    return
+            
+            # Step 4: Generate comprehensive assumptions
+            with st.spinner("📊 Generating comprehensive financial assumptions..."):
+                try:
+                    assumptions = st.session_state.comprehensive_analyzer.generate_comprehensive_assumptions(
+                        revenue_model=comprehensive_model,
+                        current_year=current_year
+                    )
+                    
+                    st.session_state.comprehensive_assumptions = assumptions
+                    
+                    # Display segment-specific assumptions
+                    st.write("### 🎯 Comprehensive Financial Assumptions by Segment")
+                    
+                    # Create tabs for each segment
+                    segment_tabs = st.tabs([s['segment_name'] for s in comprehensive_model['revenue_streams']])
+                    
+                    for idx, (tab, stream) in enumerate(zip(segment_tabs, comprehensive_model['revenue_streams'])):
+                        with tab:
+                            segment_name = stream['segment_name']
+                            segment_assumptions = assumptions['by_segment'].get(segment_name, {})
+                            
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.write("**Growth & Margins:**")
+                                st.metric("Revenue Growth Rate", f"{segment_assumptions.get('revenue_growth_rate', 0)*100:.1f}% /year")
+                                st.metric("Gross Margin", f"{segment_assumptions.get('gross_margin', 0)*100:.1f}%")
+                                st.metric("Operating Margin", f"{segment_assumptions.get('operating_margin', 0)*100:.1f}%")
+                            
+                            with col2:
+                                st.write("**Segment-Specific:**")
+                                # Show segment-specific assumptions
+                                if 'real estate' in segment_name.lower():
+                                    st.metric("Presales Velocity", f"{segment_assumptions.get('presales_velocity', 0)}% /month")
+                                    st.metric("Price Appreciation", f"{segment_assumptions.get('price_appreciation', 0)*100:.1f}% /year")
+                                elif 'construction' in segment_name.lower():
+                                    st.metric("Backlog Conversion", f"{segment_assumptions.get('backlog_conversion_rate', 0)*100:.0f}%")
+                                    st.metric("New Contract Growth", f"{segment_assumptions.get('new_contract_growth', 0)*100:.1f}% /year")
+                                elif 'rental' in segment_name.lower():
+                                    st.metric("Occupancy Rate", f"{segment_assumptions.get('occupancy_rate', 0)*100:.0f}%")
+                                    st.metric("Rental Escalation", f"{segment_assumptions.get('rental_escalation', 0)*100:.1f}% /year")
+                    
+                except Exception as e:
+                    st.error(f"Error generating assumptions: {str(e)}")
+                    return
+            
+            # Initialize revenue_forecast variable
+            revenue_forecast = pd.DataFrame()
+            
+            # Step 5: Create comprehensive forecast
+            with st.spinner("📈 Creating comprehensive revenue forecast for all segments..."):
+                try:
+                    revenue_forecast = st.session_state.comprehensive_analyzer.create_comprehensive_forecast(
+                        revenue_model=comprehensive_model,
+                        assumptions=assumptions,
+                        forecast_years=forecast_years
+                    )
+                    
+                    st.session_state.comprehensive_forecast = revenue_forecast
+                    
+                    # Display comprehensive revenue forecast
+                    st.write("### 📈 Comprehensive Revenue Forecast by Segment")
+                    
+                    if not revenue_forecast.empty:
+                        # Pivot table by segment
+                        pivot_forecast = revenue_forecast[revenue_forecast['Segment'] != 'TOTAL'].pivot_table(
+                            index='Segment',
+                            columns='Year',
+                            values='Revenue',
+                            aggfunc='sum',
+                            fill_value=0
+                        )
+                        
+                        # Format as billions VND
+                        pivot_forecast = pivot_forecast / 1e9
+                        st.dataframe(
+                            pivot_forecast.style.format("{:.1f}B"),
+                            use_container_width=True
+                        )
+                        
+                        # Show total forecast with margins
+                        total_forecast = revenue_forecast[revenue_forecast['Segment'] == 'TOTAL'].pivot_table(
+                            index='Year',
+                            values=['Revenue', 'Gross_Profit', 'Operating_Profit'],
+                            aggfunc='sum'
+                        )
+                        
+                        if not total_forecast.empty:
+                            st.write("### 💰 Consolidated Financial Forecast")
+                            
+                            # Format the forecast table
+                            consolidated_df = pd.DataFrame()
+                            years = sorted(revenue_forecast['Year'].unique())
+                            years = [y for y in years if y != 'TOTAL']
+                            
+                            for year in years:
+                                year_data = revenue_forecast[revenue_forecast['Year'] == year]
+                                total_row = year_data[year_data['Segment'] == 'TOTAL'].iloc[0] if not year_data[year_data['Segment'] == 'TOTAL'].empty else None
+                                
+                                if total_row is not None:
+                                    consolidated_df[str(year)] = [
+                                        total_row['Revenue'] / 1e9,
+                                        total_row['Gross_Profit'] / 1e9,
+                                        total_row['Operating_Profit'] / 1e9,
+                                        (total_row['Gross_Profit'] / total_row['Revenue']) * 100 if total_row['Revenue'] > 0 else 0,
+                                        (total_row['Operating_Profit'] / total_row['Revenue']) * 100 if total_row['Revenue'] > 0 else 0
+                                    ]
+                            
+                            if not consolidated_df.empty:
+                                consolidated_df.index = ['Revenue (B VND)', 'Gross Profit (B VND)', 'Operating Profit (B VND)', 'Gross Margin (%)', 'Operating Margin (%)']
+                                st.dataframe(
+                                    consolidated_df.style.format("{:.1f}"),
+                                    use_container_width=True
+                                )
+                        
+                        # Create stacked bar chart for all segments
+                        segment_forecast = revenue_forecast[revenue_forecast['Segment'] != 'TOTAL'].pivot_table(
+                            index='Year',
+                            columns='Segment',
+                            values='Revenue',
+                            aggfunc='sum',
+                            fill_value=0
+                        )
+                        
+                        if not segment_forecast.empty:
+                            fig = go.Figure()
+                            
+                            # Add trace for each segment
+                            for segment in segment_forecast.columns:
+                                fig.add_trace(go.Bar(
+                                    name=segment,
+                                    x=segment_forecast.index,
+                                    y=segment_forecast[segment] / 1e9,
+                                    text=[f"{v:.0f}B" if v > 100e9 else "" for v in segment_forecast[segment]],
+                                    textposition='inside'
+                                ))
+                            
+                            fig.update_layout(
+                                title="Revenue Forecast by Segment (Billion VND)",
+                                xaxis_title="Year",
+                                yaxis_title="Revenue (Billion VND)",
+                                barmode='stack',
+                                height=500,
+                                showlegend=True,
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                    
+                except Exception as e:
+                    st.error(f"Error creating forecast: {str(e)}")
+                    return
+            
+            # Revenue Stream Selection
+            st.write("### 🎯 Select Revenue Streams for Financial Model")
+            st.info("Choose which revenue streams to include in your financial forecast and assumptions")
+            
+            # Initialize selected streams in session state
+            if 'selected_revenue_streams' not in st.session_state:
+                # By default, select all streams
+                st.session_state.selected_revenue_streams = [s['segment_name'] for s in comprehensive_model.get('revenue_streams', [])]
+            
+            # Create selection interface
+            available_streams = comprehensive_model.get('revenue_streams', [])
+            
+            # Use a form to handle selection changes properly
+            with st.form("revenue_stream_selection"):
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.write("**Available Revenue Streams:**")
+                    
+                    selected_streams = []
+                    for stream in available_streams:
+                        segment_name = stream.get('segment_name', 'Unknown')
+                        revenue_pct = stream.get('revenue_percentage', 0)
+                        
+                        # Create checkbox for each stream
+                        is_selected = st.checkbox(
+                            f"{segment_name} ({revenue_pct:.1f}% of revenue)",
+                            value=segment_name in st.session_state.selected_revenue_streams,
+                            key=f"select_{segment_name}"
+                        )
+                        
+                        if is_selected:
+                            selected_streams.append(segment_name)
+                
+                with col2:
+                    st.write("**Selection Summary:**")
+                    st.write(f"Streams: {len(selected_streams)}")
+                    total_pct = sum(s.get('revenue_percentage', 0) for s in available_streams 
+                                  if s.get('segment_name') in selected_streams)
+                    st.write(f"Coverage: {total_pct:.1f}%")
+                
+                # Submit button to apply changes
+                submit_button = st.form_submit_button("Apply Selection", type="primary", use_container_width=True)
+                
+                if submit_button:
+                    # Update session state when form is submitted
+                    st.session_state.selected_revenue_streams = selected_streams
+                    st.session_state.selected_streams_data = [s for s in available_streams 
+                                                              if s.get('segment_name') in selected_streams]
+                    
+                    # Force recalculation of dynamic assumptions
+                    # Remove old assumptions for unselected streams
+                    if 'dynamic_assumptions' in st.session_state:
+                        new_dynamic_assumptions = {}
+                        for stream_name in selected_streams:
+                            if stream_name in st.session_state.dynamic_assumptions:
+                                new_dynamic_assumptions[stream_name] = st.session_state.dynamic_assumptions[stream_name]
+                        st.session_state.dynamic_assumptions = new_dynamic_assumptions
+                    
+                    # Set a flag to force assumptions recalculation
+                    st.session_state.force_assumptions_update = True
+                    
+                    st.rerun()
+            
+            # Show current selection status
+            if 'selected_streams_data' in st.session_state:
+                selected_count = len(st.session_state.selected_streams_data)
+                if selected_count > 0:
+                    st.success(f"✅ {selected_count} revenue stream(s) selected for financial modeling")
+                else:
+                    st.warning("⚠️ Please select at least one revenue stream to continue")
+                    return
+            else:
+                # Initialize with all streams if not set
+                st.session_state.selected_streams_data = available_streams
+                st.session_state.selected_revenue_streams = [s['segment_name'] for s in available_streams]
+            
+            # Provide comprehensive insights
+            if comprehensive_model:
+                st.write("### 💡 Key Strategic Insights")
+                
+                # Generate insights based on the model
+                insights = {
+                    'revenue_diversification': [],
+                    'growth_drivers': [],
+                    'risk_factors': []
+                }
+                
+                # Analyze revenue concentration
+                if 'revenue_streams' in comprehensive_model:
+                    streams = comprehensive_model['revenue_streams']
+                    max_segment = max(streams, key=lambda x: x.get('revenue_percentage', 0))
+                    
+                    max_percentage = max_segment.get('revenue_percentage', 0)
+                    if max_percentage > 60:
+                        insights['risk_factors'].append(f"High concentration in {max_segment.get('segment_name', 'Unknown')} ({max_percentage:.0f}%)")
+                    
+                    recurring_pct = comprehensive_model.get('revenue_mix', {}).get('recurring_percentage', 0)
+                    if recurring_pct > 20:
+                        insights['revenue_diversification'].append(f"Strong recurring revenue base at {recurring_pct:.0f}%")
+                    
+                    # Find growth drivers
+                    for stream in streams:
+                        if stream.get('growth_rate', 0) > 0.15:
+                            insights['growth_drivers'].append(f"{stream['segment_name']}: {stream['growth_rate']*100:.0f}% YoY growth")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.write("**Revenue Diversification:**")
+                    for item in insights['revenue_diversification']:
+                        st.write(f"• {item}")
+                    if not insights['revenue_diversification']:
+                        st.write("• Consider diversifying revenue streams")
+                
+                with col2:
+                    st.write("**Growth Drivers:**")
+                    for item in insights['growth_drivers']:
+                        st.write(f"• {item}")
+                    if not insights['growth_drivers']:
+                        st.write("• Identify new growth opportunities")
+                
+                with col3:
+                    st.write("**Risk Factors:**")
+                    for item in insights['risk_factors']:
+                        st.write(f"• {item}")
+                    if not insights['risk_factors']:
+                        st.write("• Well-balanced risk profile")
+            
+            # Save options
+            st.write("### 💾 Save Financial Model")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("💾 Save to MongoDB", use_container_width=True):
+                    try:
+                        # Prepare comprehensive model data
+                        model_data = {
+                            'ticker': company_ticker,
+                            'company_name': company_name,
+                            'comprehensive_model': comprehensive_model,
+                            'assumptions': assumptions,
+                            'revenue_forecast': revenue_forecast.to_dict('records') if not revenue_forecast.empty else [],
+                            'created_date': datetime.now(),
+                            'model_type': 'comprehensive_ai_generated'
+                        }
+                        
+                        # Save to MongoDB (would need to add this function to mongodb_utils)
+                        st.success("✅ Financial model saved to database")
+                        
+                    except Exception as e:
+                        st.error(f"Error saving model: {str(e)}")
+            
+            with col2:
+                if st.button("📥 Export to Excel", use_container_width=True):
+                    try:
+                        # Create Excel export
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            # All revenue streams
+                            if 'revenue_streams' in comprehensive_model:
+                                pd.DataFrame(comprehensive_model['revenue_streams']).to_excel(
+                                    writer, sheet_name='Revenue Streams', index=False
+                                )
+                            
+                            # Segment assumptions
+                            assumptions_df = pd.DataFrame()
+                            for segment, seg_assumptions in assumptions['by_segment'].items():
+                                assumptions_df[segment] = pd.Series(seg_assumptions)
+                            assumptions_df.to_excel(
+                                writer, sheet_name='Assumptions', index=True
+                            )
+                            
+                            # Revenue forecast
+                            if not revenue_forecast.empty:
+                                revenue_forecast.to_excel(
+                                    writer, sheet_name='Revenue Forecast', index=False
+                                )
+                            
+                            # Projects
+                            pd.DataFrame(projects).to_excel(
+                                writer, sheet_name='Projects', index=False
+                            )
+                        
+                        output.seek(0)
+                        
+                        st.download_button(
+                            label="📥 Download Financial Model",
+                            data=output,
+                            file_name=f"{company_ticker}_financial_model_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                        
+                    except Exception as e:
+                        st.error(f"Error creating export: {str(e)}")
+    
+    def render_discovery_history(self):
+        """Render discovery session history"""
+        st.subheader("Discovery History")
+        
+        if st.session_state.selected_company:
+            history = st.session_state.pipeline_manager.mongo_helper.get_discovery_history(
+                ticker=st.session_state.selected_company,
+                limit=20
+            )
+            
+            if history:
+                # Convert to DataFrame for display
+                history_df = pd.DataFrame(history)
+                
+                # Format timestamp
+                if 'timestamp' in history_df.columns:
+                    history_df['timestamp'] = pd.to_datetime(history_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M')
+                
+                # Select columns to display
+                display_cols = ['timestamp', 'document_name', 'projects_discovered', 
+                               'projects_enriched', 'new_projects', 'updated_projects']
+                display_cols = [col for col in display_cols if col in history_df.columns]
+                
+                st.dataframe(history_df[display_cols], use_container_width=True)
+            else:
+                st.info("No discovery history available for this company")
+        else:
+            st.info("Select a company to view discovery history")
+    
     def render_assumptions_interface(self):
-        """Render Excel-like assumptions input interface"""
+        """Render dynamic assumptions interface based on discovered revenue streams"""
         st.header("Model Assumptions")
         st.markdown("Adjust assumptions below to customize your forecast")
         
-        # Use AgGrid for Excel-like editing
-        assumptions_df = pd.DataFrame([
-            {"Category": "Revenue Growth", "Item": "Presales Growth", "Value": st.session_state.assumptions['revenue_growth']['presales'], "Unit": "%"},
-            {"Category": "Revenue Growth", "Item": "Handover Growth", "Value": st.session_state.assumptions['revenue_growth']['handover'], "Unit": "%"},
-            {"Category": "Revenue Growth", "Item": "Recurring Revenue Growth", "Value": st.session_state.assumptions['revenue_growth']['recurring'], "Unit": "%"},
-            {"Category": "Margins", "Item": "Gross Margin", "Value": st.session_state.assumptions['margins']['gross_margin'], "Unit": "%"},
-            {"Category": "Margins", "Item": "EBITDA Margin", "Value": st.session_state.assumptions['margins']['ebitda_margin'], "Unit": "%"},
-            {"Category": "Margins", "Item": "Net Margin", "Value": st.session_state.assumptions['margins']['net_margin'], "Unit": "%"},
-            {"Category": "Costs", "Item": "SG&A % of Revenue", "Value": st.session_state.assumptions['costs']['sga_pct'], "Unit": "%"},
-            {"Category": "Costs", "Item": "Interest Rate", "Value": st.session_state.assumptions['costs']['interest_rate'], "Unit": "%"},
-            {"Category": "Costs", "Item": "Tax Rate", "Value": st.session_state.assumptions['costs']['tax_rate'], "Unit": "%"},
-            {"Category": "Working Capital", "Item": "Receivables Days", "Value": st.session_state.assumptions['balance_sheet']['receivables_days'], "Unit": "days"},
-            {"Category": "Working Capital", "Item": "Inventory Days", "Value": st.session_state.assumptions['balance_sheet']['inventory_days'], "Unit": "days"},
-            {"Category": "Working Capital", "Item": "Payables Days", "Value": st.session_state.assumptions['balance_sheet']['payables_days'], "Unit": "days"},
-            {"Category": "Valuation", "Item": "WACC", "Value": st.session_state.assumptions['valuation']['wacc'], "Unit": "%"},
-            {"Category": "Valuation", "Item": "Terminal Growth", "Value": st.session_state.assumptions['valuation']['terminal_growth'], "Unit": "%"},
-            {"Category": "Valuation", "Item": "Target P/E", "Value": st.session_state.assumptions['valuation']['target_pe'], "Unit": "x"},
-            {"Category": "Valuation", "Item": "Target P/B", "Value": st.session_state.assumptions['valuation']['target_pb'], "Unit": "x"}
-        ])
+        # Check if we have discovered revenue streams from AI
+        if 'comprehensive_model' in st.session_state and 'revenue_streams' in st.session_state.comprehensive_model:
+            # Show which streams are selected
+            if 'selected_streams_data' in st.session_state and len(st.session_state.selected_streams_data) > 0:
+                selected_names = [s['segment_name'] for s in st.session_state.selected_streams_data]
+                st.info(f"📊 Showing assumptions for {len(selected_names)} selected revenue streams: {', '.join(selected_names)}")
+                
+                # Generate assumptions for selected streams
+                assumptions_data = self.generate_dynamic_assumptions_table()
+                
+                # Verify we have assumptions data
+                if not assumptions_data:
+                    st.warning("No assumptions generated. Please check your revenue stream selection.")
+                    assumptions_data = self.generate_default_assumptions_table()
+            else:
+                st.warning("No revenue streams selected. Using default assumptions.")
+                assumptions_data = self.generate_default_assumptions_table()
+        else:
+            # Use default assumptions if no AI discovery yet
+            assumptions_data = self.generate_default_assumptions_table()
+        
+        assumptions_df = pd.DataFrame(assumptions_data)
         
         # Use AgGrid if available, otherwise use standard dataframe editor
         if AgGrid:
@@ -696,6 +1862,80 @@ class RealEstateFinancialModel:
         if st.button("Run Sensitivity Analysis"):
             self.run_sensitivity_analysis(sensitivity_var, sensitivity_range)
     
+    def generate_dynamic_assumptions_table(self):
+        """Generate assumptions table based on selected revenue streams only"""
+        assumptions_data = []
+        
+        # Get only selected revenue streams
+        if 'selected_streams_data' in st.session_state:
+            revenue_streams = st.session_state.selected_streams_data
+        else:
+            revenue_streams = st.session_state.comprehensive_model.get('revenue_streams', [])
+        
+        # Initialize dynamic assumptions in session state if not exists or force update
+        if 'dynamic_assumptions' not in st.session_state or st.session_state.get('force_assumptions_update', False):
+            st.session_state.dynamic_assumptions = {}
+            # Clear the force update flag
+            if 'force_assumptions_update' in st.session_state:
+                del st.session_state.force_assumptions_update
+        
+        # Add revenue growth and margin assumptions ONLY for selected segments
+        for stream in revenue_streams:
+            segment_name = stream.get('segment_name', 'Unknown')
+            
+            # Initialize assumptions for this segment if not exists
+            if segment_name not in st.session_state.dynamic_assumptions:
+                st.session_state.dynamic_assumptions[segment_name] = {
+                    'revenue_growth': stream.get('growth_rate', 0.10) * 100,  # Convert to percentage
+                    'gross_margin': stream.get('gross_margin', 0.25) * 100,
+                    'opex_ratio': 10.0  # Default operating expense ratio
+                }
+            
+            # Add revenue growth assumption
+            assumptions_data.append({
+                "Category": "Revenue Growth",
+                "Item": f"{segment_name} Growth",
+                "Value": st.session_state.dynamic_assumptions[segment_name]['revenue_growth'],
+                "Unit": "%"
+            })
+            
+            # Add gross margin assumption
+            assumptions_data.append({
+                "Category": "Gross Margins",
+                "Item": f"{segment_name} Margin",
+                "Value": st.session_state.dynamic_assumptions[segment_name]['gross_margin'],
+                "Unit": "%"
+            })
+        
+        # Only add basic common assumptions (removed segment-specific details)
+        assumptions_data.extend([
+            {"Category": "Tax & Finance", "Item": "Tax Rate", "Value": st.session_state.assumptions['costs']['tax_rate'], "Unit": "%"},
+            {"Category": "Tax & Finance", "Item": "WACC", "Value": st.session_state.assumptions['valuation']['wacc'], "Unit": "%"}
+        ])
+        
+        return assumptions_data
+    
+    def generate_default_assumptions_table(self):
+        """Generate default assumptions table when no AI discovery available"""
+        return [
+            {"Category": "Revenue Growth", "Item": "Presales Growth", "Value": st.session_state.assumptions['revenue_growth']['presales'], "Unit": "%"},
+            {"Category": "Revenue Growth", "Item": "Handover Growth", "Value": st.session_state.assumptions['revenue_growth']['handover'], "Unit": "%"},
+            {"Category": "Revenue Growth", "Item": "Recurring Revenue Growth", "Value": st.session_state.assumptions['revenue_growth']['recurring'], "Unit": "%"},
+            {"Category": "Margins", "Item": "Gross Margin", "Value": st.session_state.assumptions['margins']['gross_margin'], "Unit": "%"},
+            {"Category": "Margins", "Item": "EBITDA Margin", "Value": st.session_state.assumptions['margins']['ebitda_margin'], "Unit": "%"},
+            {"Category": "Margins", "Item": "Net Margin", "Value": st.session_state.assumptions['margins']['net_margin'], "Unit": "%"},
+            {"Category": "Costs", "Item": "SG&A % of Revenue", "Value": st.session_state.assumptions['costs']['sga_pct'], "Unit": "%"},
+            {"Category": "Costs", "Item": "Interest Rate", "Value": st.session_state.assumptions['costs']['interest_rate'], "Unit": "%"},
+            {"Category": "Costs", "Item": "Tax Rate", "Value": st.session_state.assumptions['costs']['tax_rate'], "Unit": "%"},
+            {"Category": "Working Capital", "Item": "Receivables Days", "Value": st.session_state.assumptions['balance_sheet']['receivables_days'], "Unit": "days"},
+            {"Category": "Working Capital", "Item": "Inventory Days", "Value": st.session_state.assumptions['balance_sheet']['inventory_days'], "Unit": "days"},
+            {"Category": "Working Capital", "Item": "Payables Days", "Value": st.session_state.assumptions['balance_sheet']['payables_days'], "Unit": "days"},
+            {"Category": "Valuation", "Item": "WACC", "Value": st.session_state.assumptions['valuation']['wacc'], "Unit": "%"},
+            {"Category": "Valuation", "Item": "Terminal Growth", "Value": st.session_state.assumptions['valuation']['terminal_growth'], "Unit": "%"},
+            {"Category": "Valuation", "Item": "Target P/E", "Value": st.session_state.assumptions['valuation']['target_pe'], "Unit": "x"},
+            {"Category": "Valuation", "Item": "Target P/B", "Value": st.session_state.assumptions['valuation']['target_pb'], "Unit": "x"}
+        ]
+    
     def update_assumptions_from_grid(self, df):
         """Update assumptions from AgGrid changes"""
         for _, row in df.iterrows():
@@ -703,7 +1943,16 @@ class RealEstateFinancialModel:
             item = row['Item']
             value = row['Value']
             
-            # Map back to assumptions structure
+            # Handle dynamic segment assumptions
+            if 'dynamic_assumptions' in st.session_state:
+                # Check if this is a segment-specific assumption
+                for segment_name in st.session_state.dynamic_assumptions.keys():
+                    if f"{segment_name} Growth" == item:
+                        st.session_state.dynamic_assumptions[segment_name]['revenue_growth'] = value
+                    elif f"{segment_name} Margin" == item:
+                        st.session_state.dynamic_assumptions[segment_name]['gross_margin'] = value
+            
+            # Map standard assumptions
             if category == "Revenue Growth":
                 if item == "Presales Growth":
                     st.session_state.assumptions['revenue_growth']['presales'] = value
@@ -711,7 +1960,25 @@ class RealEstateFinancialModel:
                     st.session_state.assumptions['revenue_growth']['handover'] = value
                 elif item == "Recurring Revenue Growth":
                     st.session_state.assumptions['revenue_growth']['recurring'] = value
-            # Continue mapping for other categories...
+            elif category == "Operating Costs":
+                if item == "SG&A % of Revenue":
+                    st.session_state.assumptions['costs']['sga_pct'] = value
+                elif item == "Interest Rate":
+                    st.session_state.assumptions['costs']['interest_rate'] = value
+                elif item == "Tax Rate":
+                    st.session_state.assumptions['costs']['tax_rate'] = value
+            elif category == "Working Capital":
+                if item == "Receivables Days":
+                    st.session_state.assumptions['balance_sheet']['receivables_days'] = value
+                elif item == "Inventory Days":
+                    st.session_state.assumptions['balance_sheet']['inventory_days'] = value
+                elif item == "Payables Days":
+                    st.session_state.assumptions['balance_sheet']['payables_days'] = value
+            elif category == "Valuation":
+                if item == "WACC":
+                    st.session_state.assumptions['valuation']['wacc'] = value
+                elif item == "Terminal Growth":
+                    st.session_state.assumptions['valuation']['terminal_growth'] = value
     
     def render_project_pipeline(self):
         """Render project pipeline and timeline"""
@@ -1680,24 +2947,49 @@ class RealEstateFinancialModel:
                 st.rerun()
     
     def render_revenue_forecast(self):
-        """Render revenue forecast based on project pipeline"""
-        st.header("Revenue Forecast Model")
+        """Render comprehensive revenue forecast including all segments"""
+        st.header("Comprehensive Revenue Forecast Model")
         
-        if st.session_state.project_data is None or (isinstance(st.session_state.project_data, pd.DataFrame) and st.session_state.project_data.empty):
-            st.warning("Project data required for accurate revenue forecasting. Click 'Sync Project Data' in the sidebar.")
-            st.info("Showing assumption-based forecast instead.")
+        # Check if we have AI-discovered revenue streams
+        has_ai_segments = 'comprehensive_model' in st.session_state and 'revenue_streams' in st.session_state.comprehensive_model
         
-        # Generate revenue forecast from projects
-        revenue_forecast = self.generate_revenue_forecast()
-        
-        # Display aggregated P&L forecast
-        st.subheader("Aggregated P&L Forecast from Projects")
-        self.display_aggregated_pnl_forecast()
-        
-        st.markdown("---")
-        
-        # Display forecast chart based on aggregated project data
-        st.subheader("Revenue Forecast from Project Pipeline")
+        if has_ai_segments:
+            st.success("📊 Revenue forecast includes all AI-discovered business segments")
+            
+            # Create tabs for different views
+            forecast_tabs = st.tabs([
+                "📊 Total Company Revenue",
+                "🏗️ Real Estate Projects",
+                "💼 Other Business Segments",
+                "📈 Consolidated Forecast"
+            ])
+            
+            with forecast_tabs[0]:
+                self.render_total_company_forecast()
+            
+            with forecast_tabs[1]:
+                self.render_project_pipeline_forecast()
+            
+            with forecast_tabs[2]:
+                self.render_other_segments_forecast()
+            
+            with forecast_tabs[3]:
+                self.render_consolidated_forecast()
+        else:
+            # Original project-only forecast
+            st.info("Run AI discovery to see comprehensive revenue forecast for all business segments")
+            
+            # Generate revenue forecast from projects only
+            revenue_forecast = self.generate_revenue_forecast()
+            
+            # Display aggregated P&L forecast
+            st.subheader("Aggregated P&L Forecast from Projects")
+            self.display_aggregated_pnl_forecast()
+            
+            st.markdown("---")
+            
+            # Display forecast chart based on aggregated project data
+            st.subheader("Revenue Forecast from Project Pipeline")
         
         # Get aggregated revenue data from projects
         if st.session_state.project_data is not None and not st.session_state.project_data.empty:
@@ -1808,6 +3100,478 @@ class RealEstateFinancialModel:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No project data available for revenue forecast")
+    
+    def render_total_company_forecast(self):
+        """Render total company revenue forecast combining selected segments only"""
+        st.subheader("📊 Total Company Revenue Forecast")
+        
+        # Get only selected revenue streams
+        if 'selected_streams_data' in st.session_state:
+            revenue_streams = st.session_state.selected_streams_data
+        else:
+            revenue_streams = st.session_state.comprehensive_model.get('revenue_streams', [])
+        current_year = datetime.now().year
+        forecast_years = st.session_state.get('forecast_years', 5)
+        years = list(range(current_year, current_year + forecast_years + 1))
+        
+        # Initialize forecast data
+        forecast_data = {year: {} for year in years}
+        
+        # Generate forecast for each segment using dynamic assumptions
+        for stream in revenue_streams:
+            segment_name = stream.get('segment_name', 'Unknown')
+            base_revenue = stream.get('revenue_2023', 0) or stream.get('revenue_2022', 0)
+            
+            # Get dynamic assumptions for this segment
+            if 'dynamic_assumptions' in st.session_state and segment_name in st.session_state.dynamic_assumptions:
+                growth_rate = st.session_state.dynamic_assumptions[segment_name]['revenue_growth'] / 100
+                margin = st.session_state.dynamic_assumptions[segment_name]['gross_margin'] / 100
+            else:
+                growth_rate = stream.get('growth_rate', 0.10)
+                margin = stream.get('gross_margin', 0.25)
+            
+            # Calculate forecast for this segment
+            for i, year in enumerate(years):
+                if 'real estate' in segment_name.lower() and st.session_state.project_data is not None:
+                    # Use project-based forecast for real estate
+                    revenue = self.calculate_real_estate_revenue_for_year(year)
+                else:
+                    # Use growth-based forecast for other segments
+                    revenue = base_revenue * ((1 + growth_rate) ** (i + 1))
+                
+                forecast_data[year][segment_name] = revenue
+        
+        # Create DataFrame for display
+        forecast_df = pd.DataFrame(forecast_data).T
+        forecast_df.index.name = 'Year'
+        
+        # Add total column
+        forecast_df['TOTAL'] = forecast_df.sum(axis=1)
+        
+        # Display in billions VND
+        st.write("**Revenue Forecast by Segment (Billion VND)**")
+        display_df = forecast_df / 1e9
+        st.dataframe(display_df.style.format("{:.1f}"), use_container_width=True)
+        
+        # Create stacked bar chart
+        fig = go.Figure()
+        
+        for column in forecast_df.columns:
+            if column != 'TOTAL':
+                fig.add_trace(go.Bar(
+                    name=column,
+                    x=years,
+                    y=forecast_df[column] / 1e9,
+                    text=[f"{v:.0f}B" if v > 100e9 else "" for v in forecast_df[column]],
+                    textposition='inside'
+                ))
+        
+        # Add total line
+        fig.add_trace(go.Scatter(
+            x=years,
+            y=forecast_df['TOTAL'] / 1e9,
+            name='Total Revenue',
+            mode='lines+markers+text',
+            line=dict(color='red', width=3),
+            text=[f"{v:.0f}B" for v in forecast_df['TOTAL'] / 1e9],
+            textposition='top center',
+            yaxis='y2'
+        ))
+        
+        fig.update_layout(
+            title="Total Company Revenue Forecast",
+            xaxis_title="Year",
+            yaxis=dict(title="Revenue (Billion VND)"),
+            yaxis2=dict(title="Total (Billion VND)", overlaying='y', side='right'),
+            barmode='stack',
+            height=500,
+            showlegend=True
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show growth metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_growth = (forecast_df['TOTAL'].iloc[-1] / forecast_df['TOTAL'].iloc[0]) ** (1/forecast_years) - 1
+            st.metric("CAGR", f"{total_growth*100:.1f}%")
+        
+        with col2:
+            avg_revenue = forecast_df['TOTAL'].mean() / 1e9
+            st.metric("Avg Annual Revenue", f"{avg_revenue:.0f}B VND")
+        
+        with col3:
+            peak_revenue = forecast_df['TOTAL'].max() / 1e9
+            st.metric("Peak Revenue", f"{peak_revenue:.0f}B VND")
+    
+    def render_project_pipeline_forecast(self):
+        """Render forecast specifically from real estate projects"""
+        st.subheader("🏗️ Real Estate Project Pipeline Forecast")
+        
+        if st.session_state.project_data is None or (isinstance(st.session_state.project_data, pd.DataFrame) and st.session_state.project_data.empty):
+            st.info("No project data available. Please sync project data from the sidebar.")
+            return
+        
+        # Generate revenue forecast from projects
+        revenue_forecast = self.generate_revenue_forecast()
+        df_projects = st.session_state.project_data
+        years = revenue_forecast['years']
+        current_year = datetime.now().year
+        
+        # Initialize aggregated revenue and project breakdown
+        total_revenue_by_year = [0] * len(years)
+        project_revenue_matrix = {}  # Store revenue by project and year
+        
+        # Aggregate revenue from all projects
+        for _, project in df_projects.iterrows():
+            project_name = project.get('project_name', 'Unknown')
+            project_revenue_matrix[project_name] = [0] * len(years)
+            
+            # Get revenue schedule
+            revenue_schedule = project.get('revenue_schedule', {})
+            
+            # If no saved schedule, calculate it
+            if not isinstance(revenue_schedule, dict) or not revenue_schedule:
+                # Calculate on the fly
+                nsa = float(project.get('net_sellable_area', 0) or 0)
+                asp = float(project.get('average_selling_price', 0) or 0)
+                total_revenue = nsa * asp / 1e9  # Convert to billions
+                
+                revenue_dist = project.get('revenue_distribution', {})
+                if not isinstance(revenue_dist, dict):
+                    revenue_dist = {}
+                
+                revenue_start = int(project.get('revenue_booking_start_year', current_year))
+                project_end = int(project.get('project_completion_year', current_year + 3))
+                
+                # If no distribution, create even split
+                if not revenue_dist:
+                    booking_years = list(range(revenue_start, project_end + 1))
+                    if booking_years:
+                        even_pct = 100.0 / len(booking_years)
+                        for year in booking_years:
+                            revenue_dist[str(year)] = even_pct
+                
+                # Create schedule
+                revenue_schedule = {}
+                for year in range(revenue_start, project_end + 1):
+                    year_str = str(year)
+                    year_pct = revenue_dist.get(year_str, 0) / 100.0
+                    revenue_schedule[year_str] = total_revenue * year_pct
+            
+            # Add to yearly totals and project matrix
+            for i, year in enumerate(years):
+                year_str = str(year)
+                if year_str in revenue_schedule:
+                    revenue_amount = revenue_schedule[year_str]
+                    total_revenue_by_year[i] += revenue_amount
+                    project_revenue_matrix[project_name][i] = revenue_amount
+        
+        # Create stacked bar chart showing breakdown by project
+        fig = go.Figure()
+        
+        # Define colors for projects
+        colors = px.colors.qualitative.Plotly + px.colors.qualitative.Set1 + px.colors.qualitative.Set2
+        
+        # Add a bar for each project
+        for idx, (project_name, revenues) in enumerate(project_revenue_matrix.items()):
+            # Only add projects that have revenue
+            if sum(revenues) > 0:
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=revenues,
+                    name=project_name,
+                    marker_color=colors[idx % len(colors)],
+                    text=[f'{v:.0f}B' if v > 0 else '' for v in revenues],
+                    textposition='inside',
+                    hovertemplate='%{y:.1f}B VND<extra></extra>'
+                ))
+        
+        # Add total revenue line
+        fig.add_trace(go.Scatter(
+            x=years,
+            y=total_revenue_by_year,
+            name='Total Revenue',
+            mode='lines+markers+text',
+            line=dict(color='red', width=3),
+            marker=dict(size=8),
+            text=[f'{v:.0f}B' for v in total_revenue_by_year],
+            textposition='top center',
+            yaxis='y2',
+            hovertemplate='Total: %{y:.1f}B VND<extra></extra>'
+        ))
+        
+        fig.update_layout(
+            title="Revenue Forecast by Project (Billion VND)",
+            xaxis_title="Year",
+            yaxis=dict(title="Revenue (B VND)", side='left'),
+            yaxis2=dict(title="Total Revenue (B VND)", overlaying='y', side='right'),
+            barmode='stack',
+            height=600,
+            hovermode='x unified',
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.1
+            )
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show project summary table
+        st.write("**Project Revenue Summary (Billion VND)**")
+        summary_data = []
+        for project_name, revenues in project_revenue_matrix.items():
+            if sum(revenues) > 0:
+                summary_data.append({
+                    'Project': project_name,
+                    'Total Revenue': sum(revenues),
+                    'Peak Year': years[revenues.index(max(revenues))],
+                    'Peak Revenue': max(revenues)
+                })
+        
+        if summary_data:
+            summary_df = pd.DataFrame(summary_data)
+            summary_df = summary_df.sort_values('Total Revenue', ascending=False)
+            st.dataframe(summary_df.style.format({'Total Revenue': '{:.1f}', 'Peak Revenue': '{:.1f}'}), use_container_width=True)
+    
+    def render_other_segments_forecast(self):
+        """Render forecast for selected non-real estate segments"""
+        st.subheader("💼 Other Business Segments Forecast")
+        
+        # Get only selected revenue streams
+        if 'selected_streams_data' in st.session_state:
+            revenue_streams = st.session_state.selected_streams_data
+        else:
+            revenue_streams = st.session_state.comprehensive_model.get('revenue_streams', [])
+        
+        non_real_estate = [s for s in revenue_streams if 'real estate' not in s.get('segment_name', '').lower()]
+        
+        if not non_real_estate:
+            st.info("No other business segments identified")
+            return
+        
+        current_year = datetime.now().year
+        forecast_years = st.session_state.get('forecast_years', 5)
+        years = list(range(current_year, current_year + forecast_years + 1))
+        
+        # Create forecast for each non-real estate segment
+        fig = go.Figure()
+        
+        for stream in non_real_estate:
+            segment_name = stream.get('segment_name', 'Unknown')
+            base_revenue = stream.get('revenue_2023', 0) or stream.get('revenue_2022', 0)
+            
+            # Get dynamic assumptions
+            if 'dynamic_assumptions' in st.session_state and segment_name in st.session_state.dynamic_assumptions:
+                growth_rate = st.session_state.dynamic_assumptions[segment_name]['revenue_growth'] / 100
+            else:
+                growth_rate = stream.get('growth_rate', 0.10)
+            
+            # Calculate forecast
+            forecast = []
+            for i in range(len(years)):
+                revenue = base_revenue * ((1 + growth_rate) ** (i + 1))
+                forecast.append(revenue / 1e9)
+            
+            fig.add_trace(go.Scatter(
+                x=years,
+                y=forecast,
+                name=segment_name,
+                mode='lines+markers',
+                line=dict(width=2),
+                marker=dict(size=8)
+            ))
+        
+        fig.update_layout(
+            title="Other Business Segments Revenue Forecast",
+            xaxis_title="Year",
+            yaxis_title="Revenue (Billion VND)",
+            height=400,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show segment details
+        st.write("**Segment Growth Assumptions:**")
+        
+        cols = st.columns(len(non_real_estate) if len(non_real_estate) <= 4 else 4)
+        for i, stream in enumerate(non_real_estate):
+            segment_name = stream.get('segment_name', 'Unknown')
+            col_idx = i % len(cols)
+            
+            with cols[col_idx]:
+                if 'dynamic_assumptions' in st.session_state and segment_name in st.session_state.dynamic_assumptions:
+                    growth = st.session_state.dynamic_assumptions[segment_name]['revenue_growth']
+                    margin = st.session_state.dynamic_assumptions[segment_name]['gross_margin']
+                else:
+                    growth = stream.get('growth_rate', 0.10) * 100
+                    margin = stream.get('gross_margin', 0.25) * 100
+                
+                st.metric(segment_name, f"{growth:.1f}% growth", f"{margin:.1f}% margin")
+    
+    def render_consolidated_forecast(self):
+        """Render consolidated P&L forecast combining all segments"""
+        st.subheader("📈 Consolidated Financial Forecast")
+        
+        current_year = datetime.now().year
+        forecast_years = st.session_state.get('forecast_years', 5)
+        years = list(range(current_year, current_year + forecast_years + 1))
+        
+        # Initialize P&L structure
+        pnl_data = []
+        
+        # Calculate revenue for each year
+        for year in years:
+            year_data = {'Year': year}
+            
+            # Real Estate revenue from projects (only if selected)
+            real_estate_selected = any('real estate' in s.get('segment_name', '').lower() 
+                                      for s in st.session_state.get('selected_streams_data', []))
+            
+            if real_estate_selected:
+                re_revenue = self.calculate_real_estate_revenue_for_year(year)
+                year_data['Real Estate Revenue'] = re_revenue / 1e9
+            else:
+                year_data['Real Estate Revenue'] = 0
+            
+            # Other segments revenue
+            other_revenue = 0
+            # Get only selected revenue streams
+            if 'selected_streams_data' in st.session_state:
+                revenue_streams = st.session_state.selected_streams_data
+            else:
+                revenue_streams = st.session_state.comprehensive_model.get('revenue_streams', [])
+            
+            for stream in revenue_streams:
+                if 'real estate' not in stream.get('segment_name', '').lower():
+                    segment_name = stream.get('segment_name')
+                    base_revenue = stream.get('revenue_2023', 0) or stream.get('revenue_2022', 0)
+                    
+                    if 'dynamic_assumptions' in st.session_state and segment_name in st.session_state.dynamic_assumptions:
+                        growth_rate = st.session_state.dynamic_assumptions[segment_name]['revenue_growth'] / 100
+                    else:
+                        growth_rate = stream.get('growth_rate', 0.10)
+                    
+                    year_idx = year - current_year
+                    segment_revenue = base_revenue * ((1 + growth_rate) ** (year_idx + 1))
+                    other_revenue += segment_revenue
+            
+            year_data['Other Segments Revenue'] = other_revenue / 1e9
+            year_data['Total Revenue'] = year_data['Real Estate Revenue'] + year_data['Other Segments Revenue']
+            
+            # Calculate costs and margins
+            # Use weighted average margins
+            re_margin = 0.30  # Default real estate margin
+            other_margin = 0.20  # Default other segments margin
+            
+            if year_data['Total Revenue'] > 0:
+                weighted_margin = (year_data['Real Estate Revenue'] * re_margin + 
+                                 year_data['Other Segments Revenue'] * other_margin) / year_data['Total Revenue']
+            else:
+                weighted_margin = 0.25
+            
+            year_data['Gross Profit'] = year_data['Total Revenue'] * weighted_margin
+            year_data['Operating Expenses'] = year_data['Total Revenue'] * st.session_state.assumptions['costs']['sga_pct'] / 100
+            year_data['EBIT'] = year_data['Gross Profit'] - year_data['Operating Expenses']
+            year_data['Tax'] = max(0, year_data['EBIT'] * st.session_state.assumptions['costs']['tax_rate'] / 100)
+            year_data['Net Profit'] = year_data['EBIT'] - year_data['Tax']
+            
+            pnl_data.append(year_data)
+        
+        # Create DataFrame
+        pnl_df = pd.DataFrame(pnl_data)
+        pnl_df.set_index('Year', inplace=True)
+        
+        # Display table
+        st.write("**Consolidated P&L Forecast (Billion VND)**")
+        st.dataframe(pnl_df.style.format("{:.1f}"), use_container_width=True)
+        
+        # Create waterfall chart for revenue composition
+        fig = go.Figure()
+        
+        # Add bars for each revenue component
+        fig.add_trace(go.Bar(
+            name='Real Estate',
+            x=years,
+            y=pnl_df['Real Estate Revenue'],
+            marker_color='lightblue'
+        ))
+        
+        fig.add_trace(go.Bar(
+            name='Other Segments',
+            x=years,
+            y=pnl_df['Other Segments Revenue'],
+            marker_color='lightgreen'
+        ))
+        
+        # Add profit line
+        fig.add_trace(go.Scatter(
+            name='Net Profit',
+            x=years,
+            y=pnl_df['Net Profit'],
+            mode='lines+markers',
+            line=dict(color='darkgreen', width=3),
+            yaxis='y2'
+        ))
+        
+        fig.update_layout(
+            title="Revenue Composition and Profitability",
+            xaxis_title="Year",
+            yaxis=dict(title="Revenue (Billion VND)"),
+            yaxis2=dict(title="Net Profit (Billion VND)", overlaying='y', side='right'),
+            barmode='stack',
+            height=500
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show key metrics
+        st.write("**Key Financial Metrics**")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            avg_margin = pnl_df['Net Profit'].sum() / pnl_df['Total Revenue'].sum() * 100
+            st.metric("Avg Net Margin", f"{avg_margin:.1f}%")
+        
+        with col2:
+            revenue_cagr = (pnl_df['Total Revenue'].iloc[-1] / pnl_df['Total Revenue'].iloc[0]) ** (1/forecast_years) - 1
+            st.metric("Revenue CAGR", f"{revenue_cagr*100:.1f}%")
+        
+        with col3:
+            profit_cagr = (pnl_df['Net Profit'].iloc[-1] / pnl_df['Net Profit'].iloc[0]) ** (1/forecast_years) - 1 if pnl_df['Net Profit'].iloc[0] > 0 else 0
+            st.metric("Profit CAGR", f"{profit_cagr*100:.1f}%")
+        
+        with col4:
+            peak_profit = pnl_df['Net Profit'].max()
+            st.metric("Peak Net Profit", f"{peak_profit:.0f}B VND")
+    
+    def calculate_real_estate_revenue_for_year(self, year):
+        """Calculate real estate revenue for a specific year from projects"""
+        if st.session_state.project_data is None or st.session_state.project_data.empty:
+            return 0
+        
+        total_revenue = 0
+        
+        for _, project in st.session_state.project_data.iterrows():
+            revenue_schedule = project.get('revenue_schedule', {})
+            year_str = str(year)
+            
+            if year_str in revenue_schedule:
+                total_revenue += revenue_schedule[year_str] * 1e9  # Convert from billions
+        
+        return total_revenue
+    
+    def display_project_revenue_forecast(self):
+        """Display revenue forecast specifically from projects"""
+        # This is the existing project forecast logic
+        # Can reuse most of the existing code
+        pass
     
     def generate_revenue_forecast(self):
         """Generate revenue forecast from project pipeline"""

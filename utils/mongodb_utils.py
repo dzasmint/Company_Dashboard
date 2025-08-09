@@ -310,11 +310,14 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             "total_construction_cost": project_data.get('total_construction_cost', 0),
             "total_land_cost": project_data.get('total_land_cost', 0),
             "total_sga_cost": project_data.get('total_sga_cost', 0),
-            # Revenue and presales distribution fields
+            # Revenue and presales distribution percentages
             "revenue_distribution": project_data.get('revenue_distribution', {}),
             "presales_distribution": project_data.get('presales_distribution', {}),
-            "custom_revenue_schedule": project_data.get('custom_revenue_schedule', False),
-            "custom_presales_schedule": project_data.get('custom_presales_schedule', False),
+            # Calculated yearly schedules (in billions VND)
+            "revenue_schedule": project_data.get('revenue_schedule', {}),
+            "construction_schedule": project_data.get('construction_schedule', {}),
+            "land_schedule": project_data.get('land_schedule', {}),
+            "sga_schedule": project_data.get('sga_schedule', {}),
             "last_updated": datetime.datetime.now(),
             "created_date": datetime.datetime.now()
         }
@@ -396,6 +399,182 @@ def delete_project_from_mongodb(company_ticker, project_name):
             "success": False, 
             "message": f"Error deleting project from MongoDB: {str(e)}"
         }
+
+
+# New MongoDB Helper Class for AI Agent functionality
+class MongoDBHelper:
+    """MongoDB helper class for AI Agent project discovery features"""
+    
+    def __init__(self):
+        """Initialize MongoDB connection"""
+        self.client = init_mongodb_connection()
+        if self.client:
+            self.db = self.client.get_database('VietnamStocks')
+            self.projects_collection = self.db.get_collection('RealEstateProjects')
+            self.discovery_collection = self.db.get_collection('ProjectDiscovery')
+        else:
+            self.db = None
+            self.projects_collection = None
+            self.discovery_collection = None
+    
+    def get_real_estate_projects(self, ticker: str) -> list:
+        """Get all real estate projects for a company"""
+        if self.projects_collection is None:
+            return []
+        
+        try:
+            projects = list(self.projects_collection.find({"company_ticker": ticker}))
+            # Remove MongoDB _id field
+            for project in projects:
+                if '_id' in project:
+                    del project['_id']
+            return projects
+        except Exception as e:
+            st.error(f"Error loading projects: {str(e)}")
+            return []
+    
+    def save_real_estate_project(self, project_data: dict) -> bool:
+        """Save a single real estate project"""
+        if self.projects_collection is None:
+            return False
+        
+        try:
+            # Add timestamps
+            project_data['last_updated'] = datetime.datetime.now()
+            if 'created_date' not in project_data:
+                project_data['created_date'] = datetime.datetime.now()
+            
+            # Insert project
+            self.projects_collection.insert_one(project_data)
+            return True
+        except Exception as e:
+            st.error(f"Error saving project: {str(e)}")
+            return False
+    
+    def upsert_real_estate_project(self, project_data: dict) -> bool:
+        """Update project if exists, insert if not"""
+        if self.projects_collection is None:
+            return False
+        
+        try:
+            # Prepare filter
+            filter_query = {
+                "project_name": project_data.get('project_name'),
+                "company_ticker": project_data.get('ticker')
+            }
+            
+            # Add timestamps
+            project_data['last_updated'] = datetime.datetime.now()
+            
+            # Check if exists
+            existing = self.projects_collection.find_one(filter_query)
+            
+            if existing:
+                # Preserve created_date
+                project_data['created_date'] = existing.get('created_date', datetime.datetime.now())
+                # Update
+                self.projects_collection.replace_one(filter_query, project_data)
+            else:
+                # Insert new
+                project_data['created_date'] = datetime.datetime.now()
+                self.projects_collection.insert_one(project_data)
+            
+            return True
+        except Exception as e:
+            st.error(f"Error upserting project: {str(e)}")
+            return False
+    
+    def delete_real_estate_projects(self, ticker: str) -> bool:
+        """Delete all projects for a company"""
+        if self.projects_collection is None:
+            return False
+        
+        try:
+            result = self.projects_collection.delete_many({"company_ticker": ticker})
+            st.info(f"Deleted {result.deleted_count} projects for {ticker}")
+            return True
+        except Exception as e:
+            st.error(f"Error deleting projects: {str(e)}")
+            return False
+    
+    def save_discovery_session(self, session_data: dict) -> bool:
+        """Save AI discovery session data for audit trail"""
+        if self.discovery_collection is None:
+            return False
+        
+        try:
+            session_data['timestamp'] = datetime.datetime.now()
+            self.discovery_collection.insert_one(session_data)
+            return True
+        except Exception as e:
+            st.error(f"Error saving discovery session: {str(e)}")
+            return False
+    
+    def get_discovery_history(self, ticker: str, limit: int = 10) -> list:
+        """Get discovery session history for a company"""
+        if self.discovery_collection is None:
+            return []
+        
+        try:
+            sessions = list(self.discovery_collection.find(
+                {"company_ticker": ticker}
+            ).sort("timestamp", -1).limit(limit))
+            
+            # Remove MongoDB _id field
+            for session in sessions:
+                if '_id' in session:
+                    del session['_id']
+            
+            return sessions
+        except Exception as e:
+            st.error(f"Error loading discovery history: {str(e)}")
+            return []
+    
+    def save_project_version(self, project_data: dict, version_note: str = "") -> bool:
+        """Save a versioned copy of project data for change tracking"""
+        if self.db is None:
+            return False
+        
+        try:
+            # Get or create versions collection
+            versions_collection = self.db.get_collection('ProjectVersions')
+            
+            # Create version document
+            version_doc = {
+                "project_name": project_data.get('project_name'),
+                "company_ticker": project_data.get('ticker'),
+                "version_date": datetime.datetime.now(),
+                "version_note": version_note,
+                "project_data": project_data
+            }
+            
+            versions_collection.insert_one(version_doc)
+            return True
+        except Exception as e:
+            st.error(f"Error saving project version: {str(e)}")
+            return False
+    
+    def get_project_versions(self, project_name: str, ticker: str) -> list:
+        """Get version history for a project"""
+        if self.db is None:
+            return []
+        
+        try:
+            versions_collection = self.db.get_collection('ProjectVersions')
+            versions = list(versions_collection.find({
+                "project_name": project_name,
+                "company_ticker": ticker
+            }).sort("version_date", -1))
+            
+            # Remove MongoDB _id field
+            for version in versions:
+                if '_id' in version:
+                    del version['_id']
+            
+            return versions
+        except Exception as e:
+            st.error(f"Error loading project versions: {str(e)}")
+            return []
 
 def load_financial_statements_from_mongodb(ticker):
     """Load financial statements data from MongoDB for a specific ticker"""
