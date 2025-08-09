@@ -56,9 +56,9 @@ REAL_ESTATE_CONFIG = {
 
 # MongoDB collections
 MONGODB_COLLECTIONS = {
-    'companies': 'companies',
+    'companies': 'Companies',
     'projects': 'projects',
-    'real_estate_projects': 'real_estate_projects'
+    'real_estate_projects': 'RealEstateProjects'
 }
 
 # API endpoints

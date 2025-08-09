@@ -32,13 +32,13 @@ def init_mongodb_connection():
             st.error("❌ MONGODB_CONNECTION_STRING not found in .env file. Please add it to your .env file.")
             return None
         
-        # Create MongoDB client with SSL certificate verification and increased timeout settings
+        # Create MongoDB client with SSL certificate verification and reasonable timeout settings
         client = MongoClient(
             connection_string, 
             tlsCAFile=certifi.where(),
-            serverSelectionTimeoutMS=30000,  # 30 second timeout (increased from 5s)
-            connectTimeoutMS=30000,          # 30 second connection timeout (increased from 10s)
-            socketTimeoutMS=30000            # 30 second socket timeout (increased from 10s)
+            serverSelectionTimeoutMS=5000,   # 5 second timeout
+            connectTimeoutMS=5000,           # 5 second connection timeout
+            socketTimeoutMS=5000             # 5 second socket timeout
         )
         
         # Test connection
@@ -310,6 +310,11 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             "total_construction_cost": project_data.get('total_construction_cost', 0),
             "total_land_cost": project_data.get('total_land_cost', 0),
             "total_sga_cost": project_data.get('total_sga_cost', 0),
+            # Revenue and presales distribution fields
+            "revenue_distribution": project_data.get('revenue_distribution', {}),
+            "presales_distribution": project_data.get('presales_distribution', {}),
+            "custom_revenue_schedule": project_data.get('custom_revenue_schedule', False),
+            "custom_presales_schedule": project_data.get('custom_presales_schedule', False),
             "last_updated": datetime.datetime.now(),
             "created_date": datetime.datetime.now()
         }
@@ -391,5 +396,107 @@ def delete_project_from_mongodb(company_ticker, project_name):
             "success": False, 
             "message": f"Error deleting project from MongoDB: {str(e)}"
         }
+
+def load_financial_statements_from_mongodb(ticker):
+    """Load financial statements data from MongoDB for a specific ticker"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return pd.DataFrame()
+        
+        # Get database and collection
+        db = client['VietnamStocks']
+        collection = db['FinancialStatements']
+        
+        # Query financial data for the ticker
+        cursor = collection.find({'TICKER': ticker})
+        data = list(cursor)
+        
+        if not data:
+            return pd.DataFrame()
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Remove MongoDB ObjectId
+        if '_id' in df.columns:
+            df = df.drop('_id', axis=1)
+        
+        # Pivot data to create time series (similar to CSV structure)
+        if 'KEYCODE' in df.columns and 'DATE' in df.columns and 'VALUE' in df.columns:
+            pivot_df = df.pivot_table(
+                index='DATE',
+                columns='KEYCODE', 
+                values='VALUE',
+                aggfunc='first'
+            )
+            pivot_df.sort_index(inplace=True)
+            return pivot_df
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"Error loading financial statements from MongoDB: {str(e)}")
+        return pd.DataFrame()
+
+def load_valuation_metrics_from_mongodb(ticker):
+    """Load valuation metrics data from MongoDB for a specific ticker"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return pd.DataFrame()
+        
+        # Get database and collection
+        db = client['VietnamStocks']
+        collection = db['ValuationMetrics']
+        
+        # Query valuation data for the ticker
+        cursor = collection.find({'TICKER': ticker})
+        data = list(cursor)
+        
+        if not data:
+            return pd.DataFrame()
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Remove MongoDB ObjectId
+        if '_id' in df.columns:
+            df = df.drop('_id', axis=1)
+        
+        # Pivot if needed
+        if 'KEYCODE' in df.columns and 'DATE' in df.columns and 'VALUE' in df.columns:
+            pivot_df = df.pivot_table(
+                index='DATE',
+                columns='KEYCODE',
+                values='VALUE', 
+                aggfunc='first'
+            )
+            pivot_df.sort_index(inplace=True)
+            return pivot_df
+            
+        return df
+        
+    except Exception as e:
+        st.error(f"Error loading valuation metrics from MongoDB: {str(e)}")
+        return pd.DataFrame()
+
+def get_available_tickers_from_mongodb():
+    """Get list of tickers available in MongoDB financial data"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return []
+        
+        # Get database and collection
+        db = client['VietnamStocks']
+        collection = db['FinancialStatements']
+        
+        # Get distinct tickers
+        tickers = collection.distinct('TICKER')
+        return sorted(tickers) if tickers else []
+        
+    except Exception as e:
+        return []
 
 # %%

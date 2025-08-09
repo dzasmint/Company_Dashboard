@@ -5,6 +5,55 @@ import requests
 import re
 import numpy as np
 
+def selling_progress_schedule_custom(
+    total_revenue: float,
+    project_start_year: int,
+    current_year: int,
+    sale_start_year: int,
+    sale_num_years: int,
+    end_booking_year: int,
+    distribution: dict = None
+) -> list:
+    """
+    Distribute total revenue based on custom distribution or evenly over years.
+    
+    Args:
+        total_revenue (float): Total revenue
+        project_start_year (int): Project start year
+        current_year (int): Current year
+        sale_start_year (int): Year selling begins
+        sale_num_years (int): Number of years selling takes
+        end_booking_year (int): Project completion year
+        distribution (dict): Custom distribution {year_str: percentage} or None for even split
+    
+    Returns:
+        List[float]: Annual revenue array from project_start_year to end_booking_year
+    """
+    if end_booking_year < sale_start_year:
+        raise ValueError("Revenue booking end year must be >= sale start year")
+    if (sale_start_year + sale_num_years - 1) > end_booking_year:
+        raise ValueError("Selling period exceeds revenue booking end year")
+
+    # Build full year list from project_start_year to end_booking_year
+    full_years = list(range(project_start_year, end_booking_year + 1))
+    revenue_by_year = [0.0] * len(full_years)
+    
+    if distribution and isinstance(distribution, dict):
+        # Use custom distribution
+        for i, year in enumerate(full_years):
+            if sale_start_year <= year < sale_start_year + sale_num_years:
+                # Get percentage for this year from distribution
+                year_pct = distribution.get(str(year), 0.0) / 100.0
+                revenue_by_year[i] = total_revenue * year_pct
+    else:
+        # Use even distribution (original logic)
+        annual_revenue = total_revenue / sale_num_years
+        for i, year in enumerate(full_years):
+            if sale_start_year <= year < sale_start_year + sale_num_years:
+                revenue_by_year[i] = annual_revenue
+    
+    return revenue_by_year
+
 def selling_progress_schedule(
     total_revenue: float,
     project_start_year: int,
@@ -102,6 +151,55 @@ def construction_payment_schedule(
 
     return cost_by_year
 
+def sga_payment_schedule_custom(
+    total_sga: float,
+    project_start_year: int,
+    current_year: int,
+    sale_start_year: int,
+    num_years: int,
+    end_booking_year: int,
+    distribution: dict = None
+) -> list:
+    """
+    Distribute total SG&A based on custom distribution or evenly over years.
+    
+    Args:
+        total_sga (float): Total SG&A
+        project_start_year (int): Project start year
+        current_year (int): Current year
+        sale_start_year (int): Year selling begins
+        num_years (int): Number of years selling takes
+        end_booking_year (int): Project completion year
+        distribution (dict): Custom distribution {year_str: percentage} or None for even split
+    
+    Returns:
+        List[float]: Annual SG&A array from project_start_year to end_booking_year
+    """
+    if end_booking_year < sale_start_year:
+        raise ValueError("end_booking_year must be >= sale_start_year")
+    if (sale_start_year + num_years - 1) > end_booking_year:
+        raise ValueError("SG&A period exceeds project completion year")
+
+    # Build full year list from project_start_year to end_booking_year
+    full_years = list(range(project_start_year, end_booking_year + 1))
+    sga_by_year = [0.0] * len(full_years)
+    
+    if distribution and isinstance(distribution, dict):
+        # Use custom distribution (same as revenue)
+        for i, year in enumerate(full_years):
+            if sale_start_year <= year < sale_start_year + num_years:
+                # Get percentage for this year from distribution
+                year_pct = distribution.get(str(year), 0.0) / 100.0
+                sga_by_year[i] = total_sga * year_pct
+    else:
+        # Use even distribution (original logic)
+        annual_sga = total_sga / num_years
+        for i, year in enumerate(full_years):
+            if sale_start_year <= year < sale_start_year + num_years:
+                sga_by_year[i] = annual_sga
+    
+    return sga_by_year
+
 def sga_payment_schedule(
     total_sga: float,
     project_start_year: int,
@@ -132,6 +230,122 @@ def sga_payment_schedule(
     ]
 
     return sga_by_year
+
+def generate_pnl_schedule_custom(
+    total_revenue: float,
+    total_land_payment: float,
+    total_construction_payment: float,
+    total_sga: float,
+    project_start_year: int,
+    current_year: int,
+    start_booking_year: int,
+    end_booking_year: int,
+    debt_amount: float = 0.0,
+    debt_length: int = 0,
+    interest_rate: float = 0.0,
+    revenue_distribution: dict = None
+) -> pd.DataFrame:
+    """
+    Generate a P&L schedule with custom revenue distribution.
+    
+    Args:
+        Same as generate_pnl_schedule plus:
+        revenue_distribution (dict): Custom revenue distribution {year_str: percentage}
+    
+    Returns:
+        pd.DataFrame: Year-by-year P&L table
+    """
+    if end_booking_year < start_booking_year:
+        raise ValueError("end_booking_year must be >= start_booking_year")
+
+    # Calculate annual interest expense
+    total_booking_years = end_booking_year - start_booking_year + 1
+    total_interest_expense = debt_amount * interest_rate * debt_length
+    annual_interest_expense = (total_interest_expense / total_booking_years) if total_booking_years > 0 else 0.0
+
+    pnl_data = []
+    for year in range(project_start_year, end_booking_year + 1):
+        # Determine if this is historical or future
+        is_historical = year < current_year
+        year_type = "Historical" if is_historical else "Future"
+        
+        if year < start_booking_year:
+            # Before revenue booking starts, all values are zero
+            revenue = 0.0
+            land_cost = 0.0
+            sga = 0.0
+            construction = 0.0
+            interest_expense = 0.0  
+            ebitda = 0.0
+            ebit = 0.0  
+            pbt = 0.0
+            tax = 0.0
+            pat = 0.0
+        else:
+            # Use custom distribution if provided
+            if revenue_distribution and isinstance(revenue_distribution, dict):
+                year_pct = revenue_distribution.get(str(year), 0.0) / 100.0
+                revenue = total_revenue * year_pct
+                # All P&L items follow revenue distribution pattern
+                sga = total_sga * year_pct
+                land_cost = total_land_payment * year_pct  # Proportionate to revenue
+                construction = total_construction_payment * year_pct  # Proportionate to revenue
+            else:
+                # Even distribution (original logic)
+                revenue = total_revenue / total_booking_years
+                land_cost = total_land_payment / total_booking_years
+                sga = total_sga / total_booking_years
+                construction = total_construction_payment / total_booking_years
+            
+            interest_expense = annual_interest_expense
+            
+            # Calculate P&L items
+            ebitda = revenue + land_cost + sga  # land_cost and sga are negative
+            ebit = ebitda + construction  # construction is negative
+            pbt = ebit - interest_expense  # interest is positive expense
+            tax = pbt * 0.2 if pbt > 0 else 0.0
+            pat = pbt - tax
+        
+        pnl_data.append({
+            "Year": year,
+            "Type": year_type,
+            "Revenue": revenue,
+            "Land Payment": land_cost,
+            "Construction Payment": construction,
+            "SG&A": sga,
+            "EBITDA": ebitda,
+            "Interest Expense": interest_expense,
+            "PBT": pbt,
+            "Tax Expense (20%)": tax,
+            "PAT": pat
+        })
+    
+    # Add summary row
+    summary_revenue = sum(row["Revenue"] for row in pnl_data)
+    summary_land = sum(row["Land Payment"] for row in pnl_data)
+    summary_construction = sum(row["Construction Payment"] for row in pnl_data)
+    summary_sga = sum(row["SG&A"] for row in pnl_data)
+    summary_ebitda = sum(row["EBITDA"] for row in pnl_data)
+    summary_interest = sum(row["Interest Expense"] for row in pnl_data)
+    summary_pbt = sum(row["PBT"] for row in pnl_data)
+    summary_tax = sum(row["Tax Expense (20%)"] for row in pnl_data)
+    summary_pat = sum(row["PAT"] for row in pnl_data)
+    
+    pnl_data.append({
+        "Year": "Total",
+        "Type": "Summary",
+        "Revenue": summary_revenue,
+        "Land Payment": summary_land,
+        "Construction Payment": summary_construction,
+        "SG&A": summary_sga,
+        "EBITDA": summary_ebitda,
+        "Interest Expense": summary_interest,
+        "PBT": summary_pbt,
+        "Tax Expense (20%)": summary_tax,
+        "PAT": summary_pat
+    })
+    
+    return pd.DataFrame(pnl_data)
 
 def generate_pnl_schedule(
     total_revenue: float,

@@ -4,7 +4,11 @@
       "Bash(py -m streamlit run:*)",
       "Bash(streamlit run:*)",
       "Bash(python test_mongodb_connection.py:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(cd:*)",
+      "Bash(pip show:*)",
+      "Bash(pip check)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }
