@@ -201,6 +201,70 @@ def get_projects_for_company(company_ticker):
     
     return sorted(company_projects['project_name'].tolist())
 
+def get_company_assumptions(company_ticker):
+    """Get company assumptions from MongoDB Companies collection"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return {}
+        
+        # Get database and collection
+        db_name = 'VietnamStocks'
+        collection_name = MONGODB_COLLECTIONS['companies']
+        
+        db = client.get_database(db_name)
+        collection = db.get_collection(collection_name)
+        
+        # Query for specific company
+        company_data = collection.find_one({"ticker": company_ticker})
+        
+        if not company_data:
+            return {}
+        
+        # Extract assumptions data
+        assumptions = {
+            'revenue_streams': company_data.get('revenue_streams', []),
+            'wacc': company_data.get('wacc', 0.12),  # Default 12%
+            'debt_financing_pct': company_data.get('debt_financing_pct', 0.30),  # Default 30%
+            'tax_rate': company_data.get('tax_rate', 0.20),  # Default 20%
+            'custom_assumptions': company_data.get('custom_assumptions', [])  # Custom user-defined assumptions
+        }
+        
+        return assumptions
+        
+    except Exception as e:
+        st.error(f"❌ Error loading assumptions for {company_ticker} from MongoDB: {str(e)}")
+        return {}
+
+def save_company_assumptions(company_ticker, assumptions_data):
+    """Save company assumptions to MongoDB Companies collection"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return {"success": False, "message": "Failed to connect to MongoDB"}
+        
+        # Get database and collection
+        db_name = 'VietnamStocks'
+        collection_name = MONGODB_COLLECTIONS['companies']
+        
+        db = client.get_database(db_name)
+        collection = db.get_collection(collection_name)
+        
+        # Update company document with assumptions
+        result = collection.update_one(
+            {"ticker": company_ticker},
+            {"$set": assumptions_data},
+            upsert=True  # Create if doesn't exist
+        )
+        
+        if result.modified_count > 0 or result.upserted_id:
+            return {"success": True, "message": "Assumptions saved successfully"}
+        else:
+            return {"success": False, "message": "No changes made"}
+            
+    except Exception as e:
+        return {"success": False, "message": f"Error saving assumptions: {str(e)}"}
+
 def get_financials_for_company(company_ticker, selected_quarter):
     """Get financial data for a specific company from CompanyFinancials collection"""
     try:
@@ -318,6 +382,8 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             "construction_schedule": project_data.get('construction_schedule', {}),
             "land_schedule": project_data.get('land_schedule', {}),
             "sga_schedule": project_data.get('sga_schedule', {}),
+            "interest_schedule": project_data.get('interest_schedule', {}),
+            "pnl_schedule": project_data.get('pnl_schedule', {}),
             "last_updated": datetime.datetime.now(),
             "created_date": datetime.datetime.now()
         }

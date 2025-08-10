@@ -55,6 +55,7 @@ from utils.perplexity_utils import (
 )
 from utils.project_pipeline_manager import ProjectPipelineManager
 from utils.claude_project_extractor import ClaudeProjectExtractor
+from utils.god_ai_assistant import GodAIAssistant
 # ComprehensiveRevenueAnalyzer removed - financial modeling simplified
 # from core.data_loader import data_loader
 # from config.constants import FINANCIAL_CONFIG, REAL_ESTATE_CONFIG
@@ -78,6 +79,7 @@ class RealEstateFinancialModel:
         # Don't initialize MongoDB connection here - only connect when needed
         self.db_client = None
         self.mongo_initialized = False
+        self.god_ai = GodAIAssistant()  # Initialize God AI
         self.initialize_session_state()
         self.setup_sidebar()
         
@@ -401,8 +403,8 @@ class RealEstateFinancialModel:
     
     def render_main_interface(self):
         """Render the main modeling interface"""
-        st.title("🏢 Real Estate Financial Model - AI Agent Edition 🤖")
-        st.caption("Enhanced with Claude AI for financial statement analysis and Perplexity for market research")
+        st.title("🏢 Real Estate Financial Model - God AI Edition 🧠")
+        st.caption("Ultimate AI-powered financial modeling with intelligent assistant at your command")
         
         if not st.session_state.selected_company:
             st.info("👈 Please select a company from the sidebar to begin")
@@ -417,7 +419,8 @@ class RealEstateFinancialModel:
             "📈 Revenue Forecast",
             "📑 Valuation",
             "📰 Research Insights",
-            "📥 Export Model"
+            "📥 Export Model",
+            "🧠 God AI Assistant"
         ])
         
         with tabs[0]:
@@ -443,6 +446,9 @@ class RealEstateFinancialModel:
             
         with tabs[7]:
             self.render_export_interface()
+        
+        with tabs[8]:
+            self.render_god_ai_assistant()
     
     def render_historical_analysis(self):
         """Render historical financial analysis"""
@@ -4728,6 +4734,346 @@ class RealEstateFinancialModel:
         )
         
         st.plotly_chart(fig, use_container_width=True)
+    
+    def render_god_ai_assistant(self):
+        """Render the God AI Assistant interface"""
+        st.header("🧠 God AI Assistant")
+        st.caption("Your intelligent companion for comprehensive financial analysis")
+        
+        # Initialize chat history if not exists
+        if 'chat_history' not in st.session_state:
+            st.session_state.chat_history = []
+        
+        if 'current_ai_result' not in st.session_state:
+            st.session_state.current_ai_result = None
+        
+        # Main container for conversation and results (takes most of the screen)
+        main_container = st.container()
+        with main_container:
+            # Display area for chat history and results
+            display_container = st.container(height=500)
+            with display_container:
+                # Show chat history
+                for msg in st.session_state.chat_history:
+                    if msg['role'] == 'user':
+                        with st.chat_message("user"):
+                            st.write(msg['content'])
+                    else:
+                        with st.chat_message("assistant"):
+                            # Display the message
+                            st.write(msg.get('content', ''))
+                            
+                            # If this is the most recent AI response, show the detailed results
+                            if st.session_state.chat_history and msg == st.session_state.chat_history[-1] and msg['role'] == 'assistant':
+                                if st.session_state.current_ai_result:
+                                    self.display_ai_results_inline()
+                
+                # If no messages yet, show welcome message
+                if not st.session_state.chat_history:
+                    with st.chat_message("assistant"):
+                        st.write("👋 Hello! I'm your God AI Assistant. I can help you with:")
+                        st.write("• 📊 List and analyze all projects")
+                        st.write("• 🏆 Rank projects by RNAV or other metrics")
+                        st.write("• 💡 Suggest ASP and other parameters")
+                        st.write("• 📈 Analyze growth and profitability")
+                        st.write("• 📊 Calculate portfolio metrics")
+                        st.write("")
+                        st.write("Try asking: **'Show me all projects'** or use the quick actions below!")
+        
+        # Separator
+        st.markdown("---")
+        
+        # Bottom section with input and controls
+        bottom_container = st.container()
+        with bottom_container:
+            # Quick actions in a single row
+            st.markdown("**⚡ Quick Actions:**")
+            quick_cols = st.columns(6)
+            with quick_cols[0]:
+                if st.button("📊 List Projects", use_container_width=True):
+                    self.process_ai_query("Show me all projects")
+            with quick_cols[1]:
+                if st.button("🏆 Top RNAV", use_container_width=True):
+                    self.process_ai_query("What are the top 5 projects by RNAV?")
+            with quick_cols[2]:
+                if st.button("📈 Growth", use_container_width=True):
+                    self.process_ai_query("Which year will have the highest profit growth?")
+            with quick_cols[3]:
+                if st.button("💡 Suggest ASP", use_container_width=True):
+                    self.process_ai_query("Suggest ASP for current projects")
+            with quick_cols[4]:
+                if st.button("📊 Metrics", use_container_width=True):
+                    self.process_ai_query("Calculate portfolio metrics")
+            with quick_cols[5]:
+                if st.button("🗑️ Clear Chat", use_container_width=True):
+                    st.session_state.chat_history = []
+                    st.session_state.current_ai_result = None
+                    st.rerun()
+            
+            # Input area at the very bottom
+            col_input, col_buttons = st.columns([5, 1])
+            
+            with col_input:
+                user_input = st.text_area(
+                    "Ask a question...",
+                    height=100,
+                    key="ai_chat_input",
+                    placeholder="Examples: Show all projects | What's the largest RNAV? | Which year has highest growth? | Suggest parameters for Grand Marina",
+                    label_visibility="collapsed"
+                )
+            
+            with col_buttons:
+                st.write("")  # Spacer to align with text area
+                if st.button("📤 Send", type="primary", use_container_width=True, help="Send message"):
+                    if user_input:
+                        self.process_ai_query(user_input)
+                
+                uploaded_file = st.file_uploader(
+                    "📎 Upload",
+                    type=['pdf', 'xlsx', 'xls'],
+                    key="ai_file_upload",
+                    label_visibility="collapsed",
+                    help="Upload PDF or Excel files for analysis"
+                )
+                if uploaded_file:
+                    self.process_file_upload(uploaded_file)
+    
+    def process_ai_query(self, query: str):
+        """Process user query through God AI"""
+        if not query:
+            return
+        
+        # Prepare context
+        context = {
+            'selected_company': st.session_state.get('selected_company'),
+            'project_data': st.session_state.get('project_data'),
+            'historical_data': st.session_state.get('historical_data'),
+            'assumptions': st.session_state.get('assumptions')
+        }
+        
+        # Process query
+        with st.spinner("🤔 Thinking..."):
+            result = self.god_ai.process_query(query, context)
+        
+        # Trigger rerun to display results
+        st.rerun()
+    
+    def process_file_upload(self, uploaded_file):
+        """Process uploaded file for AI analysis"""
+        st.info(f"Processing {uploaded_file.name}...")
+        # This would integrate with Claude for document extraction
+        self.process_ai_query(f"Extract projects from uploaded {uploaded_file.name}")
+    
+    def display_ai_results_inline(self):
+        """Display AI results inline within the chat message"""
+        if st.session_state.current_ai_result is None:
+            return
+        
+        result = st.session_state.current_ai_result
+        
+        # Display based on result type
+        if result['type'] == 'project_list':
+            if result.get('data') is not None and not result['data'].empty:
+                st.dataframe(
+                    result['data'],
+                    use_container_width=True
+                )
+                # Add follow-up action buttons
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button("📊 Analyze Growth", key="inline_growth"):
+                        self.process_ai_query("Analyze growth for these projects")
+                with col2:
+                    if st.button("🏆 Rank by RNAV", key="inline_rank"):
+                        self.process_ai_query("Rank projects by RNAV")
+                with col3:
+                    if st.button("💡 Suggest Parameters", key="inline_suggest"):
+                        self.process_ai_query("Suggest parameters for projects")
+        
+        elif result['type'] == 'ranked_projects':
+            if result.get('data') is not None:
+                st.dataframe(result['data'], use_container_width=True)
+            if result.get('metric'):
+                st.caption(f"Ranked by: {result['metric']}")
+        
+        elif result['type'] == 'parameter_suggestions':
+            suggestions = result.get('suggestions', [])
+            for i, suggestion in enumerate(suggestions):
+                with st.container(border=True):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.write(f"**{suggestion['project']}**")
+                        st.caption(f"{suggestion['parameter']}: {suggestion['value']:,.0f} {suggestion['unit']}")
+                        st.caption(f"Source: {suggestion['source']}")
+                    with col2:
+                        if st.button("✅ Apply", key=f"inline_apply_{i}"):
+                            st.success("Applied!")
+        
+        elif result['type'] == 'growth_analysis':
+            if result.get('chart'):
+                st.plotly_chart(result['chart'], use_container_width=True)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if result.get('peak_year'):
+                    st.metric("Peak Growth Year", result['peak_year'])
+                if result.get('growth_rate'):
+                    st.metric("Growth Rate", f"{result['growth_rate']:.1%}")
+            with col2:
+                if result.get('top_project'):
+                    st.metric("Top Contributor", result['top_project'])
+                if result.get('revenue_impact'):
+                    st.metric("Revenue Impact", f"{result['revenue_impact']:.0f}B VND")
+            
+            if result.get('data') is not None:
+                with st.expander("View detailed data"):
+                    st.dataframe(result['data'], use_container_width=True)
+        
+        elif result['type'] == 'metrics':
+            if result.get('metrics'):
+                metrics = result['metrics']
+                cols = st.columns(min(len(metrics), 4))
+                for i, (key, value) in enumerate(metrics.items()):
+                    with cols[i % len(cols)]:
+                        st.metric(key, value)
+            
+            if result.get('data') is not None:
+                with st.expander("View detailed metrics"):
+                    st.dataframe(result['data'], use_container_width=True)
+        
+        elif result['type'] == 'project_details':
+            if result.get('data') is not None:
+                st.dataframe(result['data'], use_container_width=True)
+        
+        elif result['type'] == 'error':
+            st.error(result.get('message', 'An error occurred'))
+        
+        elif result['type'] == 'info':
+            st.info(result.get('message', 'Information'))
+    
+    def display_ai_results(self):
+        """Display AI query results in the results panel"""
+        
+        if st.session_state.current_ai_result is None:
+            st.info("Results will appear here. Try asking: 'Show all projects' or 'What's the largest RNAV?'")
+            return
+        
+        result = st.session_state.current_ai_result
+        
+        # Display based on result type
+        if result['type'] == 'project_list':
+            st.markdown("#### 📋 Project List")
+            
+            if result.get('data') is not None and not result['data'].empty:
+                st.dataframe(
+                    result['data'],
+                    use_container_width=True,
+                    height=300
+                )
+                
+                # Add action buttons
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button("📊 Analyze Growth"):
+                        self.process_ai_query("Analyze growth for these projects")
+                with col2:
+                    if st.button("🏆 Rank by RNAV"):
+                        self.process_ai_query("Rank projects by RNAV")
+                with col3:
+                    if st.button("💡 Suggest Parameters"):
+                        self.process_ai_query("Suggest parameters for projects")
+            else:
+                st.warning(result.get('message', 'No data available'))
+        
+        elif result['type'] == 'ranked_projects':
+            st.markdown(f"#### 🏆 {result.get('message', 'Ranked Projects')}")
+            
+            if result.get('data') is not None:
+                st.dataframe(
+                    result['data'],
+                    use_container_width=True,
+                    height=300
+                )
+            
+            # Display metric used
+            if result.get('metric'):
+                st.info(f"Ranked by: {result['metric']}")
+        
+        elif result['type'] == 'parameter_suggestions':
+            st.markdown("#### 💡 AI Suggestions")
+            
+            suggestions = result.get('suggestions', [])
+            for suggestion in suggestions:
+                with st.container(border=True):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"**{suggestion['project']}**")
+                        st.caption(f"{suggestion['parameter']}: {suggestion['value']:,.0f} {suggestion['unit']}")
+                        st.caption(f"Source: {suggestion['source']}")
+                    with col2:
+                        if st.button("✅ Apply", key=f"apply_{suggestion['project']}_{suggestion['parameter']}"):
+                            st.success("Applied!")
+                            # TODO: Actually apply the suggestion
+        
+        elif result['type'] == 'growth_analysis':
+            st.markdown("#### 📈 Growth Analysis")
+            
+            # Display chart if available
+            if result.get('chart'):
+                st.plotly_chart(result['chart'], use_container_width=True)
+            
+            # Display metrics
+            col1, col2 = st.columns(2)
+            with col1:
+                if result.get('peak_year'):
+                    st.metric("Peak Growth Year", result['peak_year'])
+                if result.get('growth_rate'):
+                    st.metric("Growth Rate", f"{result['growth_rate']:.1%}")
+            with col2:
+                if result.get('top_project'):
+                    st.metric("Top Contributor", result['top_project'])
+                if result.get('revenue_impact'):
+                    st.metric("Revenue Impact", f"{result['revenue_impact']:.0f}B VND")
+            
+            # Display data table if available
+            if result.get('data') is not None:
+                st.dataframe(result['data'], use_container_width=True)
+        
+        elif result['type'] == 'metrics':
+            st.markdown("#### 📊 Portfolio Metrics")
+            
+            if result.get('data') is not None:
+                st.dataframe(result['data'], use_container_width=True)
+            
+            # Display key metrics in cards
+            if result.get('metrics'):
+                metrics = result['metrics']
+                cols = st.columns(len(metrics))
+                for i, (key, value) in enumerate(metrics.items()):
+                    with cols[i % len(cols)]:
+                        st.metric(key, value)
+        
+        elif result['type'] == 'project_details':
+            st.markdown(f"#### 📄 {result.get('message', 'Project Details')}")
+            
+            if result.get('data') is not None:
+                st.dataframe(result['data'], use_container_width=True)
+        
+        elif result['type'] == 'error':
+            st.error(result.get('message', 'An error occurred'))
+        
+        elif result['type'] == 'info':
+            st.info(result.get('message', 'Information'))
+        
+        elif result['type'] == 'general_response':
+            st.markdown("#### 💬 AI Response")
+            st.write(result.get('message', ''))
+        
+        else:
+            # Default display
+            st.write(result.get('message', 'Processing complete'))
+            if result.get('data') is not None:
+                st.dataframe(result['data'], use_container_width=True)
 
 def main():
     """Main function to run the application"""
