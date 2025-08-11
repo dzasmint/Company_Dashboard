@@ -332,21 +332,36 @@ Respond with ONLY the intent name."""
             entities['numbers'] = [float(n) for n in numbers]
         
         # Extract detailed metrics - expanded list
+        # Check for multi-word metrics first, then single words
+        query_lower = query.lower()
         metrics = [
-            'rnav', 'revenue', 'total revenue', 'sales', 'asp', 'average selling price', 
-            'nsa', 'net sellable area', 'construction cost', 'land cost', 
-            'gross margin', 'presales', 'presale', 'booking', 'revenue booking',
-            'units', 'number of units', 'total units', 'presales period',
-            'gross floor area', 'gfa', 'land area', 'sga', 'interest', 'debt', 
-            'pat', 'profit', 'net profit', 'net income', 'pbt', 'ebitda',
-            'financial', 'summary', 'overview', 'all metrics', 'trends',
-            'net margin', 'profit margin', 'margin'
+            # Multi-word metrics first (more specific)
+            'gross margin', 'net margin', 'profit margin',
+            'total revenue', 'net profit', 'net income', 
+            'average selling price', 'net sellable area',
+            'construction cost', 'land cost', 'gross floor area',
+            'number of units', 'total units', 'presales period',
+            'revenue booking', 'all metrics',
+            # Single word metrics
+            'rnav', 'revenue', 'sales', 'asp', 'nsa', 
+            'presales', 'presale', 'booking',
+            'units', 'gfa', 'land area', 'sga', 'interest', 'debt', 
+            'pat', 'profit', 'pbt', 'ebitda',
+            'financial', 'summary', 'overview', 'trends', 'margin'
         ]
+        
+        metric_found = None
         for metric in metrics:
-            if metric in query.lower():
-                entities['metric'] = metric
+            if metric in query_lower:
+                metric_found = metric
                 extraction_debug.append(f"Metric detected: {metric}")
                 break
+        
+        if metric_found:
+            entities['metric'] = metric_found
+            extraction_debug.append(f"Final metric set to: {metric_found}")
+        else:
+            extraction_debug.append("No specific metric found in query")
         
         extraction_debug.append(f"Final entities extracted: {entities}")
         
@@ -497,10 +512,18 @@ Respond with ONLY the intent name."""
         debug_msg.append("\n🏆 **RANK PROJECTS HANDLER**")
         
         tickers = entities.get('tickers', [])
-        metric = entities.get('metric', 'rnav')
+        metric = entities.get('metric', None)
         
+        debug_msg.append(f"Entities received: {entities}")
         debug_msg.append(f"Tickers: {tickers}")
-        debug_msg.append(f"Ranking metric: {metric}")
+        debug_msg.append(f"Metric from entities: {metric}")
+        
+        # If no metric was extracted, default to rnav
+        if not metric:
+            metric = 'rnav'
+            debug_msg.append("⚠️ No metric found in entities, defaulting to RNAV")
+        else:
+            debug_msg.append(f"✅ Using metric: {metric}")
         
         # Load all projects from MongoDB
         from .mongodb_utils import load_projects_data
@@ -529,8 +552,9 @@ Respond with ONLY the intent name."""
             }
         
         # Calculate gross margin if needed
-        if 'gross margin' in str(metric).lower() or 'margin' in str(metric).lower():
-            debug_msg.append("Calculating gross margins for ranking...")
+        metric_lower = str(metric).lower() if metric else ''
+        if 'gross margin' in metric_lower or ('margin' in metric_lower and 'net' not in metric_lower and 'profit' not in metric_lower):
+            debug_msg.append("📊 Calculating gross margins for ranking...")
             # Calculate gross margin for each project
             projects_df = projects_df.copy()
             gross_margins = []
@@ -545,7 +569,33 @@ Respond with ONLY the intent name."""
             projects_df['gross_margin_value'] = gross_margins
             sorted_df = projects_df.sort_values('gross_margin_value', ascending=False, na_position='last')
             metric_display = 'Gross Margin'
-            debug_msg.append(f"Sorted by gross margin (highest: {sorted_df.iloc[0]['gross_margin_value']:.1f}%)")
+            if len(sorted_df) > 0 and 'gross_margin_value' in sorted_df.columns:
+                debug_msg.append(f"✅ Sorted by gross margin (highest: {sorted_df.iloc[0]['gross_margin_value']:.1f}%)")
+            else:
+                debug_msg.append("⚠️ No valid gross margin values found")
+        
+        # Handle net margin / profit margin
+        elif 'net margin' in metric_lower or 'profit margin' in metric_lower:
+            debug_msg.append("📊 Calculating net margins for ranking...")
+            projects_df = projects_df.copy()
+            net_margins = []
+            for _, project in projects_df.iterrows():
+                total_revenue = project.get('total_revenue', 0)
+                if total_revenue == 0:
+                    # Calculate from NSA and ASP
+                    nsa = project.get('net_sellable_area', 0)
+                    asp = project.get('average_selling_price', 0)
+                    total_revenue = (nsa * asp) / 1e9
+                
+                total_pat = project.get('total_pat', 0)
+                net_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
+                net_margins.append(net_margin)
+            
+            projects_df['net_margin_value'] = net_margins
+            sorted_df = projects_df.sort_values('net_margin_value', ascending=False, na_position='last')
+            metric_display = 'Net Margin'
+            if len(sorted_df) > 0:
+                debug_msg.append(f"✅ Sorted by net margin (highest: {sorted_df.iloc[0]['net_margin_value']:.1f}%)")
         
         # Handle other metrics
         elif any(word in str(metric).lower() for word in ['revenue', 'sales']):
