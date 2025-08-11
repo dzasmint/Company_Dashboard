@@ -147,6 +147,9 @@ class RealEstateFinancialModel:
         
         # Define callback for company selection
         def on_company_change():
+            # Check if the key exists before accessing it
+            if 'company_selector_v3' not in st.session_state:
+                return
             selected = st.session_state.company_selector_v3
             if selected:
                 ticker = selected.split(" - ")[0]
