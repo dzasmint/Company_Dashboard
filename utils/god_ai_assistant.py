@@ -1147,18 +1147,44 @@ Respond with ONLY the intent name."""
         }
     
     def _calculate_gross_margin(self, project_data: dict) -> str:
-        """Calculate gross margin for a project"""
+        """Calculate gross margin for a project using total values"""
         try:
-            asp = project_data.get('average_selling_price', 0)
-            construction_cost = project_data.get('construction_cost_per_sqm', 0)
-            land_cost = project_data.get('land_cost_per_sqm', 0)
+            # Get total revenue
+            total_revenue = project_data.get('total_revenue', 0)
             
-            if asp > 0:
-                total_cost = construction_cost + land_cost
-                gross_margin = ((asp - total_cost) / asp) * 100
+            # If total_revenue is not stored, calculate it from NSA * ASP
+            if total_revenue == 0:
+                nsa = project_data.get('net_sellable_area', 0)
+                asp = project_data.get('average_selling_price', 0)
+                if nsa > 0 and asp > 0:
+                    total_revenue = (nsa * asp) / 1e9  # Convert to billions VND
+            
+            # Get total costs
+            total_construction_cost = project_data.get('total_construction_cost', 0)
+            total_land_cost = project_data.get('total_land_cost', 0)
+            
+            # If total costs are not stored, calculate from per-sqm values
+            if total_construction_cost == 0 or total_land_cost == 0:
+                gfa = project_data.get('gross_floor_area', 0)
+                land_area = project_data.get('land_area', 0)
+                
+                if total_construction_cost == 0 and gfa > 0:
+                    construction_cost_per_sqm = project_data.get('construction_cost_per_sqm', 0)
+                    total_construction_cost = (construction_cost_per_sqm * gfa) / 1e9  # Convert to billions
+                
+                if total_land_cost == 0 and land_area > 0:
+                    land_cost_per_sqm = project_data.get('land_cost_per_sqm', 0)
+                    total_land_cost = (land_cost_per_sqm * land_area) / 1e9  # Convert to billions
+            
+            # Calculate gross margin
+            if total_revenue > 0:
+                total_cogs = total_construction_cost + total_land_cost
+                gross_profit = total_revenue - total_cogs
+                gross_margin = (gross_profit / total_revenue) * 100
                 return f"{gross_margin:.1f}%"
+            
             return "N/A"
-        except:
+        except Exception as e:
             return "N/A"
     
     def _create_trends_chart(self, chart_df: pd.DataFrame) -> go.Figure:
