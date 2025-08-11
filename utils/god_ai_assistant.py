@@ -106,6 +106,12 @@ class GodAIAssistant:
             # Extract entities from query
             entities = self.extract_entities(query, context)
             
+            # Log for debugging
+            if entities.get('tickers'):
+                st.info(f"🎯 Detected tickers in query: {', '.join(entities['tickers'])}")
+            
+            st.info(f"📋 Intent classified as: {intent}")
+            
             # Execute appropriate action
             result = self.execute_action(intent, entities, query, context)
             
@@ -300,15 +306,20 @@ class GodAIAssistant:
         """Handle project listing request - now supports querying any ticker"""
         tickers = entities.get('tickers', [])
         
+        st.info(f"🔍 handle_list_projects called with tickers: {tickers}")
+        
         # If no tickers extracted from query, fall back to selected company
         if not tickers:
             company = context.get('selected_company')
             if company:
+                st.warning(f"⚠️ No tickers in query, using selected company: {company}")
                 tickers = [company]
         
         # Load all projects from MongoDB
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
+        
+        st.info(f"📊 Loaded {len(all_projects_df)} total projects from MongoDB")
         
         if all_projects_df.empty:
             return {
@@ -317,10 +328,15 @@ class GodAIAssistant:
                 'data': None
             }
         
+        # Show what tickers are available in the database
+        available_tickers = all_projects_df['company_ticker'].unique()
+        st.info(f"📈 Available tickers in database: {', '.join(sorted(available_tickers))}")
+        
         # Filter by tickers if specified
         if tickers:
             projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
             company_names = ', '.join(tickers)
+            st.info(f"✅ Filtered to {len(projects_df)} projects for: {company_names}")
         else:
             projects_df = all_projects_df
             company_names = 'all companies'
