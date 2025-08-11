@@ -49,7 +49,9 @@ class GodAIAssistant:
         return {
             'LIST_PROJECTS': [
                 'list', 'show', 'all projects', 'display projects', 
-                'what projects', 'get projects', 'show me projects'
+                'what projects', 'get projects', 'show me projects',
+                'projects from', 'projects for', 'kdh projects', 'nlg projects',
+                'vhm projects', 'dxg projects'
             ],
             'RANK_PROJECTS': [
                 'largest', 'biggest', 'top', 'rnav', 'ranking', 
@@ -298,7 +300,7 @@ class GodAIAssistant:
         """Handle project listing request - now supports querying any ticker"""
         tickers = entities.get('tickers', [])
         
-        # If no tickers specified, try to use selected company
+        # If no tickers extracted from query, fall back to selected company
         if not tickers:
             company = context.get('selected_company')
             if company:
@@ -994,7 +996,26 @@ class GodAIAssistant:
             }
     
     def handle_general_query(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle general queries using Claude if available"""
+        """Handle general queries - check if it's about projects first"""
+        
+        # Extract entities to check if user is asking about specific tickers
+        entities = self.extract_entities(query, context)
+        
+        # If tickers are mentioned, try to handle it as a project query
+        if entities.get('tickers'):
+            # Determine what to do based on keywords
+            query_lower = query.lower()
+            if any(word in query_lower for word in ['project', 'list', 'show', 'display']):
+                return self.handle_list_projects(entities, context)
+            elif any(word in query_lower for word in ['rank', 'top', 'largest', 'biggest']):
+                return self.handle_rank_projects(entities, context)
+            elif any(word in query_lower for word in ['detail', 'information', 'about']):
+                return self.handle_project_details(entities, context)
+            else:
+                # Default to listing projects for the ticker
+                return self.handle_list_projects(entities, context)
+        
+        # Original general query handling
         if self.anthropic_client:
             try:
                 # Prepare context information
@@ -1028,13 +1049,13 @@ class GodAIAssistant:
         
         # Fallback response
         help_message = """I can help you with:
-• List all projects
+• List projects for any ticker (e.g., "Show KDH projects")
+• Compare multiple tickers (e.g., "List projects for KDH and NLG")
 • Rank projects by RNAV
-• Suggest parameters for projects
 • Analyze growth trends
 • Calculate portfolio metrics
 
-Try asking: "Show all projects" or "What's the largest RNAV?" """
+Try asking: "Show KDH projects" or "What's the largest RNAV for VHM?" """
         
         return {
             'type': 'info',
