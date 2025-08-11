@@ -191,7 +191,12 @@ class RealEstateFinancialModel:
                 on_change=on_company_change,
                 help="Select a company to analyze"
             )
-                    
+            
+            # Extract ticker from selection
+            if selected:
+                ticker = selected.split(" - ")[0]
+                if ticker != st.session_state.selected_company:
+                    st.session_state.selected_company = ticker
                     # Mark that we need to load data for the new ticker
                     st.session_state.needs_data_refresh = True
                     
