@@ -1422,6 +1422,7 @@ Respond with ONLY the intent name."""
         years_set = set()
         project_revenues = {}
         has_data = False
+        debug_values = []  # Debug: track extracted values
         
         for _, project in projects_df.iterrows():
             project_name = f"{project['company_ticker']} - {project['project_name']}"
@@ -1437,10 +1438,20 @@ Respond with ONLY the intent name."""
                     try:
                         year = int(year_str)
                         years_set.add(year)
-                        revenue = pnl_data.get('revenue', 0) / 1e9 if isinstance(pnl_data, dict) else 0
+                        # Check if pnl_data is a dict and get revenue
+                        if isinstance(pnl_data, dict):
+                            raw_revenue = pnl_data.get('revenue', 0)
+                            # If revenue is already small (< 1000), it's likely already in billions
+                            if raw_revenue > 0 and raw_revenue < 10000:
+                                revenue = raw_revenue  # Already in billions
+                            else:
+                                revenue = raw_revenue / 1e9  # Convert to billions
+                        else:
+                            revenue = 0
                         project_revenues[project_name][year] = revenue
                         if revenue > 0:
                             has_data = True
+                            debug_values.append(f"PNL Year {year}: raw={raw_revenue:.2f}, converted={revenue:.2f}")
                     except (ValueError, TypeError):
                         continue
             elif isinstance(revenue_dist, dict) and revenue_dist and total_revenue > 0:
@@ -1481,8 +1492,13 @@ Respond with ONLY the intent name."""
                 marker_color='lightgray'
             ))
             
+            debug_text = "No revenue schedule data available for selected project(s).<br>"
+            if debug_values:
+                debug_text += f"Debug values found: {', '.join(debug_values[:3])}<br>"
+            debug_text += "Please ensure P&L schedule is calculated."
+            
             fig.add_annotation(
-                text="No revenue schedule data available for selected project(s).<br>Please ensure P&L schedule is calculated.",
+                text=debug_text,
                 xref="paper",
                 yref="paper",
                 x=0.5,
@@ -1533,17 +1549,27 @@ Respond with ONLY the intent name."""
             # Single project - simple bar chart
             for project_name, revenues in project_revenues.items():
                 year_revenues = [revenues.get(year, 0) for year in years]
+                
+                # Debug: Add title showing the actual values
+                debug_info = f"Values: {[f'{v:.1f}' for v in year_revenues]}"
+                
                 fig.add_trace(go.Bar(
                     x=years,
                     y=year_revenues,
                     name='Revenue',
                     marker_color='green',
                     text=[f'{v:.0f}B' for v in year_revenues],
-                    textposition='outside'
+                    textposition='outside',
+                    hovertext=[f'Year {y}: {v:.2f}B VND' for y, v in zip(years, year_revenues)]
                 ))
         
+        # Add debug info to title if there's data
+        title_text = 'Revenue Schedule by Year'
+        if debug_values and len(debug_values) > 0:
+            title_text += f'<br><sub>{debug_values[0]}</sub>'
+        
         fig.update_layout(
-            title='Revenue Schedule by Year',
+            title=title_text,
             xaxis_title='Year',
             yaxis_title='Revenue (Billion VND)',
             hovermode='x unified',
