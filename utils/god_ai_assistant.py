@@ -106,14 +106,22 @@ class GodAIAssistant:
             # Extract entities from query
             entities = self.extract_entities(query, context)
             
-            # Log for debugging
-            if entities.get('tickers'):
-                st.info(f"🎯 Detected tickers in query: {', '.join(entities['tickers'])}")
-            
-            st.info(f"📋 Intent classified as: {intent}")
+            # Build debug info
+            debug_info = []
+            debug_info.append(f"🔍 **Debug Information**")
+            debug_info.append(f"Query: '{query}'")
+            debug_info.append(f"Intent: {intent}")
+            debug_info.append(f"Extracted Tickers: {entities.get('tickers', 'None')}")
+            debug_info.append(f"Selected Company (context): {context.get('selected_company', 'None')}")
             
             # Execute appropriate action
             result = self.execute_action(intent, entities, query, context)
+            
+            # Add debug info to the beginning of the message
+            if result.get('message'):
+                result['message'] = "\n".join(debug_info) + "\n\n---\n\n" + result['message']
+            else:
+                result['message'] = "\n".join(debug_info)
             
             # Add response to history
             st.session_state.chat_history.append({
@@ -306,45 +314,53 @@ class GodAIAssistant:
         """Handle project listing request - now supports querying any ticker"""
         tickers = entities.get('tickers', [])
         
-        st.info(f"🔍 handle_list_projects called with tickers: {tickers}")
+        debug_messages = []
+        debug_messages.append(f"📊 **Project Listing Debug**")
+        debug_messages.append(f"Tickers from query: {tickers if tickers else 'None'}")
         
         # If no tickers extracted from query, fall back to selected company
         if not tickers:
             company = context.get('selected_company')
             if company:
-                st.warning(f"⚠️ No tickers in query, using selected company: {company}")
+                debug_messages.append(f"No tickers in query, using selected company: {company}")
                 tickers = [company]
+            else:
+                debug_messages.append(f"No tickers in query and no selected company")
         
         # Load all projects from MongoDB
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
         
-        st.info(f"📊 Loaded {len(all_projects_df)} total projects from MongoDB")
+        debug_messages.append(f"Total projects in MongoDB: {len(all_projects_df)}")
         
         if all_projects_df.empty:
+            message = "\n".join(debug_messages) + "\n\n❌ No projects found in database"
             return {
                 'type': 'info',
-                'message': 'No projects found in database',
+                'message': message,
                 'data': None
             }
         
         # Show what tickers are available in the database
         available_tickers = all_projects_df['company_ticker'].unique()
-        st.info(f"📈 Available tickers in database: {', '.join(sorted(available_tickers))}")
+        debug_messages.append(f"Available tickers in DB: {', '.join(sorted(available_tickers))}")
         
         # Filter by tickers if specified
         if tickers:
             projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
             company_names = ', '.join(tickers)
-            st.info(f"✅ Filtered to {len(projects_df)} projects for: {company_names}")
+            debug_messages.append(f"Filtering for: {company_names}")
+            debug_messages.append(f"Projects found after filtering: {len(projects_df)}")
         else:
             projects_df = all_projects_df
             company_names = 'all companies'
+            debug_messages.append(f"Showing all projects (no filter)")
         
         if projects_df.empty:
+            message = "\n".join(debug_messages) + f"\n\n❌ No projects found for {company_names}"
             return {
                 'type': 'info',
-                'message': f'No projects found for {company_names}',
+                'message': message,
                 'data': None
             }
         
@@ -363,9 +379,13 @@ class GodAIAssistant:
         if 'rnav_value' in display_df.columns:
             display_df['rnav_value'] = display_df['rnav_value'].apply(lambda x: f"{x:,.1f}B" if pd.notna(x) else "N/A")
         
+        # Add debug info to success message
+        debug_summary = "\n".join(debug_messages)
+        success_message = f"{debug_summary}\n\n✅ Found {len(display_df)} projects for {company_names}"
+        
         return {
             'type': 'project_list',
-            'message': f"Found {len(display_df)} projects for {company_names}",
+            'message': success_message,
             'summary': f"Showing {len(display_df)} projects",
             'data': display_df
         }
@@ -1017,18 +1037,29 @@ class GodAIAssistant:
         # Extract entities to check if user is asking about specific tickers
         entities = self.extract_entities(query, context)
         
+        # Build debug info for general query
+        debug_messages = []
+        debug_messages.append(f"🔎 **General Query Handler Debug**")
+        debug_messages.append(f"Detected tickers: {entities.get('tickers', 'None')}")
+        
         # If tickers are mentioned, try to handle it as a project query
         if entities.get('tickers'):
+            debug_messages.append(f"Tickers found, routing to appropriate handler...")
+            
             # Determine what to do based on keywords
             query_lower = query.lower()
             if any(word in query_lower for word in ['project', 'list', 'show', 'display']):
+                debug_messages.append(f"Keywords suggest LIST_PROJECTS")
                 return self.handle_list_projects(entities, context)
             elif any(word in query_lower for word in ['rank', 'top', 'largest', 'biggest']):
+                debug_messages.append(f"Keywords suggest RANK_PROJECTS")
                 return self.handle_rank_projects(entities, context)
             elif any(word in query_lower for word in ['detail', 'information', 'about']):
+                debug_messages.append(f"Keywords suggest PROJECT_DETAILS")
                 return self.handle_project_details(entities, context)
             else:
                 # Default to listing projects for the ticker
+                debug_messages.append(f"No specific keywords, defaulting to LIST_PROJECTS")
                 return self.handle_list_projects(entities, context)
         
         # Original general query handling
