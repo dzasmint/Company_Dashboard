@@ -717,37 +717,50 @@ class GodAIAssistant:
         tickers = entities.get('tickers', [])
         metric = entities.get('metric', None)
         
-        # Load all projects from MongoDB
+        # Debug info
+        debug_messages = []
+        debug_messages.append(f"📊 **Project Details Debug**")
+        debug_messages.append(f"Project Name: {project_name if project_name else 'Not specified'}")
+        debug_messages.append(f"Tickers: {tickers if tickers else 'Not specified'}")
+        debug_messages.append(f"Metric: {metric if metric else 'Not specified'}")
+        
+        # Load all projects from MongoDB with FULL details
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
         
+        debug_messages.append(f"Total projects loaded: {len(all_projects_df)}")
+        
         if all_projects_df.empty:
+            message = "\n".join(debug_messages) + "\n\n❌ No projects found in database"
             return {
                 'type': 'error',
-                'message': 'No projects found in database',
+                'message': message,
                 'data': None
             }
         
         # Filter by ticker if specified
         if tickers:
             projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
+            debug_messages.append(f"After ticker filter: {len(projects_df)} projects")
         else:
             projects_df = all_projects_df
         
         # Filter by project name if specified
         if project_name:
             projects_df = projects_df[projects_df['project_name'] == project_name]
+            debug_messages.append(f"After name filter: {len(projects_df)} projects")
         
         if projects_df.empty:
+            message = "\n".join(debug_messages) + "\n\n❌ No projects found for criteria"
             return {
                 'type': 'error',
-                'message': f'No projects found for criteria',
+                'message': message,
                 'data': None
             }
         
         # If specific metric requested, extract that
         if metric:
-            return self._extract_project_metrics(projects_df, metric)
+            return self._extract_project_metrics(projects_df, metric, debug_messages)
         
         # Otherwise return general project details
         if len(projects_df) == 1:
@@ -884,11 +897,165 @@ class GodAIAssistant:
         except:
             return "N/A"
     
-    def _extract_project_metrics(self, projects_df: pd.DataFrame, metric: str) -> Dict[str, Any]:
-        """Extract specific metrics from projects"""
+    def _extract_project_metrics(self, projects_df: pd.DataFrame, metric: str, debug_messages: list = None) -> Dict[str, Any]:
+        """Extract specific metrics from projects with comprehensive financial data"""
         metric_lower = metric.lower()
         
-        if 'rnav' in metric_lower:
+        if debug_messages is None:
+            debug_messages = []
+        
+        # Total Revenue
+        if any(word in metric_lower for word in ['revenue', 'total revenue', 'sales']):
+            revenue_data = []
+            for _, project in projects_df.iterrows():
+                total_revenue = project.get('total_revenue', 0)
+                if total_revenue == 0:
+                    # Try to calculate from NSA and ASP
+                    nsa = project.get('net_sellable_area', 0)
+                    asp = project.get('average_selling_price', 0)
+                    total_revenue = (nsa * asp) / 1e9  # Convert to billions
+                
+                revenue_data.append({
+                    'Company': project['company_ticker'],
+                    'Project': project['project_name'],
+                    'Total Revenue': f"{total_revenue:,.0f}B VND" if total_revenue > 0 else "N/A",
+                    'NSA': f"{project.get('net_sellable_area', 0):,.0f} sqm",
+                    'ASP': f"{project.get('average_selling_price', 0):,.0f} VND/sqm"
+                })
+            
+            if revenue_data:
+                revenue_df = pd.DataFrame(revenue_data)
+                message = "\n".join(debug_messages) if debug_messages else ""
+                message += f"\n\n💰 **Revenue Analysis**\nShowing total revenue for {len(revenue_df)} projects"
+                
+                return {
+                    'type': 'metric_revenue',
+                    'message': message,
+                    'summary': f"Revenue analysis for {len(revenue_df)} projects",
+                    'data': revenue_df
+                }
+        
+        # Net Profit (PAT)
+        elif any(word in metric_lower for word in ['profit', 'pat', 'net profit', 'net income']):
+            profit_data = []
+            for _, project in projects_df.iterrows():
+                total_pat = project.get('total_pat', 0)
+                total_revenue = project.get('total_revenue', 0)
+                
+                if total_revenue == 0:
+                    # Calculate from NSA and ASP
+                    nsa = project.get('net_sellable_area', 0)
+                    asp = project.get('average_selling_price', 0)
+                    total_revenue = (nsa * asp) / 1e9
+                
+                # Calculate profit margin
+                profit_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
+                
+                profit_data.append({
+                    'Company': project['company_ticker'],
+                    'Project': project['project_name'],
+                    'Total PAT': f"{total_pat:,.0f}B VND" if total_pat > 0 else "N/A",
+                    'Total Revenue': f"{total_revenue:,.0f}B VND" if total_revenue > 0 else "N/A",
+                    'Net Margin': f"{profit_margin:.1f}%" if profit_margin > 0 else "N/A"
+                })
+            
+            if profit_data:
+                profit_df = pd.DataFrame(profit_data)
+                message = "\n".join(debug_messages) if debug_messages else ""
+                message += f"\n\n📊 **Profit Analysis**\nShowing net profit for {len(profit_df)} projects"
+                
+                return {
+                    'type': 'metric_profit',
+                    'message': message,
+                    'summary': f"Profit analysis for {len(profit_df)} projects",
+                    'data': profit_df
+                }
+        
+        # Presales and Revenue Booking Trends
+        elif any(word in metric_lower for word in ['presales', 'presale', 'booking', 'revenue booking']):
+            trends_data = []
+            for _, project in projects_df.iterrows():
+                # Get presales and revenue distributions
+                presales_dist = project.get('presales_distribution', {})
+                revenue_dist = project.get('revenue_distribution', {})
+                
+                if presales_dist or revenue_dist:
+                    # Create trend visualization data
+                    years = sorted(set(list(presales_dist.keys()) + list(revenue_dist.keys())))
+                    
+                    trend_info = {
+                        'Company': project['company_ticker'],
+                        'Project': project['project_name'],
+                        'Years': ', '.join(years),
+                        'Presales Years': ', '.join(presales_dist.keys()) if presales_dist else 'N/A',
+                        'Revenue Years': ', '.join(revenue_dist.keys()) if revenue_dist else 'N/A'
+                    }
+                    
+                    # Add yearly breakdown
+                    for year in years:
+                        trend_info[f'Presales {year}'] = f"{presales_dist.get(year, 0)}%"
+                        trend_info[f'Revenue {year}'] = f"{revenue_dist.get(year, 0)}%"
+                    
+                    trends_data.append(trend_info)
+            
+            if trends_data:
+                trends_df = pd.DataFrame(trends_data)
+                message = "\n".join(debug_messages) if debug_messages else ""
+                message += f"\n\n📈 **Presales & Revenue Booking Trends**\nShowing trends for {len(trends_df)} projects"
+                
+                return {
+                    'type': 'metric_trends',
+                    'message': message,
+                    'summary': f"Trends analysis for {len(trends_df)} projects",
+                    'data': trends_df
+                }
+        
+        # Financial Summary (all key metrics)
+        elif any(word in metric_lower for word in ['financial', 'summary', 'all metrics', 'overview']):
+            summary_data = []
+            for _, project in projects_df.iterrows():
+                # Calculate all key metrics
+                nsa = project.get('net_sellable_area', 0)
+                asp = project.get('average_selling_price', 0)
+                total_revenue = project.get('total_revenue', 0)
+                if total_revenue == 0:
+                    total_revenue = (nsa * asp) / 1e9
+                
+                # Get costs
+                construction_cost = project.get('total_construction_cost', 0)
+                land_cost = project.get('total_land_cost', 0)
+                sga_cost = project.get('total_sga_cost', 0)
+                
+                # Calculate margins
+                gross_margin = self._calculate_gross_margin(project.to_dict())
+                total_pat = project.get('total_pat', 0)
+                net_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
+                
+                summary_data.append({
+                    'Company': project['company_ticker'],
+                    'Project': project['project_name'],
+                    'Total Revenue': f"{total_revenue:,.0f}B",
+                    'Total PAT': f"{total_pat:,.0f}B",
+                    'RNAV': f"{project.get('rnav_value', 0):,.0f}B",
+                    'Gross Margin': gross_margin,
+                    'Net Margin': f"{net_margin:.1f}%",
+                    'Construction Cost': f"{construction_cost:,.0f}B",
+                    'Land Cost': f"{land_cost:,.0f}B"
+                })
+            
+            if summary_data:
+                summary_df = pd.DataFrame(summary_data)
+                message = "\n".join(debug_messages) if debug_messages else ""
+                message += f"\n\n📊 **Financial Summary**\nComplete financial overview for {len(summary_df)} projects"
+                
+                return {
+                    'type': 'metric_financial_summary',
+                    'message': message,
+                    'summary': f"Financial summary for {len(summary_df)} projects",
+                    'data': summary_df
+                }
+        
+        elif 'rnav' in metric_lower:
             # Extract RNAV information
             rnav_df = projects_df[['company_ticker', 'project_name', 'rnav_value']].copy()
             rnav_df = rnav_df[rnav_df['rnav_value'].notna()]
