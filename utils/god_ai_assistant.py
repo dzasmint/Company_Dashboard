@@ -103,11 +103,38 @@ class GodAIAssistant:
             # Classify intent
             intent = self.classify_intent(query)
             
-            # Extract entities from query
-            entities = self.extract_entities(query, context)
+            # Extract entities from query (this will include extraction debug)
+            entities, extraction_debug = self.extract_entities_with_debug(query, context)
+            
+            # Build comprehensive debug info
+            debug_info = []
+            debug_info.append("="*50)
+            debug_info.append("🔍 **GOD AI DEBUG INFORMATION**")
+            debug_info.append("="*50)
+            debug_info.append(f"**Query:** '{query}'")
+            debug_info.append(f"**Intent Classified:** {intent}")
+            
+            # Add extraction debug details
+            debug_info.extend(extraction_debug)
+            
+            debug_info.append(f"\n**Extracted Entities Summary:**")
+            debug_info.append(f"  - Tickers: {entities.get('tickers', 'None')}")
+            debug_info.append(f"  - Metric: {entities.get('metric', 'None')}")
+            debug_info.append(f"  - Project Name: {entities.get('project_name', 'None')}")
+            debug_info.append(f"  - Years: {entities.get('years', 'None')}")
+            debug_info.append(f"\n**Context:**")
+            debug_info.append(f"  - Selected Company: {context.get('selected_company', 'None')}")
+            debug_info.append(f"  - Has Project Data: {'Yes' if context.get('project_data') is not None else 'No'}")
+            debug_info.append("="*50)
             
             # Execute appropriate action
             result = self.execute_action(intent, entities, query, context)
+            
+            # Prepend debug info to the result message
+            if result.get('message'):
+                result['message'] = "\n".join(debug_info) + "\n\n" + result['message']
+            else:
+                result['message'] = "\n".join(debug_info)
             
             # Add response to history
             st.session_state.chat_history.append({
@@ -165,13 +192,27 @@ class GodAIAssistant:
         
         return 'GENERAL_QUERY'
     
+    def extract_entities_with_debug(self, query: str, context: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+        """Extract entities from query and return debug info"""
+        entities, debug_msgs = self._extract_entities_internal(query, context, with_debug=True)
+        return entities, debug_msgs
+    
     def extract_entities(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract entities from query (backward compatible)"""
+        entities, _ = self._extract_entities_internal(query, context, with_debug=False)
+        return entities
+    
+    def _extract_entities_internal(self, query: str, context: Dict[str, Any], with_debug: bool = False) -> Tuple[Dict[str, Any], List[str]]:
         """Extract entities from query"""
         entities = {}
+        extraction_debug = []
+        extraction_debug.append("\n🔎 **ENTITY EXTRACTION**")
+        extraction_debug.append(f"Query: '{query}'")
         
         # Extract ticker symbols (e.g., DXG, NLG, VHM, KDH, etc.)
         ticker_pattern = r'\b([A-Z]{3,4})\b'
         potential_tickers = re.findall(ticker_pattern, query)
+        extraction_debug.append(f"Potential tickers found: {potential_tickers}")
         
         if potential_tickers:
             valid_tickers = []
@@ -223,22 +264,26 @@ class GodAIAssistant:
                         if ticker not in valid_tickers:
                             valid_tickers.append(ticker)
             
+            extraction_debug.append(f"Valid tickers after validation: {valid_tickers}")
             if valid_tickers:
                 entities['tickers'] = valid_tickers
         
         # Extract project names - search across ALL projects in MongoDB
+        extraction_debug.append("Searching for project names in query...")
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
         if not all_projects_df.empty:
             for project_name in all_projects_df['project_name'].unique():
                 if project_name and project_name.lower() in query.lower():
                     entities['project_name'] = project_name
+                    extraction_debug.append(f"Found project name: {project_name}")
                     # Also extract the ticker for this project
                     project_ticker = all_projects_df[all_projects_df['project_name'] == project_name]['company_ticker'].iloc[0]
                     if 'tickers' not in entities:
                         entities['tickers'] = []
                     if project_ticker not in entities.get('tickers', []):
                         entities['tickers'].append(project_ticker)
+                        extraction_debug.append(f"Added ticker {project_ticker} from project")
                     break
         
         # Extract years
@@ -246,6 +291,7 @@ class GodAIAssistant:
         years = re.findall(year_pattern, query)
         if years:
             entities['years'] = [int(y) for y in years]
+            extraction_debug.append(f"Years found: {entities['years']}")
         
         # Extract numbers
         number_pattern = r'\b(\d+(?:\.\d+)?)\b'
@@ -267,71 +313,115 @@ class GodAIAssistant:
         for metric in metrics:
             if metric in query.lower():
                 entities['metric'] = metric
+                extraction_debug.append(f"Metric detected: {metric}")
                 break
         
-        return entities
+        extraction_debug.append(f"Final entities extracted: {entities}")
+        
+        return entities, extraction_debug
     
     def execute_action(self, intent: str, entities: Dict[str, Any], query: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute action based on intent"""
         
+        routing_debug = []
+        routing_debug.append("\n🚦 **ROUTING DECISION**")
+        
         # Check if query mentions specific metrics even without explicit intent
         metric = entities.get('metric')
         if metric and intent == 'GENERAL_QUERY':
-            # Route to project details with metric extraction
-            return self.handle_project_details(entities, context)
+            routing_debug.append(f"Metric '{metric}' detected with GENERAL_QUERY intent")
+            routing_debug.append("→ Routing to PROJECT_DETAILS handler for metric extraction")
+            result = self.handle_project_details(entities, context)
+            if result.get('message'):
+                result['message'] = '\n'.join(routing_debug) + '\n' + result['message']
+            return result
+        
+        routing_debug.append(f"Intent '{intent}' → Routing to appropriate handler")
         
         if intent == 'LIST_PROJECTS':
-            return self.handle_list_projects(entities, context)
+            routing_debug.append("→ Calling handle_list_projects")
+            result = self.handle_list_projects(entities, context)
         elif intent == 'RANK_PROJECTS':
-            return self.handle_rank_projects(entities, context)
+            routing_debug.append("→ Calling handle_rank_projects")
+            result = self.handle_rank_projects(entities, context)
         elif intent == 'SUGGEST_PARAMETERS':
-            return self.handle_suggest_parameters(entities, query, context)
+            routing_debug.append("→ Calling handle_suggest_parameters")
+            result = self.handle_suggest_parameters(entities, query, context)
         elif intent == 'ANALYZE_GROWTH':
-            return self.handle_growth_analysis(entities, context)
+            routing_debug.append("→ Calling handle_growth_analysis")
+            result = self.handle_growth_analysis(entities, context)
         elif intent == 'RESEARCH_INSIGHTS':
-            return self.handle_research_insights(entities, query, context)
+            routing_debug.append("→ Calling handle_research_insights")
+            result = self.handle_research_insights(entities, query, context)
         elif intent == 'PROJECT_DETAILS':
-            return self.handle_project_details(entities, context)
+            routing_debug.append("→ Calling handle_project_details")
+            result = self.handle_project_details(entities, context)
         elif intent == 'CALCULATE_METRICS':
-            return self.handle_calculate_metrics(entities, context)
+            routing_debug.append("→ Calling handle_calculate_metrics")
+            result = self.handle_calculate_metrics(entities, context)
         elif intent == 'UPDATE_PROJECT':
-            return self.handle_update_project(entities, query, context)
+            routing_debug.append("→ Calling handle_update_project")
+            result = self.handle_update_project(entities, query, context)
         else:
-            return self.handle_general_query(query, context)
+            routing_debug.append("→ Calling handle_general_query (fallback)")
+            result = self.handle_general_query(query, context)
+        
+        # Prepend routing debug to result
+        if result.get('message'):
+            result['message'] = '\n'.join(routing_debug) + '\n' + result['message']
+        
+        return result
     
     def handle_list_projects(self, entities: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Handle project listing request - now supports querying any ticker"""
+        debug_msg = []
+        debug_msg.append("\n📊 **LIST PROJECTS HANDLER**")
+        
         tickers = entities.get('tickers', [])
+        debug_msg.append(f"Tickers from entities: {tickers}")
         
         # If no tickers extracted from query, fall back to selected company
         if not tickers:
             company = context.get('selected_company')
+            debug_msg.append(f"No tickers in entities, checking context...")
+            debug_msg.append(f"Selected company from context: {company}")
             if company:
                 tickers = [company]
+                debug_msg.append(f"Using selected company as ticker: {tickers}")
         
         # Load all projects from MongoDB
+        debug_msg.append("Loading all projects from MongoDB...")
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
+        
+        debug_msg.append(f"Total projects loaded from MongoDB: {len(all_projects_df)}")
         
         if all_projects_df.empty:
             return {
                 'type': 'info',
-                'message': 'No projects found in database',
+                'message': '\n'.join(debug_msg) + '\n\n❌ No projects found in database',
                 'data': None
             }
         
+        # Show available tickers in database
+        available_tickers = sorted(all_projects_df['company_ticker'].unique())
+        debug_msg.append(f"Available tickers in database: {available_tickers}")
+        
         # Filter by tickers if specified
         if tickers:
+            debug_msg.append(f"Filtering projects for tickers: {tickers}")
             projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
             company_names = ', '.join(tickers)
+            debug_msg.append(f"Projects after filtering: {len(projects_df)}")
         else:
             projects_df = all_projects_df
             company_names = 'all companies'
+            debug_msg.append(f"No ticker filter applied, showing all {len(projects_df)} projects")
         
         if projects_df.empty:
             return {
                 'type': 'info',
-                'message': f'No projects found for {company_names}',
+                'message': '\n'.join(debug_msg) + f'\n\n❌ No projects found for {company_names}',
                 'data': None
             }
         
@@ -350,9 +440,11 @@ class GodAIAssistant:
         if 'rnav_value' in display_df.columns:
             display_df['rnav_value'] = display_df['rnav_value'].apply(lambda x: f"{x:,.1f}B" if pd.notna(x) else "N/A")
         
+        debug_msg.append(f"✅ Successfully prepared {len(display_df)} projects for display")
+        
         return {
             'type': 'project_list',
-            'message': f"Found {len(display_df)} projects for {company_names}",
+            'message': '\n'.join(debug_msg) + f"\n\n✅ Found {len(display_df)} projects for {company_names}",
             'summary': f"Showing {len(display_df)} projects",
             'data': display_df
         }
@@ -680,41 +772,61 @@ class GodAIAssistant:
     
     def handle_project_details(self, entities: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Handle project details request - now searches MongoDB for any ticker"""
+        debug_msg = []
+        debug_msg.append("\n📋 **PROJECT DETAILS HANDLER**")
+        
         project_name = entities.get('project_name')
         tickers = entities.get('tickers', [])
         metric = entities.get('metric', None)
         
+        debug_msg.append(f"Project name: {project_name}")
+        debug_msg.append(f"Tickers: {tickers}")
+        debug_msg.append(f"Metric requested: {metric}")
+        
         # Load all projects from MongoDB with FULL details
+        debug_msg.append("Loading all projects from MongoDB...")
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
+        
+        debug_msg.append(f"Total projects loaded: {len(all_projects_df)}")
         
         if all_projects_df.empty:
             return {
                 'type': 'error',
-                'message': 'No projects found in database',
+                'message': '\n'.join(debug_msg) + '\n\n❌ No projects found in database',
                 'data': None
             }
         
         # Filter by ticker if specified
         if tickers:
+            debug_msg.append(f"Filtering by tickers: {tickers}")
             projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
+            debug_msg.append(f"Projects after ticker filter: {len(projects_df)}")
         else:
             projects_df = all_projects_df
+            debug_msg.append(f"No ticker filter, using all {len(projects_df)} projects")
         
         # Filter by project name if specified
         if project_name:
+            debug_msg.append(f"Filtering by project name: {project_name}")
             projects_df = projects_df[projects_df['project_name'] == project_name]
+            debug_msg.append(f"Projects after name filter: {len(projects_df)}")
         
         if projects_df.empty:
             return {
                 'type': 'error',
-                'message': 'No projects found for specified criteria',
+                'message': '\n'.join(debug_msg) + '\n\n❌ No projects found for specified criteria',
                 'data': None
             }
         
         # If specific metric requested, extract that
         if metric:
-            return self._extract_project_metrics(projects_df, metric)
+            debug_msg.append(f"Extracting metric: {metric}")
+            result = self._extract_project_metrics(projects_df, metric)
+            # Prepend debug info to result
+            if result.get('message'):
+                result['message'] = '\n'.join(debug_msg) + '\n\n' + result['message']
+            return result
         
         # Otherwise return general project details
         if len(projects_df) == 1:
