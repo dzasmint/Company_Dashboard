@@ -99,6 +99,12 @@ class RealEstateFinancialModel:
             st.session_state.project_data = None
         if 'loading_projects' not in st.session_state:
             st.session_state.loading_projects = False
+        # Add active tab tracking to preserve tab state
+        if 'active_tab' not in st.session_state:
+            st.session_state.active_tab = 0
+        # Track if we're in the middle of editing to prevent resets
+        if 'editing_in_progress' not in st.session_state:
+            st.session_state.editing_in_progress = False
             
     def get_default_assumptions(self):
         """Get default modeling assumptions"""
@@ -136,20 +142,14 @@ class RealEstateFinancialModel:
         """Setup sidebar for company selection and controls"""
         st.sidebar.title("Real Estate Model")
         
-        # Load companies with caching
-        companies = self.load_real_estate_companies()
-        if companies:
-            selected = st.sidebar.selectbox(
-                "Select Company",
-                companies,
-                key="company_selector"
-            )
+        # Define callback for company selection
+        def on_company_change():
+            selected = st.session_state.company_selector
             if selected:
                 ticker = selected.split(" - ")[0]
                 # Check if ticker has changed
                 if 'selected_company' not in st.session_state or st.session_state.selected_company != ticker:
                     # Ticker changed, reset ALL related data
-                    previous_ticker = st.session_state.get('selected_company', None)
                     st.session_state.selected_company = ticker
                     st.session_state.historical_data = None
                     st.session_state.project_data = None
@@ -171,6 +171,26 @@ class RealEstateFinancialModel:
                     
                     # Initialize empty base_year_revenues for new ticker
                     st.session_state.base_year_revenues = {}
+        
+        # Load companies with caching
+        companies = self.load_real_estate_companies()
+        if companies:
+            # Get current selection
+            current_index = 0
+            if 'selected_company' in st.session_state:
+                for i, company in enumerate(companies):
+                    if company.startswith(st.session_state.selected_company + " - "):
+                        current_index = i
+                        break
+            
+            selected = st.sidebar.selectbox(
+                "Select Company",
+                companies,
+                index=current_index,
+                key="company_selector_v3",
+                on_change=on_company_change,
+                help="Select a company to analyze"
+            )
                     
                     # Mark that we need to load data for the new ticker
                     st.session_state.needs_data_refresh = True
@@ -207,13 +227,13 @@ class RealEstateFinancialModel:
         
         # Data refresh buttons
         st.sidebar.subheader("Data Management")
-        if st.sidebar.button("Refresh Financial Data"):
+        if st.sidebar.button("Refresh Financial Data", key="refresh_financial_btn_v2"):
             self.refresh_financial_data()
-        if st.sidebar.button("Sync Project Data"):
+        if st.sidebar.button("Sync Project Data", key="sync_project_btn_v2"):
             self.sync_project_data()
             
         # DO NOT auto-load any data in sidebar to prevent blocking
-        if st.sidebar.button("Fetch Latest Reports"):
+        if st.sidebar.button("Fetch Latest Reports", key="fetch_reports_btn_v2"):
             self.fetch_analyst_reports()
             
     def load_project_data_from_mongodb(self, ticker):
@@ -444,8 +464,8 @@ class RealEstateFinancialModel:
             st.info("👈 Please select a company from the sidebar to begin")
             return
             
-        # Create tabs for different sections
-        tabs = st.tabs([
+        # Define tab names for easier reference
+        tab_names = [
             "Historical Analysis",
             "AI Project Discovery",
             "Assumptions",
@@ -455,8 +475,12 @@ class RealEstateFinancialModel:
             "Research Insights",
             "Export Model",
             "God AI Assistant"
-        ])
+        ]
         
+        # Create tabs - Streamlit will handle state preservation automatically
+        tabs = st.tabs(tab_names)
+        
+        # Render each tab content
         with tabs[0]:
             self.render_historical_analysis()
             
@@ -1235,7 +1259,8 @@ class RealEstateFinancialModel:
         
         # Initialize editable assumptions in session state if not exists
         assumptions_key = f"editable_assumptions_{selected_ticker}"
-        editor_key = f"assumptions_editor_{selected_ticker}"
+        # Use a more stable key that includes timestamp to prevent conflicts
+        editor_key = f"assumptions_editor_{selected_ticker}_v2"
         
         # Initialize or load assumptions data
         if assumptions_key not in st.session_state or st.session_state.get('refresh_assumptions', False):
@@ -1325,21 +1350,23 @@ class RealEstateFinancialModel:
         
         # Display editable assumptions table
         st.subheader("📊 Assumptions Table")
-        st.info("💡 **How to use:** Click any cell to edit | Use '+' button to add rows | Select row(s) and press Delete/Backspace to remove")
+        st.info("💡 **How to use:** Click any cell to edit | Use '+' button to add rows | Select row(s) and press Delete/Backspace to remove | Click 'Apply Changes' to save edits")
         
-        # Create DataFrame with proper handling
-        if not assumptions_df.empty:
-            # Ensure all rows have Type column
-            if 'Type' not in assumptions_df.columns:
-                assumptions_df['Type'] = 'N/A'
-            
-            # Use Streamlit's data editor with dynamic rows
-            edited_df = st.data_editor(
-                assumptions_df,
-                hide_index=True,
-                use_container_width=True,
-                num_rows="dynamic",  # Allow adding/deleting rows
-                column_config={
+        # Use a form to batch updates and prevent double-entry issues
+        with st.form(key=f"assumptions_form_{selected_ticker}"):
+            # Create DataFrame with proper handling
+            if not assumptions_df.empty:
+                # Ensure all rows have Type column
+                if 'Type' not in assumptions_df.columns:
+                    assumptions_df['Type'] = 'N/A'
+                
+                # Use Streamlit's data editor with dynamic rows
+                edited_df = st.data_editor(
+                    assumptions_df,
+                    hide_index=True,
+                    use_container_width=True,
+                    num_rows="dynamic",  # Allow adding/deleting rows
+                    column_config={
                     "Category": st.column_config.SelectboxColumn(
                         "Category",
                         options=["Business Segment", "Financial", "Operating", "Other"],
@@ -1382,14 +1409,11 @@ class RealEstateFinancialModel:
                 column_order=["Category", "Type", "Item", "Value", "Unit"],
                 key=editor_key
             )
-            
-            # Always update session state with the edited DataFrame
-            st.session_state[assumptions_key] = edited_df
-        else:
-            # Show empty data editor when no assumptions exist
-            st.info("No assumptions defined. Click 'Load Defaults' below or use the table to add new assumptions.")
-            empty_df = pd.DataFrame(columns=["Category", "Type", "Item", "Value", "Unit"])
-            edited_df = st.data_editor(
+            else:
+                # Show empty data editor when no assumptions exist
+                st.info("No assumptions defined. Click 'Load Defaults' below or use the table to add new assumptions.")
+                empty_df = pd.DataFrame(columns=["Category", "Type", "Item", "Value", "Unit"])
+                edited_df = st.data_editor(
                 empty_df,
                 hide_index=True,
                 use_container_width=True,
@@ -1435,13 +1459,18 @@ class RealEstateFinancialModel:
                     )
                 },
                 column_order=["Category", "Type", "Item", "Value", "Unit"],
-                key=f"editor_{selected_ticker}_empty"
+                key=f"editor_{selected_ticker}_empty_v2"
             )
-            # Update session state if user added rows
-            if not edited_df.empty:
-                st.session_state[assumptions_key] = edited_df.to_dict('records')
+            
+            # Add submit button inside the form
+            submitted = st.form_submit_button("Apply Changes", type="primary", use_container_width=True)
+            if submitted:
+                # Update session state with the edited DataFrame
+                st.session_state[assumptions_key] = edited_df
+                st.success("✅ Changes applied successfully!")
+                st.rerun()
         
-        # Action buttons
+        # Action buttons outside the form
         st.subheader("💾 Save & Manage")
         col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
         
