@@ -5686,6 +5686,25 @@ class RealEstateFinancialModel:
             if result.get('data') is not None:
                 st.dataframe(result['data'], use_container_width=True)
         
+        # Handle chart results
+        elif result['type'] == 'chart':
+            # Display the chart
+            if result.get('chart'):
+                st.plotly_chart(result['chart'], use_container_width=True)
+            else:
+                st.warning("Chart data not available. Please ensure P&L schedule is calculated for the project.")
+            
+            # Display summary data if available
+            if result.get('data') is not None and not result['data'].empty:
+                with st.expander("View Project Summary"):
+                    st.dataframe(result['data'], use_container_width=True)
+        
+        # Handle comparison results
+        elif result['type'] == 'comparison':
+            # Display comparison table
+            if result.get('data') is not None and not result['data'].empty:
+                st.dataframe(result['data'], use_container_width=True)
+        
         # Handle all metric-specific result types
         elif result['type'].startswith('metric_'):
             # This handles metric_revenue, metric_profit, metric_trends, etc.
@@ -5813,6 +5832,8 @@ class RealEstateFinancialModel:
             # Display the chart
             if result.get('chart'):
                 st.plotly_chart(result['chart'], use_container_width=True)
+            else:
+                st.warning("Chart data not available. Please ensure P&L schedule is calculated for the project.")
             
             # Display summary data if available
             if result.get('data') is not None and not result['data'].empty:
