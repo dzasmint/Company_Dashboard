@@ -446,15 +446,15 @@ class RealEstateFinancialModel:
             
         # Create tabs for different sections
         tabs = st.tabs([
-            "📊 Historical Analysis",
-            "🤖 AI Project Discovery",
-            "🎯 Assumptions",
-            "🏗️ Project Pipeline",
-            "📈 Revenue Forecast",
-            "📑 Valuation",
-            "📰 Research Insights",
-            "📥 Export Model",
-            "🧠 God AI Assistant"
+            "Historical Analysis",
+            "AI Project Discovery",
+            "Assumptions",
+            "Project Pipeline",
+            "Revenue Forecast",
+            "Valuation",
+            "Research Insights",
+            "Export Model",
+            "God AI Assistant"
         ])
         
         with tabs[0]:
@@ -5509,7 +5509,7 @@ class RealEstateFinancialModel:
     
     def render_god_ai_assistant(self):
         """Render the God AI Assistant interface"""
-        st.header("🧠 God AI Assistant")
+        st.header("God AI Assistant")
         st.caption("Your intelligent companion for comprehensive financial analysis")
         
         # Initialize chat history if not exists
