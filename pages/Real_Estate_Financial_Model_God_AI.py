@@ -2312,13 +2312,27 @@ class RealEstateFinancialModel:
                         # Also store raw response for reference
                         st.session_state[f"ai_raw_response_{project_name}"] = response
                         
-                        # Display summary in an expander
+                        # Display summary in full width expander
                         with st.expander("📊 AI Research Summary", expanded=True):
-                            # Show basic info if available
+                            # Show basic info if available in full width
                             if parsed_info.get("basic_info"):
                                 st.info(f"**Project Description:** {parsed_info['basic_info']}")
                             
-                            # Create a table for suggested values
+                            # Show confidence level if available
+                            if parsed_info.get("confidence"):
+                                st.caption(f"**Confidence Level:** {parsed_info['confidence']}")
+                            
+                            # Show analysis method if available
+                            if parsed_info.get("analysis_method"):
+                                st.caption(f"**Analysis Method:** {parsed_info['analysis_method']}")
+                            
+                            # Show sources if available
+                            if parsed_info.get("sources"):
+                                st.caption(f"**Sources:** {parsed_info['sources']}")
+                            
+                            st.info("💡 AI suggestions are displayed below each input field. Review and modify values as needed before saving.")
+                            
+                            # Create a table for suggested values comparison
                             suggestions = []
                             
                             # Map parsed fields to project parameters
@@ -2414,58 +2428,8 @@ class RealEstateFinancialModel:
                             if suggestions:
                                 df_suggestions = pd.DataFrame(suggestions)
                                 st.dataframe(df_suggestions, use_container_width=True)
-                                
-                                # Add button to apply suggestions
-                                if st.button("✅ Apply AI Suggestions", key=f"apply_ai_{project_name}"):
-                                    # Update the edited project data with AI suggestions
-                                    if parsed_info.get("location"):
-                                        st.session_state.edited_project['location'] = str(parsed_info["location"])
-                                    
-                                    if parsed_info.get("total_units"):
-                                        try:
-                                            st.session_state.edited_project['total_units'] = float(parsed_info["total_units"])
-                                        except (ValueError, TypeError):
-                                            st.warning(f"Could not convert total_units: {parsed_info['total_units']}")
-                                    
-                                    if parsed_info.get("total_area_sqm"):
-                                        try:
-                                            st.session_state.edited_project['gross_floor_area'] = float(parsed_info["total_area_sqm"])
-                                        except (ValueError, TypeError):
-                                            st.warning(f"Could not convert gross_floor_area: {parsed_info['total_area_sqm']}")
-                                    
-                                    if parsed_info.get("land_area_sqm"):
-                                        try:
-                                            st.session_state.edited_project['land_area'] = float(parsed_info["land_area_sqm"])
-                                        except (ValueError, TypeError):
-                                            st.warning(f"Could not convert land_area: {parsed_info['land_area_sqm']}")
-                                    
-                                    if parsed_info.get("avg_selling_price_per_sqm"):
-                                        try:
-                                            st.session_state.edited_project['average_selling_price'] = float(parsed_info["avg_selling_price_per_sqm"])
-                                        except (ValueError, TypeError):
-                                            st.warning(f"Could not convert average_selling_price: {parsed_info['avg_selling_price_per_sqm']}")
-                                    
-                                    if parsed_info.get("construction_cost_per_sqm"):
-                                        try:
-                                            st.session_state.edited_project['construction_cost_per_sqm'] = float(parsed_info["construction_cost_per_sqm"])
-                                        except (ValueError, TypeError):
-                                            st.warning(f"Could not convert construction_cost_per_sqm: {parsed_info['construction_cost_per_sqm']}")
-                                    
-                                    if parsed_info.get("project_duration"):
-                                        try:
-                                            years = int(float(parsed_info["project_duration"]))
-                                            st.session_state.edited_project['construction_years'] = years
-                                        except (ValueError, TypeError):
-                                            st.warning(f"Could not convert project_duration: {parsed_info['project_duration']}")
-                                    
-                                    st.success("✅ AI suggestions applied! Scroll down to review and save changes.")
-                                    st.rerun()
                             else:
                                 st.warning("No specific parameter suggestions found. The AI may need more specific information about this project.")
-                            
-                            # Show raw response option
-                            if st.checkbox("Show raw AI response", key=f"show_raw_{project_name}"):
-                                st.code(response, language="markdown")
                     else:
                         st.error("❌ Could not parse AI response. Please try again.")
                 else:
