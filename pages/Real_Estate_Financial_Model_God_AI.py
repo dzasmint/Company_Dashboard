@@ -144,7 +144,7 @@ class RealEstateFinancialModel:
         
         # Define callback for company selection
         def on_company_change():
-            selected = st.session_state.company_selector
+            selected = st.session_state.company_selector_v3
             if selected:
                 ticker = selected.split(" - ")[0]
                 # Check if ticker has changed
