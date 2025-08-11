@@ -225,7 +225,7 @@ class RealEstateFinancialModel:
                     pass  # Fall through to CSV
             
             # Fallback to CSV for other tickers or if MongoDB fails
-            fa_path = os.path.join(parent_dir, 'data', 'FA_processed.csv')
+            fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.csv')
             
             if not os.path.exists(fa_path):
                 st.warning("Financial data file not found")
@@ -261,9 +261,9 @@ class RealEstateFinancialModel:
     
     @st.cache_data(ttl=3600)  # Cache for 1 hour
     def load_real_estate_companies(_self):
-        """Load list of all companies from FA_processed.csv."""
+        """Load list of all companies from FA_A_processed.csv."""
         try:
-            fa_path = os.path.join(parent_dir, 'data', 'FA_processed.csv')
+            fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.csv')
             if not os.path.exists(fa_path):
                 return ['DXG - Dat Xanh Group']  # Fallback to known company
             
@@ -298,7 +298,7 @@ class RealEstateFinancialModel:
             return ['DXG - Dat Xanh Group']
     
     def refresh_financial_data(self):
-        """Refresh financial data from FA_processed.csv"""
+        """Refresh financial data from FA_A_processed.csv"""
         if not st.session_state.selected_company:
             st.warning("Please select a company first")
             return
@@ -439,7 +439,7 @@ class RealEstateFinancialModel:
             self.render_export_interface()
     
     def render_historical_analysis(self):
-        """Render historical financial analysis"""
+        """Render historical financial analysis - Simple P&L Table"""
         st.header("Historical Financial Analysis")
         
         # Load data if not already loaded
@@ -455,167 +455,137 @@ class RealEstateFinancialModel:
             
         df = st.session_state.historical_data
         
-        # Display key metrics using FA_processed column names
-        col1, col2, col3, col4 = st.columns(4)
+        # Get current year to filter out future data
+        import datetime
+        current_year = datetime.datetime.now().year
         
-        # Map FA_processed KEYCODE to display names (handle both Sales and Net_Revenue)
-        with col1:
-            if 'Sales' in df.columns:
-                latest_revenue = df['Sales'].iloc[-1]
-            elif 'Net_Revenue' in df.columns:
-                latest_revenue = df['Net_Revenue'].iloc[-1]
+        # Filter to only show historical years (no future data)
+        if df.index.dtype in ['int64', 'int32']:
+            df = df[df.index <= current_year]
+        
+        if df.empty:
+            st.warning("No historical data available for this company")
+            return
+        
+        # Create P&L table with years as columns
+        st.subheader("Historical Profit & Loss Statement")
+        st.markdown("*All values in Billion VND*")
+        
+        # Define P&L line items and their corresponding column names in FA_A_processed.csv
+        pnl_mapping = {
+            'Net Revenue': 'Net_Revenue',
+            'Cost of Goods Sold': 'COGS',
+            'Gross Profit': 'Gross_Profit',
+            'Operating Expenses': 'Operating_Expense',
+            'EBITDA': 'EBITDA',
+            'Depreciation & Amortization': 'D&A',
+            'EBIT': 'EBIT',
+            'Interest Income': 'Interest_Income',
+            'Interest Expense': 'Interest_Expense',
+            'Profit Before Tax': 'Profit_Before_Tax',
+            'Tax': 'Corporate_Tax',
+            'Profit After Tax': 'NPAT',
+            'Minority Interest': 'Minority_Interest',
+            'NPATMI': 'NPATMI'
+        }
+        
+        # Create the P&L dataframe
+        pnl_data = {}
+        years = sorted(df.index.tolist())
+        
+        for display_name, column_name in pnl_mapping.items():
+            row_data = []
+            for year in years:
+                if column_name in df.columns:
+                    value = df.loc[year, column_name] if year in df.index else 0
+                    # Convert to billions
+                    row_data.append(value / 1e9 if pd.notna(value) else 0)
+                else:
+                    row_data.append(0)
+            pnl_data[display_name] = row_data
+        
+        # Create DataFrame with years as columns
+        pnl_df = pd.DataFrame(pnl_data, index=years).T
+        
+        # Calculate margins as percentages
+        margin_rows = {}
+        for year in years:
+            if pnl_df.loc['Net Revenue', year] != 0:
+                margin_rows[f'{year}'] = {
+                    'Gross Profit Margin %': (pnl_df.loc['Gross Profit', year] / pnl_df.loc['Net Revenue', year] * 100) if pnl_df.loc['Net Revenue', year] != 0 else 0,
+                    'EBITDA Margin %': (pnl_df.loc['EBITDA', year] / pnl_df.loc['Net Revenue', year] * 100) if pnl_df.loc['Net Revenue', year] != 0 else 0,
+                    'Net Margin %': (pnl_df.loc['NPATMI', year] / pnl_df.loc['Net Revenue', year] * 100) if pnl_df.loc['Net Revenue', year] != 0 else 0
+                }
+        
+        # Format the P&L dataframe for display
+        def format_pnl_value(val):
+            if pd.isna(val) or val == 0:
+                return "-"
+            elif abs(val) < 1:
+                return f"{val:.2f}"
             else:
-                latest_revenue = 0
-            st.metric("Latest Revenue", f"{latest_revenue/1e9:,.0f}B VND")
+                return f"{val:,.1f}"
+        
+        # Apply formatting
+        styled_pnl = pnl_df.style.format(format_pnl_value)
+        
+        # Highlight important rows
+        def highlight_rows(row):
+            if row.name in ['Net Revenue', 'Gross Profit', 'EBITDA', 'NPATMI']:
+                return ['background-color: #f0f2f6'] * len(row)
+            return [''] * len(row)
+        
+        styled_pnl = styled_pnl.apply(highlight_rows, axis=1)
+        
+        # Display the P&L table
+        st.dataframe(styled_pnl, use_container_width=True, height=500)
+        
+        # Add margin analysis below
+        if margin_rows:
+            st.subheader("Profitability Margins")
+            margin_df = pd.DataFrame(margin_rows)
             
-        with col2:
-            if 'NPATMI' in df.columns:
-                latest_profit = df['NPATMI'].iloc[-1]
-            elif 'NPAT' in df.columns:
-                latest_profit = df['NPAT'].iloc[-1]
-            else:
-                latest_profit = 0
-            st.metric("Latest NPATMI", f"{latest_profit/1e9:,.0f}B VND")
+            # Format margin percentages
+            def format_margin(val):
+                if pd.isna(val) or val == 0:
+                    return "-"
+                return f"{val:.1f}%"
             
-        with col3:
-            if 'Gross_Profit' in df.columns and 'Sales' in df.columns and df['Sales'].iloc[-1] != 0:
-                gross_margin = (df['Gross_Profit'].iloc[-1] / df['Sales'].iloc[-1] * 100)
-            else:
-                gross_margin = 0
-            st.metric("Gross Margin", f"{gross_margin:.1f}%")
-            
-        with col4:
-            if 'NPATMI' in df.columns and 'Total_Equity' in df.columns and df['Total_Equity'].iloc[-1] != 0:
-                roe = (df['NPATMI'].iloc[-1] / df['Total_Equity'].iloc[-1] * 100)
-            elif 'NPAT' in df.columns and 'Total_Equity' in df.columns and df['Total_Equity'].iloc[-1] != 0:
-                roe = (df['NPAT'].iloc[-1] / df['Total_Equity'].iloc[-1] * 100)
-            else:
-                roe = 0
-            st.metric("ROE", f"{roe:.1f}%")
+            styled_margins = margin_df.style.format(format_margin)
+            st.dataframe(styled_margins, use_container_width=True)
         
-        # Annual Revenue and NPATMI Chart
-        st.subheader("Annual Revenue and NPATMI Trends")
+        # Add growth rates
+        st.subheader("Year-over-Year Growth Rates")
+        growth_data = {}
         
-        # Extract year from index if it's a date
-        df_annual = df.copy()
-        if not df_annual.empty:
-            # Parse the index as datetime if it's not already
-            try:
-                df_annual.index = pd.to_datetime(df_annual.index)
-                # Group by year and take the last value (year-end)
-                df_annual['Year'] = df_annual.index.year
-                
-                # Prepare data for annual metrics
-                annual_metrics = []
-                for year in df_annual['Year'].unique():
-                    year_data = df_annual[df_annual['Year'] == year].iloc[-1]  # Take last quarter/period of year
-                    
-                    revenue = 0
-                    if 'Sales' in df_annual.columns:
-                        revenue = year_data['Sales']
-                    elif 'Net_Revenue' in df_annual.columns:
-                        revenue = year_data['Net_Revenue']
-                    
-                    npatmi = 0
-                    if 'NPATMI' in df_annual.columns:
-                        npatmi = year_data['NPATMI']
-                    elif 'NPAT' in df_annual.columns:
-                        npatmi = year_data['NPAT']
-                    
-                    annual_metrics.append({
-                        'Year': year,
-                        'Revenue': revenue / 1e9,  # Convert to billions
-                        'NPATMI': npatmi / 1e9     # Convert to billions
-                    })
-                
-                annual_df = pd.DataFrame(annual_metrics)
-                
-                # Create dual-axis chart for Revenue and NPATMI
-                fig = go.Figure()
-                
-                # Add Revenue bars
-                fig.add_trace(go.Bar(
-                    x=annual_df['Year'],
-                    y=annual_df['Revenue'],
-                    name='Annual Revenue',
-                    marker_color='lightblue',
-                    yaxis='y',
-                    text=annual_df['Revenue'].round(0),
-                    texttemplate='%{text:.0f}B',
-                    textposition='outside'
-                ))
-                
-                # Add NPATMI line
-                fig.add_trace(go.Scatter(
-                    x=annual_df['Year'],
-                    y=annual_df['NPATMI'],
-                    name='Annual NPATMI',
-                    mode='lines+markers',
-                    marker=dict(size=8, color='red'),
-                    line=dict(color='red', width=2),
-                    yaxis='y2',
-                    text=annual_df['NPATMI'].round(0),
-                    texttemplate='%{text:.0f}B',
-                    textposition='top center'
-                ))
-                
-                fig.update_layout(
-                    title=f"Annual Revenue and NPATMI - {st.session_state.selected_company}",
-                    xaxis=dict(title="Year", tickmode='linear', dtick=1),
-                    yaxis=dict(title="Revenue (Billion VND)", side='left'),
-                    yaxis2=dict(title="NPATMI (Billion VND)", overlaying='y', side='right'),
-                    hovermode='x unified',
-                    height=500,
-                    showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Display annual data table
-                st.subheader("Annual Financial Summary")
-                annual_display = annual_df.copy()
-                annual_display['Revenue Growth (%)'] = annual_display['Revenue'].pct_change() * 100
-                annual_display['NPATMI Growth (%)'] = annual_display['NPATMI'].pct_change() * 100
-                annual_display['Net Margin (%)'] = (annual_display['NPATMI'] / annual_display['Revenue'] * 100)
-                
-                # Format the display
-                st.dataframe(
-                    annual_display.style.format({
-                        'Year': '{:.0f}',
-                        'Revenue': '{:.1f}B',
-                        'NPATMI': '{:.1f}B',
-                        'Revenue Growth (%)': '{:.1f}%',
-                        'NPATMI Growth (%)': '{:.1f}%',
-                        'Net Margin (%)': '{:.1f}%'
-                    }),
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-            except Exception as e:
-                st.warning(f"Could not parse dates for annual analysis: {str(e)}")
-                # Fallback to showing raw data
-                pass
+        for metric in ['Net Revenue', 'Gross Profit', 'EBITDA', 'NPATMI']:
+            growth_row = []
+            for i, year in enumerate(years):
+                if i == 0:
+                    growth_row.append(None)  # No growth rate for first year
+                else:
+                    prev_val = pnl_df.loc[metric, years[i-1]]
+                    curr_val = pnl_df.loc[metric, year]
+                    if prev_val != 0 and not pd.isna(prev_val) and not pd.isna(curr_val):
+                        growth = ((curr_val - prev_val) / abs(prev_val)) * 100
+                        growth_row.append(growth)
+                    else:
+                        growth_row.append(None)
+            growth_data[metric] = growth_row
         
-        # Display detailed historical data table
-        st.subheader("Detailed Historical Financial Data")
+        growth_df = pd.DataFrame(growth_data, index=years).T
         
-        # Select and display key columns if they exist from CSV
-        key_columns = ['Sales', 'Net_Revenue', 'Gross_Profit', 'EBITDA', 'NPATMI', 'NPAT', 'Total_Assets', 'Total_Equity', 'Total_Debt', 'Operating_Cash_Flow']
-        available_columns = [col for col in key_columns if col in df.columns]
+        # Format growth rates
+        def format_growth(val):
+            if pd.isna(val) or val is None:
+                return "-"
+            color = 'green' if val > 0 else 'red' if val < 0 else 'black'
+            return f"<span style='color: {color}'>{val:+.1f}%</span>"
         
-        if available_columns:
-            display_df = df[available_columns].copy()
-            # Convert to billions for better readability
-            for col in display_df.columns:
-                display_df[col] = display_df[col] / 1e9
-            
-            # Format the dataframe
-            display_df = display_df.round(1)
-            st.dataframe(display_df, use_container_width=True)
-        else:
-            st.dataframe(df, use_container_width=True)
+        # Display growth rates with HTML formatting
+        growth_html = growth_df.to_html(escape=False, 
+                                       float_format=lambda x: format_growth(x) if not pd.isna(x) else "-")
+        st.markdown(growth_html, unsafe_allow_html=True)
     
     def render_assumptions_interface(self):
         """Render Excel-like assumptions input interface"""

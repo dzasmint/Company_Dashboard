@@ -377,12 +377,7 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             # Revenue and presales distribution percentages
             "revenue_distribution": project_data.get('revenue_distribution', {}),
             "presales_distribution": project_data.get('presales_distribution', {}),
-            # Calculated yearly schedules (in billions VND)
-            "revenue_schedule": project_data.get('revenue_schedule', {}),
-            "construction_schedule": project_data.get('construction_schedule', {}),
-            "land_schedule": project_data.get('land_schedule', {}),
-            "sga_schedule": project_data.get('sga_schedule', {}),
-            "interest_schedule": project_data.get('interest_schedule', {}),
+            # P&L schedule contains all financial data by year (revenue, costs, interest, etc.)
             "pnl_schedule": project_data.get('pnl_schedule', {}),
             "last_updated": datetime.datetime.now(),
             "created_date": datetime.datetime.now()
@@ -743,5 +738,97 @@ def get_available_tickers_from_mongodb():
         
     except Exception as e:
         return []
+
+def save_company_forecast(ticker, forecast_data):
+    """
+    Save company P&L forecast to MongoDB CompanyForecast collection
+    
+    Args:
+        ticker (str): Company ticker symbol
+        forecast_data (dict): Dictionary with year as key and P&L data as value
+                             Example: {
+                                 '2025': {
+                                     'real_estate_revenue': 100,
+                                     'other_business_revenue': 200,
+                                     'net_revenue': 300,
+                                     'real_estate_cogs': -50,
+                                     'other_business_cogs': -100,
+                                     'total_cogs': -150,
+                                     'gross_profit': 150,
+                                     'sga': -30,
+                                     'ebitda': 120,
+                                     'interest_expense': -10,
+                                     'pbt': 110,
+                                     'tax': -22,
+                                     'pat': 88
+                                 },
+                                 '2026': {...}
+                             }
+    
+    Returns:
+        dict: Success status and message
+    """
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return {"success": False, "message": "Failed to connect to MongoDB"}
+        
+        # Get database and collection
+        db = client['VietnamStocks']
+        collection = db['CompanyForecast']
+        
+        # Prepare document
+        document = {
+            "ticker": ticker,
+            "last_updated": datetime.datetime.now(),
+            "forecast_years": list(forecast_data.keys()),
+            "forecast_data": forecast_data
+        }
+        
+        # Upsert - update if exists, insert if not
+        result = collection.update_one(
+            {"ticker": ticker},
+            {"$set": document},
+            upsert=True
+        )
+        
+        if result.modified_count > 0 or result.upserted_id:
+            return {"success": True, "message": f"Forecast saved successfully for {ticker}"}
+        else:
+            return {"success": False, "message": "No changes made"}
+            
+    except Exception as e:
+        return {"success": False, "message": f"Error saving forecast: {str(e)}"}
+
+def load_company_forecast(ticker):
+    """
+    Load company P&L forecast from MongoDB CompanyForecast collection
+    
+    Args:
+        ticker (str): Company ticker symbol
+    
+    Returns:
+        dict: Forecast data or empty dict if not found
+    """
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return {}
+        
+        # Get database and collection
+        db = client['VietnamStocks']
+        collection = db['CompanyForecast']
+        
+        # Query for specific ticker
+        forecast_doc = collection.find_one({"ticker": ticker})
+        
+        if forecast_doc:
+            return forecast_doc.get('forecast_data', {})
+        else:
+            return {}
+            
+    except Exception as e:
+        st.error(f"Error loading forecast for {ticker}: {str(e)}")
+        return {}
 
 # %%
