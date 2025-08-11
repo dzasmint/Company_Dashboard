@@ -105,6 +105,9 @@ class RealEstateFinancialModel:
         # Track if we're in the middle of editing to prevent resets
         if 'editing_in_progress' not in st.session_state:
             st.session_state.editing_in_progress = False
+        # Store the current tab to persist across reruns
+        if 'preserve_tab' not in st.session_state:
+            st.session_state.preserve_tab = False
             
     def get_default_assumptions(self):
         """Get default modeling assumptions"""
@@ -482,7 +485,7 @@ class RealEstateFinancialModel:
             "God AI Assistant"
         ]
         
-        # Create tabs - Streamlit will handle state preservation automatically
+        # Create tabs - use a key to maintain state
         tabs = st.tabs(tab_names)
         
         # Render each tab content
@@ -1807,6 +1810,7 @@ class RealEstateFinancialModel:
                 elif item == "Terminal Growth":
                     st.session_state.assumptions['valuation']['terminal_growth'] = value
     
+    @st.fragment
     def render_project_pipeline(self):
         """Render project pipeline and timeline"""
         st.header("Project Pipeline Analysis")
@@ -1824,11 +1828,19 @@ class RealEstateFinancialModel:
         # Add "Create New Project" option at the beginning
         project_options = ["All Projects (Overview)", "➕ Create New Project"] + project_names
         
-        selected_project_name = st.selectbox(
-            "Choose a project to view/edit details:",
-            options=project_options,
-            key="selected_project_for_edit"
-        )
+        # Use session state to preserve the selected project
+        if 'selected_project_for_edit' not in st.session_state:
+            st.session_state.selected_project_for_edit = "All Projects (Overview)"
+        
+        # Create a form to prevent auto-rerun on selection
+        with st.container():
+            selected_project_name = st.selectbox(
+                "Choose a project to view/edit details:",
+                options=project_options,
+                key="selected_project_for_edit",
+                index=project_options.index(st.session_state.selected_project_for_edit) if st.session_state.selected_project_for_edit in project_options else 0,
+                help="Select a project to view or edit its details"
+            )
         
         if selected_project_name == "➕ Create New Project":
             # Show new project creation form
