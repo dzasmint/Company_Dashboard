@@ -176,8 +176,8 @@ User Query: "{query}"
 
 Available intents and their purposes:
 - LIST_PROJECTS: User wants to see/list/display projects for one or more companies
-- PROJECT_DETAILS: User asks about specific project details, metrics, or financial data (revenue, profit, margins, ASP, etc.)
-- RANK_PROJECTS: User wants to rank/sort/find top/largest/best projects by some metric
+- PROJECT_DETAILS: User asks about specific project details, metrics, or financial data (revenue, profit, margins, ASP, etc.) for specific projects
+- RANK_PROJECTS: User wants to rank/sort/find top/highest/largest/best projects by some metric (e.g., "which project has highest gross margin", "top 5 by revenue", "largest RNAV")
 - CALCULATE_METRICS: User wants to calculate aggregate metrics across multiple projects or portfolio-level calculations
 - ANALYZE_GROWTH: User asks about growth trends, revenue progression over time, or year-over-year analysis
 - SUGGEST_PARAMETERS: User needs AI suggestions for project parameters like ASP or construction costs
@@ -185,7 +185,12 @@ Available intents and their purposes:
 - UPDATE_PROJECT: User wants to modify or update project data
 - GENERAL_QUERY: General questions that don't fit other categories
 
-Respond with ONLY the intent name. If the query asks about specific financial metrics (revenue, profit, margins, etc.) for projects, use PROJECT_DETAILS."""
+Important distinctions:
+- If user asks "which project has the highest/largest/best X" or "rank by X" → RANK_PROJECTS
+- If user asks "what is the X of project Y" → PROJECT_DETAILS
+- If user asks about comparing or ranking multiple projects → RANK_PROJECTS
+
+Respond with ONLY the intent name."""
                     }]
                 )
                 intent = response.content[0].text.strip().upper()
@@ -488,7 +493,14 @@ Respond with ONLY the intent name. If the query asks about specific financial me
     
     def handle_rank_projects(self, entities: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Handle project ranking request - now searches all projects in MongoDB"""
+        debug_msg = []
+        debug_msg.append("\n🏆 **RANK PROJECTS HANDLER**")
+        
         tickers = entities.get('tickers', [])
+        metric = entities.get('metric', 'rnav')
+        
+        debug_msg.append(f"Tickers: {tickers}")
+        debug_msg.append(f"Ranking metric: {metric}")
         
         # Load all projects from MongoDB
         from .mongodb_utils import load_projects_data
@@ -497,67 +509,166 @@ Respond with ONLY the intent name. If the query asks about specific financial me
         if all_projects_df.empty:
             return {
                 'type': 'error',
-                'message': 'No projects found in database',
+                'message': '\n'.join(debug_msg) + '\n\n❌ No projects found in database',
                 'data': None
             }
         
         # Filter by tickers if specified
         if tickers:
             projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
+            debug_msg.append(f"Filtered to {len(projects_df)} projects for tickers: {tickers}")
         else:
             projects_df = all_projects_df
+            debug_msg.append(f"Using all {len(projects_df)} projects")
         
         if projects_df.empty:
             return {
                 'type': 'error',
-                'message': 'No projects found for specified criteria',
+                'message': '\n'.join(debug_msg) + '\n\n❌ No projects found for specified criteria',
                 'data': None
             }
         
-        # Determine ranking metric
-        metric = entities.get('metric', 'rnav').lower()
+        # Calculate gross margin if needed
+        if 'gross margin' in str(metric).lower() or 'margin' in str(metric).lower():
+            debug_msg.append("Calculating gross margins for ranking...")
+            # Calculate gross margin for each project
+            projects_df = projects_df.copy()
+            gross_margins = []
+            for _, project in projects_df.iterrows():
+                gross_margin = self._calculate_gross_margin(project.to_dict())
+                # Extract numeric value from percentage string
+                if gross_margin != 'N/A':
+                    margin_value = float(gross_margin.replace('%', ''))
+                else:
+                    margin_value = 0
+                gross_margins.append(margin_value)
+            projects_df['gross_margin_value'] = gross_margins
+            sorted_df = projects_df.sort_values('gross_margin_value', ascending=False, na_position='last')
+            metric_display = 'Gross Margin'
+            debug_msg.append(f"Sorted by gross margin (highest: {sorted_df.iloc[0]['gross_margin_value']:.1f}%)")
         
-        if metric == 'rnav' and 'rnav_value' in projects_df.columns:
-            sorted_df = projects_df.sort_values('rnav_value', ascending=False, na_position='last')
-            metric_display = 'RNAV Value'
-        elif metric == 'revenue' and 'total_revenue' in projects_df.columns:
-            sorted_df = projects_df.sort_values('total_revenue', ascending=False, na_position='last')
-            metric_display = 'Total Revenue'
-        elif metric == 'nsa' and 'net_sellable_area' in projects_df.columns:
+        # Handle other metrics
+        elif any(word in str(metric).lower() for word in ['revenue', 'sales']):
+            if 'total_revenue' in projects_df.columns:
+                sorted_df = projects_df.sort_values('total_revenue', ascending=False, na_position='last')
+                metric_display = 'Total Revenue'
+            else:
+                # Calculate from NSA and ASP
+                projects_df = projects_df.copy()
+                projects_df['calculated_revenue'] = (projects_df['net_sellable_area'] * projects_df['average_selling_price']) / 1e9
+                sorted_df = projects_df.sort_values('calculated_revenue', ascending=False, na_position='last')
+                metric_display = 'Total Revenue (Calculated)'
+            debug_msg.append(f"Sorted by {metric_display}")
+        
+        elif any(word in str(metric).lower() for word in ['profit', 'pat', 'net profit', 'net income']):
+            if 'total_pat' in projects_df.columns:
+                sorted_df = projects_df.sort_values('total_pat', ascending=False, na_position='last')
+                metric_display = 'Net Profit (PAT)'
+            else:
+                sorted_df = projects_df
+                metric_display = 'Net Profit (N/A)'
+            debug_msg.append(f"Sorted by {metric_display}")
+        
+        elif any(word in str(metric).lower() for word in ['nsa', 'net sellable area', 'area']):
             sorted_df = projects_df.sort_values('net_sellable_area', ascending=False, na_position='last')
             metric_display = 'Net Sellable Area'
-        else:
-            # Default to RNAV
+            debug_msg.append(f"Sorted by {metric_display}")
+        
+        elif any(word in str(metric).lower() for word in ['asp', 'average selling price', 'price']):
+            sorted_df = projects_df.sort_values('average_selling_price', ascending=False, na_position='last')
+            metric_display = 'Average Selling Price'
+            debug_msg.append(f"Sorted by {metric_display}")
+        
+        elif 'rnav' in str(metric).lower():
             if 'rnav_value' in projects_df.columns:
                 sorted_df = projects_df.sort_values('rnav_value', ascending=False, na_position='last')
                 metric_display = 'RNAV Value'
             else:
                 sorted_df = projects_df
+                metric_display = 'RNAV (Not Calculated)'
+            debug_msg.append(f"Sorted by {metric_display}")
+        
+        else:
+            # Default to RNAV
+            if 'rnav_value' in projects_df.columns:
+                sorted_df = projects_df.sort_values('rnav_value', ascending=False, na_position='last')
+                metric_display = 'RNAV Value (Default)'
+            else:
+                sorted_df = projects_df
                 metric_display = 'Default Order'
+            debug_msg.append(f"No specific metric found, defaulting to {metric_display}")
         
         # Get top 10
         top_projects = sorted_df.head(10)
+        debug_msg.append(f"Selected top {len(top_projects)} projects")
         
-        # Prepare display
-        display_columns = ['company_ticker', 'project_name', 'location', 'rnav_value', 'net_sellable_area', 'average_selling_price']
+        # Prepare display columns based on metric type
+        if 'margin' in metric_display.lower():
+            # For margin ranking, show margin-related columns
+            display_columns = ['company_ticker', 'project_name', 'location']
+            # Add gross margin column
+            if 'gross_margin_value' in top_projects.columns:
+                display_columns.append('gross_margin_value')
+            # Add revenue and cost columns for context
+            if 'total_revenue' in top_projects.columns:
+                display_columns.append('total_revenue')
+            elif 'calculated_revenue' in top_projects.columns:
+                display_columns.append('calculated_revenue')
+            display_columns.extend(['net_sellable_area', 'average_selling_price'])
+        elif 'revenue' in metric_display.lower():
+            display_columns = ['company_ticker', 'project_name', 'location', 'total_revenue', 'net_sellable_area', 'average_selling_price']
+        elif 'profit' in metric_display.lower():
+            display_columns = ['company_ticker', 'project_name', 'location', 'total_pat', 'total_revenue', 'net_sellable_area']
+        else:
+            # Default columns
+            display_columns = ['company_ticker', 'project_name', 'location', 'rnav_value', 'net_sellable_area', 'average_selling_price']
+        
         available_columns = [col for col in display_columns if col in top_projects.columns]
         display_df = top_projects[available_columns].copy()
         
         # Add ranking
         display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
         
-        # Format numbers
+        # Format numbers and add special columns
+        if 'gross_margin_value' in display_df.columns:
+            display_df['Gross Margin'] = display_df['gross_margin_value'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) and x > 0 else "N/A")
+            display_df = display_df.drop('gross_margin_value', axis=1)
+        
         if 'net_sellable_area' in display_df.columns:
-            display_df['net_sellable_area'] = display_df['net_sellable_area'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+            display_df['NSA (sqm)'] = display_df['net_sellable_area'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+            display_df = display_df.drop('net_sellable_area', axis=1)
+            
         if 'average_selling_price' in display_df.columns:
-            display_df['average_selling_price'] = display_df['average_selling_price'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+            display_df['ASP (VND/sqm)'] = display_df['average_selling_price'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+            display_df = display_df.drop('average_selling_price', axis=1)
+            
         if 'rnav_value' in display_df.columns:
-            display_df['rnav_value'] = display_df['rnav_value'].apply(lambda x: f"{x:,.1f}B" if pd.notna(x) else "N/A")
+            display_df['RNAV (B VND)'] = display_df['rnav_value'].apply(lambda x: f"{x:,.1f}" if pd.notna(x) else "N/A")
+            display_df = display_df.drop('rnav_value', axis=1)
+            
+        if 'total_revenue' in display_df.columns:
+            display_df['Revenue (B VND)'] = display_df['total_revenue'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) and x > 0 else "N/A")
+            display_df = display_df.drop('total_revenue', axis=1)
+            
+        if 'calculated_revenue' in display_df.columns:
+            display_df['Revenue (B VND)'] = display_df['calculated_revenue'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) and x > 0 else "N/A")
+            display_df = display_df.drop('calculated_revenue', axis=1)
+            
+        if 'total_pat' in display_df.columns:
+            display_df['PAT (B VND)'] = display_df['total_pat'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+            display_df = display_df.drop('total_pat', axis=1)
+        
+        # Rename columns for display
+        display_df = display_df.rename(columns={
+            'company_ticker': 'Ticker',
+            'project_name': 'Project Name',
+            'location': 'Location'
+        })
         
         return {
             'type': 'ranked_projects',
-            'message': f"Top {len(display_df)} projects ranked by {metric_display}",
-            'summary': f"Ranked {len(display_df)} projects",
+            'message': '\n'.join(debug_msg) + f"\n\n✅ Top {len(display_df)} projects ranked by {metric_display}",
+            'summary': f"Ranked {len(display_df)} projects by {metric_display}",
             'data': display_df,
             'metric': metric_display
         }
