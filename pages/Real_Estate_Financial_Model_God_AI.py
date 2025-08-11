@@ -5686,6 +5686,16 @@ class RealEstateFinancialModel:
             if result.get('data') is not None:
                 st.dataframe(result['data'], use_container_width=True)
         
+        # Handle all metric-specific result types
+        elif result['type'].startswith('metric_'):
+            # This handles metric_revenue, metric_profit, metric_trends, etc.
+            if result.get('data') is not None and not result['data'].empty:
+                st.dataframe(result['data'], use_container_width=True)
+            
+            # If there's a chart (for trends), display it
+            if result.get('chart'):
+                st.plotly_chart(result['chart'], use_container_width=True)
+        
         elif result['type'] == 'error':
             st.error(result.get('message', 'An error occurred'))
         
@@ -5781,6 +5791,37 @@ class RealEstateFinancialModel:
             
             if result.get('data') is not None:
                 st.dataframe(result['data'], use_container_width=True)
+        
+        elif result['type'] == 'project_summary':
+            st.markdown(f"#### 📋 {result.get('message', 'Project Summary')}")
+            
+            if result.get('data') is not None:
+                st.dataframe(result['data'], use_container_width=True, height=400)
+        
+        # Handle all metric-specific result types
+        elif result['type'].startswith('metric_'):
+            # Extract the metric type name for display
+            metric_name = result['type'].replace('metric_', '').replace('_', ' ').title()
+            st.markdown(f"#### 📊 {metric_name} Analysis")
+            
+            # Display the message if available
+            if result.get('message'):
+                # Parse out just the title part (after the emoji)
+                message_lines = result['message'].split('\n')
+                for line in message_lines:
+                    if '**Revenue Analysis**' in line or '**Profit Analysis**' in line or '**Financial' in line:
+                        st.write(line)
+                        break
+            
+            # Display the data
+            if result.get('data') is not None and not result['data'].empty:
+                st.dataframe(result['data'], use_container_width=True, height=400)
+            else:
+                st.warning("No data available for this metric")
+            
+            # If there's a chart (for trends), display it
+            if result.get('chart'):
+                st.plotly_chart(result['chart'], use_container_width=True)
         
         elif result['type'] == 'error':
             st.error(result.get('message', 'An error occurred'))
