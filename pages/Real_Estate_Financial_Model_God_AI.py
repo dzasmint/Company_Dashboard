@@ -177,7 +177,7 @@ class RealEstateFinancialModel:
         if companies:
             # Get current selection
             current_index = 0
-            if 'selected_company' in st.session_state:
+            if 'selected_company' in st.session_state and st.session_state.selected_company is not None:
                 for i, company in enumerate(companies):
                     if company.startswith(st.session_state.selected_company + " - "):
                         current_index = i
@@ -290,7 +290,7 @@ class RealEstateFinancialModel:
     def load_historical_data_from_csv(_self, ticker):
         """Load historical financial data from FA_A_processed.csv."""
         try:
-            # Always use FA_A_processed.csv for all tickers including DXG
+            # Use FA_A_processed.csv for all tickers
             fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.csv')
             
             if not os.path.exists(fa_path):
@@ -331,7 +331,7 @@ class RealEstateFinancialModel:
         try:
             fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.csv')
             if not os.path.exists(fa_path):
-                return ['DXG - Dat Xanh Group']  # Fallback to known company
+                return []  # Return empty list if file not found
             
             # Read only the TICKER column to speed up loading
             df_fa = pd.read_csv(fa_path, usecols=['TICKER'])
@@ -360,8 +360,8 @@ class RealEstateFinancialModel:
                 return tickers
                 
         except Exception as e:
-            # Return fallback list
-            return ['DXG - Dat Xanh Group']
+            # Return empty list on error
+            return []
     
     def refresh_financial_data(self):
         """Refresh financial data from FA_A_processed.csv"""
@@ -1984,7 +1984,7 @@ class RealEstateFinancialModel:
             company_ticker = st.text_input(
                 "Company Ticker *",
                 value=st.session_state.selected_company if st.session_state.selected_company else "",
-                placeholder="e.g., DXG, KDH",
+                placeholder="e.g., VHM, NLG, KDH",
                 key="new_project_ticker"
             )
             
