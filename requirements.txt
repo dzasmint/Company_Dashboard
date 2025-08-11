@@ -13,6 +13,7 @@ pymongo
 certifi
 pytesseract
 pdf2image
+PyPDF2
 pillow
 reportlab
 streamlit-aggrid
