@@ -5798,6 +5798,14 @@ class RealEstateFinancialModel:
             if result.get('data') is not None:
                 st.dataframe(result['data'], use_container_width=True, height=400)
         
+        # Handle comparison results
+        elif result['type'] == 'comparison':
+            st.markdown("#### 🔍 Project Comparison")
+            
+            # Display comparison table
+            if result.get('data') is not None and not result['data'].empty:
+                st.dataframe(result['data'], use_container_width=True, height=500)
+        
         # Handle chart results
         elif result['type'] == 'chart':
             st.markdown("#### 📈 Financial Chart")

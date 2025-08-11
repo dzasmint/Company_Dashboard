@@ -178,6 +178,7 @@ Available intents and their purposes:
 - LIST_PROJECTS: User wants to see/list/display projects for one or more companies
 - PROJECT_DETAILS: User asks about specific project details, metrics, or financial data (revenue, profit, margins, ASP, etc.) for specific projects
 - RANK_PROJECTS: User wants to rank/sort/find top/highest/largest/best projects by some metric (e.g., "which project has highest gross margin", "top 5 by revenue", "largest RNAV")
+- COMPARE_PROJECTS: User wants to compare specific projects side-by-side (e.g., "compare Project A vs Project B", "compare margins between X and Y")
 - CALCULATE_METRICS: User wants to calculate aggregate metrics across multiple projects or portfolio-level calculations
 - ANALYZE_GROWTH: User asks about growth trends, revenue progression over time, or year-over-year analysis
 - CREATE_CHART: User wants to chart/plot/visualize/graph financial data (revenue, presales, NPATMI, P&L) over time for one or more projects
@@ -189,7 +190,8 @@ Available intents and their purposes:
 Important distinctions:
 - If user asks "which project has the highest/largest/best X" or "rank by X" → RANK_PROJECTS
 - If user asks "what is the X of project Y" → PROJECT_DETAILS
-- If user asks about comparing or ranking multiple projects → RANK_PROJECTS
+- If user asks to "compare X vs Y" or "compare between" specific projects → COMPARE_PROJECTS
+- If user asks about comparing or ranking all/multiple projects → RANK_PROJECTS
 - If user asks to "chart", "plot", "visualize", "graph" any financial metric → CREATE_CHART
 
 Respond with ONLY the intent name."""
@@ -309,10 +311,11 @@ Respond with ONLY the intent name."""
         extraction_debug.append("Searching for project names in query...")
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
+        matched_projects = []
         if not all_projects_df.empty:
             for project_name in all_projects_df['project_name'].unique():
                 if project_name and project_name.lower() in query.lower():
-                    entities['project_name'] = project_name
+                    matched_projects.append(project_name)
                     extraction_debug.append(f"Found project name: {project_name}")
                     # Also extract the ticker for this project
                     project_ticker = all_projects_df[all_projects_df['project_name'] == project_name]['company_ticker'].iloc[0]
@@ -321,7 +324,16 @@ Respond with ONLY the intent name."""
                     if project_ticker not in entities.get('tickers', []):
                         entities['tickers'].append(project_ticker)
                         extraction_debug.append(f"Added ticker {project_ticker} from project")
-                    break
+            
+            # Store project names based on how many were found
+            if matched_projects:
+                if len(matched_projects) == 1:
+                    entities['project_name'] = matched_projects[0]
+                else:
+                    # Multiple projects for comparison
+                    entities['project_names'] = matched_projects
+                    entities['project_name'] = matched_projects[0]  # Keep first as default
+                    extraction_debug.append(f"Multiple projects detected for comparison: {matched_projects}")
         
         # Extract years
         year_pattern = r'\b(20\d{2})\b'
@@ -407,6 +419,10 @@ Respond with ONLY the intent name."""
         elif intent == 'RANK_PROJECTS':
             routing_debug.append("→ RANK_PROJECTS: Ranking projects by metric")
             result = self.handle_rank_projects(entities, context)
+        
+        elif intent == 'COMPARE_PROJECTS':
+            routing_debug.append("→ COMPARE_PROJECTS: Comparing specific projects")
+            result = self.handle_compare_projects(entities, context)
         
         elif intent == 'CALCULATE_METRICS':
             routing_debug.append("→ CALCULATE_METRICS: Calculating aggregate metrics")
@@ -745,6 +761,118 @@ Respond with ONLY the intent name."""
             'summary': f"Ranked {len(display_df)} projects by {metric_display}",
             'data': display_df,
             'metric': metric_display
+        }
+    
+    def handle_compare_projects(self, entities: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle comparison between specific projects"""
+        debug_msg = []
+        debug_msg.append("\n📊 **COMPARE PROJECTS HANDLER**")
+        
+        # Load all projects from MongoDB
+        from .mongodb_utils import load_projects_data
+        all_projects_df = load_projects_data()
+        
+        if all_projects_df.empty:
+            return {
+                'type': 'error',
+                'message': '❌ No projects found in database',
+                'data': None
+            }
+        
+        # Get project names from entities
+        project_names = entities.get('project_names', [])
+        if not project_names:
+            # Try to extract from context or use default
+            project_name = entities.get('project_name')
+            if project_name:
+                project_names = [project_name]
+            else:
+                # Default to comparing top projects
+                project_names = all_projects_df.head(3)['project_name'].tolist()
+                debug_msg.append(f"No specific projects mentioned, comparing top 3 projects")
+        
+        debug_msg.append(f"Comparing projects: {', '.join(project_names)}")
+        
+        # Filter projects for comparison
+        compare_df = all_projects_df[all_projects_df['project_name'].isin(project_names)]
+        
+        if compare_df.empty:
+            return {
+                'type': 'error', 
+                'message': f'❌ Projects not found: {", ".join(project_names)}',
+                'data': None
+            }
+        
+        # Create comprehensive comparison data
+        comparison_data = []
+        for _, project in compare_df.iterrows():
+            project_dict = project.to_dict()
+            
+            # Calculate key metrics
+            total_revenue = project_dict.get('total_revenue', 0)
+            if total_revenue == 0:
+                nsa = project_dict.get('net_sellable_area', 0)
+                asp = project_dict.get('average_selling_price', 0)
+                if nsa > 0 and asp > 0:
+                    total_revenue = (nsa * asp) / 1e9
+            
+            total_construction_cost = project_dict.get('total_construction_cost', 0)
+            total_land_cost = project_dict.get('total_land_cost', 0)
+            
+            if total_construction_cost == 0 or total_land_cost == 0:
+                gfa = project_dict.get('gross_floor_area', 0)
+                land_area = project_dict.get('land_area', 0)
+                
+                if total_construction_cost == 0 and gfa > 0:
+                    construction_cost_per_sqm = project_dict.get('construction_cost_per_sqm', 0)
+                    total_construction_cost = (construction_cost_per_sqm * gfa) / 1e9
+                
+                if total_land_cost == 0 and land_area > 0:
+                    land_cost_per_sqm = project_dict.get('land_cost_per_sqm', 0)
+                    total_land_cost = (land_cost_per_sqm * land_area) / 1e9
+            
+            # Calculate gross margin
+            gross_margin = 0
+            if total_revenue > 0:
+                total_cogs = total_construction_cost + total_land_cost
+                gross_profit = total_revenue - total_cogs
+                gross_margin = (gross_profit / total_revenue) * 100
+            
+            # Calculate net margin
+            total_pat = project_dict.get('total_pat', 0)
+            net_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
+            
+            comparison_data.append({
+                'Project': project['project_name'],
+                'Company': project['company_ticker'],
+                'Location': project.get('location', 'N/A'),
+                'Total Units': f"{project.get('total_units', 0):,.0f}",
+                'NSA (sqm)': f"{project.get('net_sellable_area', 0):,.0f}",
+                'ASP (VND/sqm)': f"{project.get('average_selling_price', 0):,.0f}",
+                'Total Revenue (B VND)': f"{total_revenue:,.0f}",
+                'Construction Cost (B VND)': f"{total_construction_cost:,.0f}",
+                'Land Cost (B VND)': f"{total_land_cost:,.0f}",
+                'Gross Margin (%)': f"{gross_margin:.1f}",
+                'Net Margin (%)': f"{net_margin:.1f}",
+                'RNAV (B VND)': f"{project.get('rnav_value', 0):,.0f}",
+                'Sale Start': project.get('sale_start_year', 'N/A'),
+                'Completion': project.get('project_completion_year', 'N/A')
+            })
+        
+        comparison_df = pd.DataFrame(comparison_data)
+        
+        # Transpose for side-by-side comparison if 2-3 projects
+        if len(comparison_df) <= 3:
+            comparison_df = comparison_df.set_index('Project').T
+            message = f"📊 **Side-by-side Comparison**\n\nComparing {len(compare_df)} projects across key metrics"
+        else:
+            message = f"📊 **Project Comparison**\n\nComparing {len(compare_df)} projects"
+        
+        return {
+            'type': 'comparison',
+            'message': '\n'.join(debug_msg) + f"\n\n{message}",
+            'summary': f"Compared {len(compare_df)} projects",
+            'data': comparison_df
         }
     
     def handle_suggest_parameters(self, entities: Dict[str, Any], query: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -1290,12 +1418,17 @@ Respond with ONLY the intent name."""
         # Collect all years and aggregate data
         years_set = set()
         project_revenues = {}
+        has_data = False
         
         for _, project in projects_df.iterrows():
             project_name = f"{project['company_ticker']} - {project['project_name']}"
             pnl_schedule = project.get('pnl_schedule', {})
             
-            if isinstance(pnl_schedule, dict):
+            # Also try to get revenue from revenue_distribution if pnl_schedule is empty
+            revenue_dist = project.get('revenue_distribution', {})
+            total_revenue = project.get('total_revenue', 0)
+            
+            if isinstance(pnl_schedule, dict) and pnl_schedule:
                 project_revenues[project_name] = {}
                 for year_str, pnl_data in pnl_schedule.items():
                     try:
@@ -1303,8 +1436,42 @@ Respond with ONLY the intent name."""
                         years_set.add(year)
                         revenue = pnl_data.get('revenue', 0) / 1e9 if isinstance(pnl_data, dict) else 0
                         project_revenues[project_name][year] = revenue
+                        if revenue > 0:
+                            has_data = True
                     except (ValueError, TypeError):
                         continue
+            elif isinstance(revenue_dist, dict) and revenue_dist and total_revenue > 0:
+                # Fallback to revenue distribution if no P&L schedule
+                project_revenues[project_name] = {}
+                for year_str, percentage in revenue_dist.items():
+                    try:
+                        year = int(year_str)
+                        years_set.add(year)
+                        revenue = (total_revenue * float(percentage) / 100)  # total_revenue already in billions
+                        project_revenues[project_name][year] = revenue
+                        if revenue > 0:
+                            has_data = True
+                    except (ValueError, TypeError):
+                        continue
+        
+        # If no data found, create empty chart with message
+        if not has_data or not years_set:
+            fig.add_annotation(
+                text="No revenue schedule data available for selected project(s).<br>Please ensure P&L schedule is calculated.",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=14)
+            )
+            fig.update_layout(
+                title='Revenue Schedule by Year',
+                xaxis_title='Year',
+                yaxis_title='Revenue (Billion VND)',
+                height=500
+            )
+            return fig
         
         # Sort years
         years = sorted(years_set)
@@ -1398,12 +1565,14 @@ Respond with ONLY the intent name."""
         # Collect all years and aggregate data
         years_set = set()
         project_profits = {}
+        has_data = False
         
         for _, project in projects_df.iterrows():
             project_name = f"{project['company_ticker']} - {project['project_name']}"
             pnl_schedule = project.get('pnl_schedule', {})
             
-            if isinstance(pnl_schedule, dict):
+            # Try P&L schedule first
+            if isinstance(pnl_schedule, dict) and pnl_schedule:
                 project_profits[project_name] = {}
                 for year_str, pnl_data in pnl_schedule.items():
                     try:
@@ -1412,8 +1581,36 @@ Respond with ONLY the intent name."""
                         # Use PAT (Profit After Tax) from P&L schedule
                         pat = pnl_data.get('pat', 0) / 1e9 if isinstance(pnl_data, dict) else 0
                         project_profits[project_name][year] = pat
+                        if pat != 0:
+                            has_data = True
                     except (ValueError, TypeError):
                         continue
+            # Fallback to total_pat if available
+            elif project.get('total_pat', 0) > 0:
+                # If we only have total PAT, show it as a single point
+                current_year = 2025  # Default year
+                project_profits[project_name] = {current_year: project.get('total_pat', 0)}
+                years_set.add(current_year)
+                has_data = True
+        
+        # If no data found, show message
+        if not has_data or not years_set:
+            fig.add_annotation(
+                text="No profit data available for selected project(s).<br>Please ensure P&L schedule is calculated.",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=14)
+            )
+            fig.update_layout(
+                title='Net Profit After Tax (NPATMI) by Year',
+                xaxis_title='Year',
+                yaxis_title='NPATMI (Billion VND)',
+                height=500
+            )
+            return fig
         
         # Sort years
         years = sorted(years_set)
@@ -1878,14 +2075,38 @@ Respond with ONLY the intent name."""
             # Calculate and show gross margins
             margins_data = []
             for _, project in projects_df.iterrows():
-                margin = self._calculate_gross_margin(project.to_dict())
+                project_dict = project.to_dict()
+                margin = self._calculate_gross_margin(project_dict)
                 if margin != "N/A":
+                    # Get total values (same logic as in _calculate_gross_margin)
+                    total_revenue = project_dict.get('total_revenue', 0)
+                    if total_revenue == 0:
+                        nsa = project_dict.get('net_sellable_area', 0)
+                        asp = project_dict.get('average_selling_price', 0)
+                        if nsa > 0 and asp > 0:
+                            total_revenue = (nsa * asp) / 1e9
+                    
+                    total_construction_cost = project_dict.get('total_construction_cost', 0)
+                    total_land_cost = project_dict.get('total_land_cost', 0)
+                    
+                    if total_construction_cost == 0 or total_land_cost == 0:
+                        gfa = project_dict.get('gross_floor_area', 0)
+                        land_area = project_dict.get('land_area', 0)
+                        
+                        if total_construction_cost == 0 and gfa > 0:
+                            construction_cost_per_sqm = project_dict.get('construction_cost_per_sqm', 0)
+                            total_construction_cost = (construction_cost_per_sqm * gfa) / 1e9
+                        
+                        if total_land_cost == 0 and land_area > 0:
+                            land_cost_per_sqm = project_dict.get('land_cost_per_sqm', 0)
+                            total_land_cost = (land_cost_per_sqm * land_area) / 1e9
+                    
                     margins_data.append({
                         'Company': project['company_ticker'],
                         'Project': project['project_name'],
-                        'ASP': f"{project.get('average_selling_price', 0):,.0f}",
-                        'Construction Cost': f"{project.get('construction_cost_per_sqm', 0):,.0f}",
-                        'Land Cost': f"{project.get('land_cost_per_sqm', 0):,.0f}",
+                        'Total Revenue': f"{total_revenue:,.0f}B",
+                        'Total Construction Cost': f"{total_construction_cost:,.0f}B",
+                        'Total Land Cost': f"{total_land_cost:,.0f}B",
                         'Gross Margin': margin
                     })
             
@@ -2039,6 +2260,34 @@ Respond with ONLY the intent name."""
                 'data': None
             }
         
+        # Check what data is available for charting
+        for _, project in projects_df.iterrows():
+            project_name = project.get('project_name', 'Unknown')
+            debug_msg.append(f"\nChecking data for {project_name}:")
+            
+            # Check P&L schedule
+            pnl_schedule = project.get('pnl_schedule', {})
+            if pnl_schedule:
+                debug_msg.append(f"  - P&L Schedule: {len(pnl_schedule)} years")
+                if isinstance(pnl_schedule, dict):
+                    years = list(pnl_schedule.keys())[:3]  # Show first 3 years
+                    debug_msg.append(f"    Years: {', '.join(years)}...")
+            else:
+                debug_msg.append("  - P&L Schedule: NOT FOUND")
+            
+            # Check revenue distribution
+            revenue_dist = project.get('revenue_distribution', {})
+            if revenue_dist:
+                debug_msg.append(f"  - Revenue Distribution: {len(revenue_dist)} years")
+            else:
+                debug_msg.append("  - Revenue Distribution: NOT FOUND")
+            
+            # Check total values
+            total_revenue = project.get('total_revenue', 0)
+            total_pat = project.get('total_pat', 0)
+            debug_msg.append(f"  - Total Revenue: {total_revenue:.0f}B VND" if total_revenue else "  - Total Revenue: NOT SET")
+            debug_msg.append(f"  - Total PAT: {total_pat:.0f}B VND" if total_pat else "  - Total PAT: NOT SET")
+        
         # Create appropriate chart based on type
         try:
             if chart_type == 'revenue':
@@ -2057,7 +2306,7 @@ Respond with ONLY the intent name."""
                 fig = self._create_combined_financial_chart(projects_df)
                 chart_title = "Combined Financial Metrics"
             
-            debug_msg.append(f"✅ Successfully created {chart_title} chart")
+            debug_msg.append(f"\n✅ Successfully created {chart_title} chart")
             
             # Prepare summary data
             summary_data = []
