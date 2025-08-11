@@ -1786,13 +1786,21 @@ class RealEstateFinancialModel:
         # Add project selector for individual project editing
         st.subheader("🎯 Select Individual Project")
         project_names = df_projects['project_name'].tolist()
+        
+        # Add "Create New Project" option at the beginning
+        project_options = ["All Projects (Overview)", "➕ Create New Project"] + project_names
+        
         selected_project_name = st.selectbox(
             "Choose a project to view/edit details:",
-            options=["All Projects (Overview)"] + project_names,
+            options=project_options,
             key="selected_project_for_edit"
         )
         
-        if selected_project_name != "All Projects (Overview)":
+        if selected_project_name == "➕ Create New Project":
+            # Show new project creation form
+            self.render_new_project_form()
+            return
+        elif selected_project_name != "All Projects (Overview)":
             # Show individual project editor
             self.render_individual_project_editor(selected_project_name, df_projects)
             return
@@ -1917,6 +1925,294 @@ class RealEstateFinancialModel:
                 use_container_width=True,
                 hide_index=True
             )
+    
+    def render_new_project_form(self):
+        """Render form for creating a brand new project"""
+        st.subheader("➕ Create New Project")
+        st.info("Enter details for your new project. All fields start empty for a fresh start.")
+        
+        # Initialize empty project data if not exists
+        if 'new_project_data' not in st.session_state:
+            st.session_state.new_project_data = {}
+        
+        # Basic Information Section
+        st.markdown("### 📋 Basic Information")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            project_name = st.text_input(
+                "Project Name *",
+                value="",
+                placeholder="Enter project name",
+                key="new_project_name"
+            )
+            
+            company_ticker = st.text_input(
+                "Company Ticker *",
+                value=st.session_state.selected_company if st.session_state.selected_company else "",
+                placeholder="e.g., DXG, KDH",
+                key="new_project_ticker"
+            )
+            
+            location = st.text_input(
+                "Location",
+                value="",
+                placeholder="e.g., Ho Chi Minh City",
+                key="new_project_location"
+            )
+            
+            project_ownership = st.number_input(
+                "Project Ownership (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=100.0,
+                step=0.1,
+                key="new_project_ownership"
+            )
+        
+        with col2:
+            total_units = st.number_input(
+                "Total Units",
+                min_value=0,
+                value=0,
+                step=1,
+                key="new_project_units"
+            )
+            
+            average_unit_size = st.number_input(
+                "Average Unit Size (sqm)",
+                min_value=0.0,
+                value=0.0,
+                step=0.1,
+                key="new_project_unit_size"
+            )
+            
+            land_area = st.number_input(
+                "Land Area (sqm)",
+                min_value=0.0,
+                value=0.0,
+                step=0.1,
+                key="new_project_land_area"
+            )
+            
+            gross_floor_area = st.number_input(
+                "Gross Floor Area (sqm)",
+                min_value=0.0,
+                value=0.0,
+                step=0.1,
+                key="new_project_gfa"
+            )
+        
+        st.markdown("---")
+        
+        # Financial Parameters Section
+        st.markdown("### 💰 Financial Parameters")
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            average_selling_price = st.number_input(
+                "Average Selling Price (VND/sqm)",
+                min_value=0.0,
+                value=0.0,
+                step=1000000.0,
+                format="%.0f",
+                key="new_project_asp"
+            )
+            
+            construction_cost_per_sqm = st.number_input(
+                "Construction Cost (VND/sqm)",
+                min_value=0.0,
+                value=0.0,
+                step=100000.0,
+                format="%.0f",
+                key="new_project_construction_cost"
+            )
+            
+            land_cost_per_sqm = st.number_input(
+                "Land Cost (VND/sqm)",
+                min_value=0.0,
+                value=0.0,
+                step=100000.0,
+                format="%.0f",
+                key="new_project_land_cost"
+            )
+        
+        with col4:
+            sga_percentage = st.number_input(
+                "SG&A (% of Revenue)",
+                min_value=0.0,
+                max_value=100.0,
+                value=8.0,
+                step=0.1,
+                key="new_project_sga"
+            )
+            
+            wacc_rate = st.number_input(
+                "WACC (%)",
+                min_value=0.0,
+                max_value=30.0,
+                value=12.0,
+                step=0.1,
+                key="new_project_wacc"
+            )
+            
+            cost_of_debt = st.number_input(
+                "Cost of Debt (%)",
+                min_value=0.0,
+                max_value=20.0,
+                value=8.0,
+                step=0.1,
+                key="new_project_cost_of_debt"
+            )
+        
+        st.markdown("---")
+        
+        # Timeline Section
+        st.markdown("### 📅 Project Timeline")
+        current_year = datetime.now().year
+        col5, col6 = st.columns(2)
+        
+        with col5:
+            construction_start_year = st.number_input(
+                "Construction Start Year",
+                min_value=2020,
+                max_value=2040,
+                value=current_year,
+                step=1,
+                key="new_project_construction_start"
+            )
+            
+            construction_years = st.number_input(
+                "Construction Duration (years)",
+                min_value=1,
+                max_value=10,
+                value=3,
+                step=1,
+                key="new_project_construction_years"
+            )
+            
+            sale_start_year = st.number_input(
+                "Sales Start Year",
+                min_value=2020,
+                max_value=2040,
+                value=current_year,
+                step=1,
+                key="new_project_sale_start"
+            )
+        
+        with col6:
+            sales_years = st.number_input(
+                "Sales Duration (years)",
+                min_value=1,
+                max_value=10,
+                value=3,
+                step=1,
+                key="new_project_sales_years"
+            )
+            
+            revenue_booking_start_year = st.number_input(
+                "Revenue Booking Start Year",
+                min_value=2020,
+                max_value=2040,
+                value=current_year + 1,
+                step=1,
+                key="new_project_revenue_start"
+            )
+            
+            project_completion_year = st.number_input(
+                "Project Completion Year",
+                min_value=2020,
+                max_value=2040,
+                value=current_year + 3,
+                step=1,
+                key="new_project_completion"
+            )
+        
+        st.markdown("---")
+        
+        # Action Buttons
+        col_save, col_cancel = st.columns(2)
+        
+        with col_save:
+            if st.button("💾 Save New Project", type="primary", use_container_width=True):
+                # Validate required fields
+                if not project_name:
+                    st.error("Project Name is required!")
+                    return
+                if not company_ticker:
+                    st.error("Company Ticker is required!")
+                    return
+                
+                # Prepare project data
+                new_project_data = {
+                    'project_name': project_name,
+                    'company_ticker': company_ticker.upper(),
+                    'location': location,
+                    'project_ownership': project_ownership / 100,  # Store as decimal
+                    'total_units': total_units,
+                    'average_unit_size': average_unit_size,
+                    'net_sellable_area': total_units * average_unit_size if total_units and average_unit_size else 0,
+                    'land_area': land_area,
+                    'gross_floor_area': gross_floor_area,
+                    'average_selling_price': average_selling_price,
+                    'construction_cost_per_sqm': construction_cost_per_sqm,
+                    'land_cost_per_sqm': land_cost_per_sqm,
+                    'sga_percentage': sga_percentage / 100,  # Store as decimal
+                    'wacc_rate': wacc_rate / 100,  # Store as decimal
+                    'cost_of_debt': cost_of_debt / 100,  # Store as decimal
+                    'construction_start_year': construction_start_year,
+                    'construction_years': construction_years,
+                    'sale_start_year': sale_start_year,
+                    'sales_years': sales_years,
+                    'revenue_booking_start_year': revenue_booking_start_year,
+                    'project_completion_year': project_completion_year,
+                    'land_payment_year': construction_start_year,  # Default to construction start
+                    'revenue_distribution': {},  # Empty for new project
+                    'presales_distribution': {},  # Empty for new project
+                    'pnl_schedule': {},  # Empty for new project
+                }
+                
+                # Calculate total values
+                nsa = new_project_data['net_sellable_area']
+                new_project_data['total_revenue'] = (nsa * average_selling_price) / 1e9 if nsa and average_selling_price else 0
+                new_project_data['total_construction_cost'] = (gross_floor_area * construction_cost_per_sqm) / 1e9 if gross_floor_area and construction_cost_per_sqm else 0
+                new_project_data['total_land_cost'] = (land_area * land_cost_per_sqm) / 1e9 if land_area and land_cost_per_sqm else 0
+                new_project_data['total_sga_cost'] = new_project_data['total_revenue'] * (sga_percentage / 100) if new_project_data['total_revenue'] else 0
+                
+                # Save to MongoDB
+                from utils.mongodb_utils import save_project_to_mongodb
+                result = save_project_to_mongodb(new_project_data, project_name)
+                
+                if result['success']:
+                    st.success(f"✅ {result['message']}")
+                    
+                    # Refresh project data
+                    from utils.mongodb_utils import load_projects_data
+                    df_projects = load_projects_data()
+                    
+                    # Filter for selected company if applicable
+                    if st.session_state.selected_company:
+                        df_projects = df_projects[df_projects['company_ticker'] == st.session_state.selected_company]
+                    
+                    st.session_state.project_data = df_projects
+                    
+                    # Clear the form by resetting session state
+                    if 'new_project_data' in st.session_state:
+                        del st.session_state.new_project_data
+                    
+                    # Switch to the newly created project
+                    st.session_state.selected_project_for_edit = project_name
+                    st.rerun()
+                else:
+                    st.error(f"❌ {result['message']}")
+        
+        with col_cancel:
+            if st.button("❌ Cancel", use_container_width=True):
+                # Clear form and go back to overview
+                if 'new_project_data' in st.session_state:
+                    del st.session_state.new_project_data
+                st.session_state.selected_project_for_edit = "All Projects (Overview)"
+                st.rerun()
     
     def render_individual_project_editor(self, project_name, df_projects):
         """Render editor for individual project with revenue/presales distribution"""
