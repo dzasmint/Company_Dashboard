@@ -2276,17 +2276,27 @@ class RealEstateFinancialModel:
             st.error("❌ PERPLEXITY_API_KEY not configured. Please add it to your .env file.")
             return
         
-        # Extract company information
+        # Extract company information for comprehensive search
         company_ticker = project_data.get('company_ticker', '')
         company_name = project_data.get('company_name', '')
+        location = project_data.get('location', '')
         
-        # Create search query with project name, ticker, and company name
-        search_query = f"{project_name} {company_ticker} {company_name} Vietnam real estate project"
+        # Create detailed search query with all available information
+        search_parts = [project_name]
+        if company_ticker:
+            search_parts.append(f"by {company_ticker}")
+        if company_name:
+            search_parts.append(company_name)
+        if location:
+            search_parts.append(f"in {location}")
+        search_parts.append("Vietnam real estate project")
         
-        with st.spinner(f"🔍 Researching {project_name} using AI..."):
+        search_query = " ".join(search_parts)
+        
+        with st.spinner(f"🔍 AI researching {project_name} - gathering market data and comparable projects..."):
             try:
-                # Call Perplexity API
-                response = get_project_basic_info_perplexity(search_query, perplexity_api_key)
+                # Call Perplexity API with the full project name
+                response = get_project_basic_info_perplexity(project_name, perplexity_api_key)
                 
                 if isinstance(response, str):
                     # Parse the response
@@ -2295,8 +2305,15 @@ class RealEstateFinancialModel:
                     if parsed_info and not parsed_info.get("error"):
                         st.success("✅ AI research completed successfully!")
                         
-                        # Display suggestions in an expander
-                        with st.expander("📊 AI Suggested Parameters", expanded=True):
+                        # Store AI suggestions in session state for inline display
+                        ai_suggestions_key = f"ai_suggestions_{project_name}"
+                        st.session_state[ai_suggestions_key] = parsed_info
+                        
+                        # Also store raw response for reference
+                        st.session_state[f"ai_raw_response_{project_name}"] = response
+                        
+                        # Display summary in an expander
+                        with st.expander("📊 AI Research Summary", expanded=True):
                             # Show basic info if available
                             if parsed_info.get("basic_info"):
                                 st.info(f"**Project Description:** {parsed_info['basic_info']}")
@@ -2529,6 +2546,11 @@ class RealEstateFinancialModel:
             st.error("Invalid project data format")
             return
         
+        # Get AI suggestions if available
+        project_name = project_data.get('project_name', '')
+        ai_suggestions_key = f"ai_suggestions_{project_name}"
+        ai_suggestions = st.session_state.get(ai_suggestions_key, {})
+        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -2538,6 +2560,9 @@ class RealEstateFinancialModel:
                 value=str(project_data.get('location', '') or ''),
                 key="edit_location"
             )
+            # Show AI suggestion inline if available
+            if ai_suggestions.get("location"):
+                st.caption(f"🤖 AI Suggestion: {ai_suggestions['location']}")
             st.session_state.edited_project['location'] = location
             
             # Total Units
@@ -2547,6 +2572,13 @@ class RealEstateFinancialModel:
                 min_value=0,
                 key="edit_total_units"
             )
+            # Show AI suggestion inline if available
+            if ai_suggestions.get("total_units"):
+                try:
+                    ai_units = float(ai_suggestions['total_units'])
+                    st.caption(f"🤖 AI Suggestion: {ai_units:,.0f} units")
+                except:
+                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['total_units']} units")
             st.session_state.edited_project['total_units'] = total_units
             
             # Average Unit Size
@@ -2556,6 +2588,13 @@ class RealEstateFinancialModel:
                 min_value=0.0,
                 key="edit_avg_unit_size"
             )
+            # Show AI suggestion inline if available
+            if ai_suggestions.get("average_unit_size"):
+                try:
+                    ai_size = float(ai_suggestions['average_unit_size'])
+                    st.caption(f"🤖 AI Suggestion: {ai_size:,.0f} m²")
+                except:
+                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['average_unit_size']} m²")
             st.session_state.edited_project['average_unit_size'] = avg_unit_size
             
             # Calculate NSA
@@ -2583,6 +2622,13 @@ class RealEstateFinancialModel:
                 format="%.0f",
                 key="edit_asp"
             )
+            # Show AI suggestion inline if available
+            if ai_suggestions.get("avg_selling_price_per_sqm"):
+                try:
+                    ai_price = float(ai_suggestions['avg_selling_price_per_sqm'])
+                    st.caption(f"🤖 AI Suggestion: {ai_price:,.0f} VND/m²")
+                except:
+                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['avg_selling_price_per_sqm']} VND/m²")
             st.session_state.edited_project['average_selling_price'] = asp
             
             # Land Area
@@ -2592,6 +2638,13 @@ class RealEstateFinancialModel:
                 min_value=0.0,
                 key="edit_land_area"
             )
+            # Show AI suggestion inline if available
+            if ai_suggestions.get("land_area_sqm"):
+                try:
+                    ai_land = float(ai_suggestions['land_area_sqm'])
+                    st.caption(f"🤖 AI Suggestion: {ai_land:,.0f} m²")
+                except:
+                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['land_area_sqm']} m²")
             st.session_state.edited_project['land_area'] = land_area
             
             # Construction Cost per sqm
@@ -2602,6 +2655,13 @@ class RealEstateFinancialModel:
                 format="%.0f",
                 key="edit_const_cost"
             )
+            # Show AI suggestion inline if available
+            if ai_suggestions.get("construction_cost_per_sqm"):
+                try:
+                    ai_const = float(ai_suggestions['construction_cost_per_sqm'])
+                    st.caption(f"🤖 AI Suggestion: {ai_const:,.0f} VND/m²")
+                except:
+                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
             st.session_state.edited_project['construction_cost_per_sqm'] = const_cost
             
             # Land Cost per sqm
@@ -2612,6 +2672,13 @@ class RealEstateFinancialModel:
                 format="%.0f",
                 key="edit_land_cost"
             )
+            # Show AI suggestion inline if available
+            if ai_suggestions.get("land_cost_per_sqm"):
+                try:
+                    ai_land_cost = float(ai_suggestions['land_cost_per_sqm'])
+                    st.caption(f"🤖 AI Suggestion: {ai_land_cost:,.0f} VND/m²")
+                except:
+                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
             st.session_state.edited_project['land_cost_per_sqm'] = land_cost
             
             # GFA
@@ -2621,6 +2688,13 @@ class RealEstateFinancialModel:
                 min_value=0.0,
                 key="edit_gfa"
             )
+            # Show AI suggestion inline if available
+            if ai_suggestions.get("total_area_sqm"):
+                try:
+                    ai_gfa = float(ai_suggestions['total_area_sqm'])
+                    st.caption(f"🤖 AI Suggestion: {ai_gfa:,.0f} m²")
+                except:
+                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['total_area_sqm']} m²")
             st.session_state.edited_project['gross_floor_area'] = gfa
     
     def render_project_timeline(self, project_data):
