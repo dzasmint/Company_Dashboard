@@ -167,20 +167,62 @@ class GodAIAssistant:
         """Extract entities from query"""
         entities = {}
         
-        # Extract ticker symbols (e.g., DXG, NLG, VHM, etc.)
+        # Extract ticker symbols (e.g., DXG, NLG, VHM, KDH, etc.)
         ticker_pattern = r'\b([A-Z]{3,4})\b'
         potential_tickers = re.findall(ticker_pattern, query)
+        
         if potential_tickers:
-            # Validate tickers against known companies in MongoDB
-            from .mongodb_utils import load_companies_data
-            companies_df = load_companies_data()
-            if not companies_df.empty:
-                valid_tickers = []
+            valid_tickers = []
+            
+            # Load tickers from CSV files for validation
+            try:
+                # Try to load from financial statements CSV
+                import os
+                import sys
+                from pathlib import Path
+                
+                # Add parent directory to path for imports
+                current_dir = Path(__file__).parent.parent
+                sys.path.append(str(current_dir))
+                
+                # Load financial data to get all valid tickers
+                csv_path = current_dir / 'data' / 'FA_A_processed.csv'
+                if csv_path.exists():
+                    df_fa = pd.read_csv(csv_path)
+                    if 'TICKER' in df_fa.columns:
+                        csv_tickers = set(df_fa['TICKER'].unique())
+                    else:
+                        csv_tickers = set()
+                else:
+                    csv_tickers = set()
+                
+                # Also check Val_processed.csv for additional tickers
+                val_csv_path = current_dir / 'data' / 'Val_processed.csv'
+                if val_csv_path.exists():
+                    df_val = pd.read_csv(val_csv_path)
+                    if 'TICKER' in df_val.columns:
+                        csv_tickers.update(df_val['TICKER'].unique())
+                
+                # Validate potential tickers against CSV data
                 for ticker in potential_tickers:
-                    if ticker in companies_df['ticker'].values:
-                        valid_tickers.append(ticker)
-                if valid_tickers:
-                    entities['tickers'] = valid_tickers
+                    # Accept ticker if it's in CSV files
+                    if ticker in csv_tickers:
+                        if ticker not in valid_tickers:  # Avoid duplicates
+                            valid_tickers.append(ticker)
+                    # Also accept if it looks like a valid ticker format (fallback)
+                    elif len(ticker) in [3, 4] and ticker.isupper():
+                        if ticker not in valid_tickers:
+                            valid_tickers.append(ticker)
+                
+            except Exception as e:
+                # If CSV loading fails, accept any 3-4 letter uppercase string
+                for ticker in potential_tickers:
+                    if len(ticker) in [3, 4] and ticker.isupper():
+                        if ticker not in valid_tickers:
+                            valid_tickers.append(ticker)
+            
+            if valid_tickers:
+                entities['tickers'] = valid_tickers
         
         # Extract project names - search across ALL projects in MongoDB
         from .mongodb_utils import load_projects_data
