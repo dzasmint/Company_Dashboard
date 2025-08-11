@@ -203,9 +203,9 @@ Respond with ONLY the intent name."""
                 # Validate the intent
                 valid_intents = [
                     'LIST_PROJECTS', 'PROJECT_DETAILS', 'RANK_PROJECTS', 
-                    'CALCULATE_METRICS', 'ANALYZE_GROWTH', 'CREATE_CHART',
-                    'SUGGEST_PARAMETERS', 'RESEARCH_INSIGHTS', 'UPDATE_PROJECT', 
-                    'GENERAL_QUERY'
+                    'COMPARE_PROJECTS', 'CALCULATE_METRICS', 'ANALYZE_GROWTH', 
+                    'CREATE_CHART', 'SUGGEST_PARAMETERS', 'RESEARCH_INSIGHTS', 
+                    'UPDATE_PROJECT', 'GENERAL_QUERY'
                 ]
                 
                 if intent in valid_intents:
@@ -219,7 +219,9 @@ Respond with ONLY the intent name."""
         query_lower = query.lower()
         
         # Quick fallback patterns
-        if any(word in query_lower for word in ['chart', 'plot', 'visualize', 'graph', 'draw']):
+        if any(word in query_lower for word in ['compare', 'vs', 'versus', 'comparison']):
+            return 'COMPARE_PROJECTS'
+        elif any(word in query_lower for word in ['chart', 'plot', 'visualize', 'graph', 'draw']):
             return 'CREATE_CHART'
         elif any(word in query_lower for word in ['list', 'show', 'display', 'what projects']):
             return 'LIST_PROJECTS'
@@ -1546,7 +1548,11 @@ Respond with ONLY the intent name."""
             yaxis_title='Revenue (Billion VND)',
             hovermode='x unified',
             showlegend=True,
-            height=500
+            height=500,
+            yaxis=dict(
+                tickformat=',.0f',  # Format with thousands separator, no decimals
+                ticksuffix='B'      # Add 'B' suffix for billions
+            )
         )
         
         return fig
@@ -1683,7 +1689,11 @@ Respond with ONLY the intent name."""
             yaxis_title='NPATMI (Billion VND)',
             hovermode='x unified',
             showlegend=True,
-            height=500
+            height=500,
+            yaxis=dict(
+                tickformat=',.0f',  # Format with thousands separator, no decimals
+                ticksuffix='B'      # Add 'B' suffix for billions
+            )
         )
         
         return fig
@@ -1770,10 +1780,16 @@ Respond with ONLY the intent name."""
             title='P&L Schedule Overview',
             xaxis_title='Year',
             yaxis_title='Amount (Billion VND)',
+            yaxis=dict(
+                tickformat=',.0f',
+                ticksuffix='B'
+            ),
             yaxis2=dict(
                 title='Net Profit (Billion VND)',
                 overlaying='y',
-                side='right'
+                side='right',
+                tickformat=',.0f',
+                ticksuffix='B'
             ),
             barmode='relative',
             hovermode='x unified',
@@ -1881,13 +1897,13 @@ Respond with ONLY the intent name."""
             height=800
         )
         
-        # Update axes labels
+        # Update axes labels and formatting
         fig.update_xaxes(title_text="Year", row=2, col=1)
         fig.update_xaxes(title_text="Year", row=2, col=2)
-        fig.update_yaxes(title_text="Billion VND", row=1, col=1)
-        fig.update_yaxes(title_text="Billion VND", row=1, col=2)
-        fig.update_yaxes(title_text="Billion VND", row=2, col=1)
-        fig.update_yaxes(title_text="Margin %", row=2, col=2)
+        fig.update_yaxes(title_text="Billion VND", row=1, col=1, tickformat=',.0f', ticksuffix='B')
+        fig.update_yaxes(title_text="Billion VND", row=1, col=2, tickformat=',.0f', ticksuffix='B')
+        fig.update_yaxes(title_text="Billion VND", row=2, col=1, tickformat=',.0f', ticksuffix='B')
+        fig.update_yaxes(title_text="Margin %", row=2, col=2, tickformat='.1f', ticksuffix='%')
         
         return fig
     
@@ -2360,14 +2376,21 @@ Respond with ONLY the intent name."""
     def handle_general_query(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Handle general queries - check if it's about projects first"""
         
-        # Extract entities to check if user is asking about specific tickers
+        # Extract entities to check if user is asking about specific tickers or projects
         entities = self.extract_entities(query, context)
+        
+        # Check if multiple projects were detected for comparison
+        if entities.get('project_names') and len(entities.get('project_names', [])) > 1:
+            # Multiple projects detected - route to comparison
+            return self.handle_compare_projects(entities, context)
         
         # If tickers are mentioned, try to handle it as a project query
         if entities.get('tickers'):
             # Determine what to do based on keywords
             query_lower = query.lower()
-            if any(word in query_lower for word in ['project', 'list', 'show', 'display']):
+            if any(word in query_lower for word in ['compare', 'vs', 'versus']):
+                return self.handle_compare_projects(entities, context)
+            elif any(word in query_lower for word in ['project', 'list', 'show', 'display']):
                 return self.handle_list_projects(entities, context)
             elif any(word in query_lower for word in ['rank', 'top', 'largest', 'biggest']):
                 return self.handle_rank_projects(entities, context)
