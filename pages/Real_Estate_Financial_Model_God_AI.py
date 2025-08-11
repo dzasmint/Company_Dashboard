@@ -2264,6 +2264,138 @@ class RealEstateFinancialModel:
                 st.session_state.selected_project_for_edit = "All Projects (Overview)"
                 st.rerun()
     
+    def get_ai_project_suggestions(self, project_name, project_data):
+        """Use Perplexity AI to research and suggest project parameters"""
+        import os
+        from utils.perplexity_utils import get_project_basic_info_perplexity, parse_perplexity_response
+        
+        # Get API key
+        perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
+        
+        if not perplexity_api_key:
+            st.error("❌ PERPLEXITY_API_KEY not configured. Please add it to your .env file.")
+            return
+        
+        # Extract company information
+        company_ticker = project_data.get('company_ticker', '')
+        company_name = project_data.get('company_name', '')
+        
+        # Create search query with project name, ticker, and company name
+        search_query = f"{project_name} {company_ticker} {company_name} Vietnam real estate project"
+        
+        with st.spinner(f"🔍 Researching {project_name} using AI..."):
+            try:
+                # Call Perplexity API
+                response = get_project_basic_info_perplexity(search_query, perplexity_api_key)
+                
+                if isinstance(response, str):
+                    # Parse the response
+                    parsed_info = parse_perplexity_response(response)
+                    
+                    if parsed_info and not parsed_info.get("error"):
+                        st.success("✅ AI research completed successfully!")
+                        
+                        # Display suggestions in an expander
+                        with st.expander("📊 AI Suggested Parameters", expanded=True):
+                            # Show basic info if available
+                            if parsed_info.get("basic_info"):
+                                st.info(f"**Project Description:** {parsed_info['basic_info']}")
+                            
+                            # Create a table for suggested values
+                            suggestions = []
+                            
+                            # Map parsed fields to project parameters
+                            if parsed_info.get("location"):
+                                suggestions.append({
+                                    "Parameter": "Location",
+                                    "AI Suggestion": parsed_info["location"],
+                                    "Current Value": project_data.get('location', 'N/A')
+                                })
+                            
+                            if parsed_info.get("total_units"):
+                                suggestions.append({
+                                    "Parameter": "Total Units",
+                                    "AI Suggestion": f"{parsed_info['total_units']:,.0f}",
+                                    "Current Value": f"{project_data.get('total_units', 0):,.0f}"
+                                })
+                            
+                            if parsed_info.get("total_area_sqm"):
+                                suggestions.append({
+                                    "Parameter": "Gross Floor Area (sqm)",
+                                    "AI Suggestion": f"{parsed_info['total_area_sqm']:,.0f}",
+                                    "Current Value": f"{project_data.get('gross_floor_area', 0):,.0f}"
+                                })
+                            
+                            if parsed_info.get("land_area_sqm"):
+                                suggestions.append({
+                                    "Parameter": "Land Area (sqm)",
+                                    "AI Suggestion": f"{parsed_info['land_area_sqm']:,.0f}",
+                                    "Current Value": f"{project_data.get('land_area', 0):,.0f}"
+                                })
+                            
+                            if parsed_info.get("avg_selling_price_per_sqm"):
+                                suggestions.append({
+                                    "Parameter": "Avg Selling Price (M VND/sqm)",
+                                    "AI Suggestion": f"{parsed_info['avg_selling_price_per_sqm']:,.0f}",
+                                    "Current Value": f"{project_data.get('average_selling_price', 0):,.0f}"
+                                })
+                            
+                            if parsed_info.get("construction_cost_per_sqm"):
+                                suggestions.append({
+                                    "Parameter": "Construction Cost (M VND/sqm)",
+                                    "AI Suggestion": f"{parsed_info['construction_cost_per_sqm']:,.0f}",
+                                    "Current Value": f"{project_data.get('construction_cost_per_sqm', 0):,.0f}"
+                                })
+                            
+                            if parsed_info.get("project_duration"):
+                                suggestions.append({
+                                    "Parameter": "Construction Years",
+                                    "AI Suggestion": parsed_info["project_duration"],
+                                    "Current Value": project_data.get('construction_years', 'N/A')
+                                })
+                            
+                            if suggestions:
+                                df_suggestions = pd.DataFrame(suggestions)
+                                st.dataframe(df_suggestions, use_container_width=True)
+                                
+                                # Add button to apply suggestions
+                                if st.button("✅ Apply AI Suggestions", key=f"apply_ai_{project_name}"):
+                                    # Update the edited project data with AI suggestions
+                                    if parsed_info.get("location"):
+                                        st.session_state.edited_project['location'] = parsed_info["location"]
+                                    if parsed_info.get("total_units"):
+                                        st.session_state.edited_project['total_units'] = parsed_info["total_units"]
+                                    if parsed_info.get("total_area_sqm"):
+                                        st.session_state.edited_project['gross_floor_area'] = parsed_info["total_area_sqm"]
+                                    if parsed_info.get("land_area_sqm"):
+                                        st.session_state.edited_project['land_area'] = parsed_info["land_area_sqm"]
+                                    if parsed_info.get("avg_selling_price_per_sqm"):
+                                        st.session_state.edited_project['average_selling_price'] = parsed_info["avg_selling_price_per_sqm"]
+                                    if parsed_info.get("construction_cost_per_sqm"):
+                                        st.session_state.edited_project['construction_cost_per_sqm'] = parsed_info["construction_cost_per_sqm"]
+                                    if parsed_info.get("project_duration"):
+                                        try:
+                                            years = int(parsed_info["project_duration"])
+                                            st.session_state.edited_project['construction_years'] = years
+                                        except:
+                                            pass
+                                    
+                                    st.success("✅ AI suggestions applied! Scroll down to review and save changes.")
+                                    st.rerun()
+                            else:
+                                st.warning("No specific parameter suggestions found. The AI may need more specific information about this project.")
+                            
+                            # Show raw response option
+                            if st.checkbox("Show raw AI response", key=f"show_raw_{project_name}"):
+                                st.code(response, language="markdown")
+                    else:
+                        st.error("❌ Could not parse AI response. Please try again.")
+                else:
+                    st.error(f"❌ AI research failed: {response}")
+                    
+            except Exception as e:
+                st.error(f"❌ Error during AI research: {str(e)}")
+    
     def render_individual_project_editor(self, project_name, df_projects):
         """Render editor for individual project with revenue/presales distribution"""
         # Get the selected project data
@@ -2289,6 +2421,12 @@ class RealEstateFinancialModel:
                     project_data[key] = default_value
         
         st.subheader(f"🏗️ Project: {project_name}")
+        
+        # Add AI Suggestion button
+        col_ai, col_space = st.columns([2, 3])
+        with col_ai:
+            if st.button("🤖 AI Suggest Parameters", key=f"ai_suggest_{project_name}", type="primary"):
+                self.get_ai_project_suggestions(project_name, project_data)
         
         # Check if we're switching to a different project
         if 'current_editing_project' not in st.session_state:
