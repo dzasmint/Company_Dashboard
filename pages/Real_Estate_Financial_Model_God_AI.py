@@ -2308,44 +2308,84 @@ class RealEstateFinancialModel:
                             if parsed_info.get("location"):
                                 suggestions.append({
                                     "Parameter": "Location",
-                                    "AI Suggestion": parsed_info["location"],
-                                    "Current Value": project_data.get('location', 'N/A')
+                                    "AI Suggestion": str(parsed_info["location"]),
+                                    "Current Value": str(project_data.get('location', 'N/A'))
                                 })
                             
                             if parsed_info.get("total_units"):
-                                suggestions.append({
-                                    "Parameter": "Total Units",
-                                    "AI Suggestion": f"{parsed_info['total_units']:,.0f}",
-                                    "Current Value": f"{project_data.get('total_units', 0):,.0f}"
-                                })
+                                try:
+                                    ai_units = float(parsed_info['total_units'])
+                                    suggestions.append({
+                                        "Parameter": "Total Units",
+                                        "AI Suggestion": f"{ai_units:,.0f}",
+                                        "Current Value": f"{float(project_data.get('total_units', 0)):,.0f}"
+                                    })
+                                except (ValueError, TypeError):
+                                    suggestions.append({
+                                        "Parameter": "Total Units",
+                                        "AI Suggestion": str(parsed_info['total_units']),
+                                        "Current Value": str(project_data.get('total_units', 0))
+                                    })
                             
                             if parsed_info.get("total_area_sqm"):
-                                suggestions.append({
-                                    "Parameter": "Gross Floor Area (sqm)",
-                                    "AI Suggestion": f"{parsed_info['total_area_sqm']:,.0f}",
-                                    "Current Value": f"{project_data.get('gross_floor_area', 0):,.0f}"
-                                })
+                                try:
+                                    ai_area = float(parsed_info['total_area_sqm'])
+                                    suggestions.append({
+                                        "Parameter": "Gross Floor Area (sqm)",
+                                        "AI Suggestion": f"{ai_area:,.0f}",
+                                        "Current Value": f"{float(project_data.get('gross_floor_area', 0)):,.0f}"
+                                    })
+                                except (ValueError, TypeError):
+                                    suggestions.append({
+                                        "Parameter": "Gross Floor Area (sqm)",
+                                        "AI Suggestion": str(parsed_info['total_area_sqm']),
+                                        "Current Value": str(project_data.get('gross_floor_area', 0))
+                                    })
                             
                             if parsed_info.get("land_area_sqm"):
-                                suggestions.append({
-                                    "Parameter": "Land Area (sqm)",
-                                    "AI Suggestion": f"{parsed_info['land_area_sqm']:,.0f}",
-                                    "Current Value": f"{project_data.get('land_area', 0):,.0f}"
-                                })
+                                try:
+                                    ai_land = float(parsed_info['land_area_sqm'])
+                                    suggestions.append({
+                                        "Parameter": "Land Area (sqm)",
+                                        "AI Suggestion": f"{ai_land:,.0f}",
+                                        "Current Value": f"{float(project_data.get('land_area', 0)):,.0f}"
+                                    })
+                                except (ValueError, TypeError):
+                                    suggestions.append({
+                                        "Parameter": "Land Area (sqm)",
+                                        "AI Suggestion": str(parsed_info['land_area_sqm']),
+                                        "Current Value": str(project_data.get('land_area', 0))
+                                    })
                             
                             if parsed_info.get("avg_selling_price_per_sqm"):
-                                suggestions.append({
-                                    "Parameter": "Avg Selling Price (M VND/sqm)",
-                                    "AI Suggestion": f"{parsed_info['avg_selling_price_per_sqm']:,.0f}",
-                                    "Current Value": f"{project_data.get('average_selling_price', 0):,.0f}"
-                                })
+                                try:
+                                    ai_price = float(parsed_info['avg_selling_price_per_sqm'])
+                                    suggestions.append({
+                                        "Parameter": "Avg Selling Price (M VND/sqm)",
+                                        "AI Suggestion": f"{ai_price:,.0f}",
+                                        "Current Value": f"{float(project_data.get('average_selling_price', 0)):,.0f}"
+                                    })
+                                except (ValueError, TypeError):
+                                    suggestions.append({
+                                        "Parameter": "Avg Selling Price (M VND/sqm)",
+                                        "AI Suggestion": str(parsed_info['avg_selling_price_per_sqm']),
+                                        "Current Value": str(project_data.get('average_selling_price', 0))
+                                    })
                             
                             if parsed_info.get("construction_cost_per_sqm"):
-                                suggestions.append({
-                                    "Parameter": "Construction Cost (M VND/sqm)",
-                                    "AI Suggestion": f"{parsed_info['construction_cost_per_sqm']:,.0f}",
-                                    "Current Value": f"{project_data.get('construction_cost_per_sqm', 0):,.0f}"
-                                })
+                                try:
+                                    ai_cost = float(parsed_info['construction_cost_per_sqm'])
+                                    suggestions.append({
+                                        "Parameter": "Construction Cost (M VND/sqm)",
+                                        "AI Suggestion": f"{ai_cost:,.0f}",
+                                        "Current Value": f"{float(project_data.get('construction_cost_per_sqm', 0)):,.0f}"
+                                    })
+                                except (ValueError, TypeError):
+                                    suggestions.append({
+                                        "Parameter": "Construction Cost (M VND/sqm)",
+                                        "AI Suggestion": str(parsed_info['construction_cost_per_sqm']),
+                                        "Current Value": str(project_data.get('construction_cost_per_sqm', 0))
+                                    })
                             
                             if parsed_info.get("project_duration"):
                                 suggestions.append({
@@ -2362,23 +2402,44 @@ class RealEstateFinancialModel:
                                 if st.button("✅ Apply AI Suggestions", key=f"apply_ai_{project_name}"):
                                     # Update the edited project data with AI suggestions
                                     if parsed_info.get("location"):
-                                        st.session_state.edited_project['location'] = parsed_info["location"]
+                                        st.session_state.edited_project['location'] = str(parsed_info["location"])
+                                    
                                     if parsed_info.get("total_units"):
-                                        st.session_state.edited_project['total_units'] = parsed_info["total_units"]
+                                        try:
+                                            st.session_state.edited_project['total_units'] = float(parsed_info["total_units"])
+                                        except (ValueError, TypeError):
+                                            st.warning(f"Could not convert total_units: {parsed_info['total_units']}")
+                                    
                                     if parsed_info.get("total_area_sqm"):
-                                        st.session_state.edited_project['gross_floor_area'] = parsed_info["total_area_sqm"]
+                                        try:
+                                            st.session_state.edited_project['gross_floor_area'] = float(parsed_info["total_area_sqm"])
+                                        except (ValueError, TypeError):
+                                            st.warning(f"Could not convert gross_floor_area: {parsed_info['total_area_sqm']}")
+                                    
                                     if parsed_info.get("land_area_sqm"):
-                                        st.session_state.edited_project['land_area'] = parsed_info["land_area_sqm"]
+                                        try:
+                                            st.session_state.edited_project['land_area'] = float(parsed_info["land_area_sqm"])
+                                        except (ValueError, TypeError):
+                                            st.warning(f"Could not convert land_area: {parsed_info['land_area_sqm']}")
+                                    
                                     if parsed_info.get("avg_selling_price_per_sqm"):
-                                        st.session_state.edited_project['average_selling_price'] = parsed_info["avg_selling_price_per_sqm"]
+                                        try:
+                                            st.session_state.edited_project['average_selling_price'] = float(parsed_info["avg_selling_price_per_sqm"])
+                                        except (ValueError, TypeError):
+                                            st.warning(f"Could not convert average_selling_price: {parsed_info['avg_selling_price_per_sqm']}")
+                                    
                                     if parsed_info.get("construction_cost_per_sqm"):
-                                        st.session_state.edited_project['construction_cost_per_sqm'] = parsed_info["construction_cost_per_sqm"]
+                                        try:
+                                            st.session_state.edited_project['construction_cost_per_sqm'] = float(parsed_info["construction_cost_per_sqm"])
+                                        except (ValueError, TypeError):
+                                            st.warning(f"Could not convert construction_cost_per_sqm: {parsed_info['construction_cost_per_sqm']}")
+                                    
                                     if parsed_info.get("project_duration"):
                                         try:
-                                            years = int(parsed_info["project_duration"])
+                                            years = int(float(parsed_info["project_duration"]))
                                             st.session_state.edited_project['construction_years'] = years
-                                        except:
-                                            pass
+                                        except (ValueError, TypeError):
+                                            st.warning(f"Could not convert project_duration: {parsed_info['project_duration']}")
                                     
                                     st.success("✅ AI suggestions applied! Scroll down to review and save changes.")
                                     st.rerun()
