@@ -159,36 +159,63 @@ class GodAIAssistant:
             return error_result
     
     def classify_intent(self, query: str) -> str:
-        """Classify user intent from query"""
-        query_lower = query.lower()
+        """Classify user intent using Claude AI for intelligent understanding"""
         
-        # Check each intent pattern
-        for intent, patterns in self.intent_patterns.items():
-            if any(pattern in query_lower for pattern in patterns):
-                return intent
-        
-        # If no pattern matches, use Claude for classification if available
+        # Use Claude Sonnet for intelligent intent classification
         if self.anthropic_client:
             try:
                 response = self.anthropic_client.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=50,
+                    model="claude-3-5-sonnet-20241022",  # Use Sonnet for better understanding
+                    max_tokens=200,
+                    temperature=0,  # Deterministic for consistent routing
                     messages=[{
                         "role": "user",
-                        "content": f"""Classify this query into one of these intents:
-                        LIST_PROJECTS, RANK_PROJECTS, SUGGEST_PARAMETERS, ANALYZE_GROWTH,
-                        RESEARCH_INSIGHTS, EXTRACT_DOCUMENT, UPDATE_PROJECT, PROJECT_DETAILS, CALCULATE_METRICS
-                        
-                        Query: {query}
-                        
-                        Return only the intent name."""
+                        "content": f"""Analyze this user query and classify it into the most appropriate intent.
+
+User Query: "{query}"
+
+Available intents and their purposes:
+- LIST_PROJECTS: User wants to see/list/display projects for one or more companies
+- PROJECT_DETAILS: User asks about specific project details, metrics, or financial data (revenue, profit, margins, ASP, etc.)
+- RANK_PROJECTS: User wants to rank/sort/find top/largest/best projects by some metric
+- CALCULATE_METRICS: User wants to calculate aggregate metrics across multiple projects or portfolio-level calculations
+- ANALYZE_GROWTH: User asks about growth trends, revenue progression over time, or year-over-year analysis
+- SUGGEST_PARAMETERS: User needs AI suggestions for project parameters like ASP or construction costs
+- RESEARCH_INSIGHTS: User wants market research, news, or external insights
+- UPDATE_PROJECT: User wants to modify or update project data
+- GENERAL_QUERY: General questions that don't fit other categories
+
+Respond with ONLY the intent name. If the query asks about specific financial metrics (revenue, profit, margins, etc.) for projects, use PROJECT_DETAILS."""
                     }]
                 )
-                intent = response.content[0].text.strip()
-                if intent in self.intent_patterns.keys():
+                intent = response.content[0].text.strip().upper()
+                
+                # Validate the intent
+                valid_intents = [
+                    'LIST_PROJECTS', 'PROJECT_DETAILS', 'RANK_PROJECTS', 
+                    'CALCULATE_METRICS', 'ANALYZE_GROWTH', 'SUGGEST_PARAMETERS',
+                    'RESEARCH_INSIGHTS', 'UPDATE_PROJECT', 'GENERAL_QUERY'
+                ]
+                
+                if intent in valid_intents:
                     return intent
-            except:
+                    
+            except Exception as e:
+                # Log error but continue with fallback
                 pass
+        
+        # Fallback to simple pattern matching if Claude is not available
+        query_lower = query.lower()
+        
+        # Quick fallback patterns
+        if any(word in query_lower for word in ['list', 'show', 'display', 'what projects']):
+            return 'LIST_PROJECTS'
+        elif any(word in query_lower for word in ['revenue', 'profit', 'margin', 'asp', 'cost', 'financial']):
+            return 'PROJECT_DETAILS'
+        elif any(word in query_lower for word in ['rank', 'top', 'largest', 'biggest', 'best']):
+            return 'RANK_PROJECTS'
+        elif any(word in query_lower for word in ['growth', 'trend', 'over time', 'progression']):
+            return 'ANALYZE_GROWTH'
         
         return 'GENERAL_QUERY'
     
@@ -321,49 +348,59 @@ class GodAIAssistant:
         return entities, extraction_debug
     
     def execute_action(self, intent: str, entities: Dict[str, Any], query: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute action based on intent"""
+        """Execute action based on intent with intelligent routing"""
         
         routing_debug = []
         routing_debug.append("\n🚦 **ROUTING DECISION**")
+        routing_debug.append(f"Claude AI Intent: {intent}")
         
-        # Check if query mentions specific metrics even without explicit intent
-        metric = entities.get('metric')
-        if metric and intent == 'GENERAL_QUERY':
-            routing_debug.append(f"Metric '{metric}' detected with GENERAL_QUERY intent")
-            routing_debug.append("→ Routing to PROJECT_DETAILS handler for metric extraction")
+        # Special handling for PROJECT_DETAILS - it should handle all metric-specific queries
+        if intent == 'PROJECT_DETAILS':
+            # This handles revenue, profit, margins, ASP, presales, etc.
+            routing_debug.append("→ PROJECT_DETAILS: Handling financial metrics query")
             result = self.handle_project_details(entities, context)
-            if result.get('message'):
-                result['message'] = '\n'.join(routing_debug) + '\n' + result['message']
-            return result
         
-        routing_debug.append(f"Intent '{intent}' → Routing to appropriate handler")
-        
-        if intent == 'LIST_PROJECTS':
-            routing_debug.append("→ Calling handle_list_projects")
+        elif intent == 'LIST_PROJECTS':
+            routing_debug.append("→ LIST_PROJECTS: Showing project list")
             result = self.handle_list_projects(entities, context)
+        
         elif intent == 'RANK_PROJECTS':
-            routing_debug.append("→ Calling handle_rank_projects")
+            routing_debug.append("→ RANK_PROJECTS: Ranking projects by metric")
             result = self.handle_rank_projects(entities, context)
-        elif intent == 'SUGGEST_PARAMETERS':
-            routing_debug.append("→ Calling handle_suggest_parameters")
-            result = self.handle_suggest_parameters(entities, query, context)
-        elif intent == 'ANALYZE_GROWTH':
-            routing_debug.append("→ Calling handle_growth_analysis")
-            result = self.handle_growth_analysis(entities, context)
-        elif intent == 'RESEARCH_INSIGHTS':
-            routing_debug.append("→ Calling handle_research_insights")
-            result = self.handle_research_insights(entities, query, context)
-        elif intent == 'PROJECT_DETAILS':
-            routing_debug.append("→ Calling handle_project_details")
-            result = self.handle_project_details(entities, context)
+        
         elif intent == 'CALCULATE_METRICS':
-            routing_debug.append("→ Calling handle_calculate_metrics")
+            routing_debug.append("→ CALCULATE_METRICS: Calculating aggregate metrics")
             result = self.handle_calculate_metrics(entities, context)
+        
+        elif intent == 'ANALYZE_GROWTH':
+            routing_debug.append("→ ANALYZE_GROWTH: Analyzing growth trends")
+            result = self.handle_growth_analysis(entities, context)
+        
+        elif intent == 'SUGGEST_PARAMETERS':
+            routing_debug.append("→ SUGGEST_PARAMETERS: Getting AI suggestions")
+            result = self.handle_suggest_parameters(entities, query, context)
+        
+        elif intent == 'RESEARCH_INSIGHTS':
+            routing_debug.append("→ RESEARCH_INSIGHTS: Fetching market insights")
+            result = self.handle_research_insights(entities, query, context)
+        
         elif intent == 'UPDATE_PROJECT':
-            routing_debug.append("→ Calling handle_update_project")
+            routing_debug.append("→ UPDATE_PROJECT: Updating project data")
             result = self.handle_update_project(entities, query, context)
+        
+        elif intent == 'GENERAL_QUERY':
+            # Check if there's a metric that needs to be extracted
+            metric = entities.get('metric')
+            if metric:
+                routing_debug.append(f"→ GENERAL_QUERY with metric '{metric}' → PROJECT_DETAILS")
+                result = self.handle_project_details(entities, context)
+            else:
+                routing_debug.append("→ GENERAL_QUERY: Using general handler")
+                result = self.handle_general_query(query, context)
+        
         else:
-            routing_debug.append("→ Calling handle_general_query (fallback)")
+            # Fallback
+            routing_debug.append(f"→ Unknown intent '{intent}' → Using general handler")
             result = self.handle_general_query(query, context)
         
         # Prepend routing debug to result
