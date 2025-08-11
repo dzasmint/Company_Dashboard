@@ -106,22 +106,8 @@ class GodAIAssistant:
             # Extract entities from query
             entities = self.extract_entities(query, context)
             
-            # Build debug info
-            debug_info = []
-            debug_info.append(f"🔍 **Debug Information**")
-            debug_info.append(f"Query: '{query}'")
-            debug_info.append(f"Intent: {intent}")
-            debug_info.append(f"Extracted Tickers: {entities.get('tickers', 'None')}")
-            debug_info.append(f"Selected Company (context): {context.get('selected_company', 'None')}")
-            
             # Execute appropriate action
             result = self.execute_action(intent, entities, query, context)
-            
-            # Add debug info to the beginning of the message
-            if result.get('message'):
-                result['message'] = "\n".join(debug_info) + "\n\n---\n\n" + result['message']
-            else:
-                result['message'] = "\n".join(debug_info)
             
             # Add response to history
             st.session_state.chat_history.append({
@@ -267,13 +253,16 @@ class GodAIAssistant:
         if numbers:
             entities['numbers'] = [float(n) for n in numbers]
         
-        # Extract detailed metrics
+        # Extract detailed metrics - expanded list
         metrics = [
-            'rnav', 'revenue', 'asp', 'average selling price', 'nsa', 'net sellable area',
-            'construction cost', 'land cost', 'gross margin', 'presales', 
+            'rnav', 'revenue', 'total revenue', 'sales', 'asp', 'average selling price', 
+            'nsa', 'net sellable area', 'construction cost', 'land cost', 
+            'gross margin', 'presales', 'presale', 'booking', 'revenue booking',
             'units', 'number of units', 'total units', 'presales period',
-            'revenue booking', 'gross floor area', 'gfa', 'land area',
-            'sga', 'interest', 'debt', 'pat', 'pbt', 'ebitda'
+            'gross floor area', 'gfa', 'land area', 'sga', 'interest', 'debt', 
+            'pat', 'profit', 'net profit', 'net income', 'pbt', 'ebitda',
+            'financial', 'summary', 'overview', 'all metrics', 'trends',
+            'net margin', 'profit margin', 'margin'
         ]
         for metric in metrics:
             if metric in query.lower():
@@ -314,53 +303,35 @@ class GodAIAssistant:
         """Handle project listing request - now supports querying any ticker"""
         tickers = entities.get('tickers', [])
         
-        debug_messages = []
-        debug_messages.append(f"📊 **Project Listing Debug**")
-        debug_messages.append(f"Tickers from query: {tickers if tickers else 'None'}")
-        
         # If no tickers extracted from query, fall back to selected company
         if not tickers:
             company = context.get('selected_company')
             if company:
-                debug_messages.append(f"No tickers in query, using selected company: {company}")
                 tickers = [company]
-            else:
-                debug_messages.append(f"No tickers in query and no selected company")
         
         # Load all projects from MongoDB
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
         
-        debug_messages.append(f"Total projects in MongoDB: {len(all_projects_df)}")
-        
         if all_projects_df.empty:
-            message = "\n".join(debug_messages) + "\n\n❌ No projects found in database"
             return {
                 'type': 'info',
-                'message': message,
+                'message': 'No projects found in database',
                 'data': None
             }
-        
-        # Show what tickers are available in the database
-        available_tickers = all_projects_df['company_ticker'].unique()
-        debug_messages.append(f"Available tickers in DB: {', '.join(sorted(available_tickers))}")
         
         # Filter by tickers if specified
         if tickers:
             projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
             company_names = ', '.join(tickers)
-            debug_messages.append(f"Filtering for: {company_names}")
-            debug_messages.append(f"Projects found after filtering: {len(projects_df)}")
         else:
             projects_df = all_projects_df
             company_names = 'all companies'
-            debug_messages.append(f"Showing all projects (no filter)")
         
         if projects_df.empty:
-            message = "\n".join(debug_messages) + f"\n\n❌ No projects found for {company_names}"
             return {
                 'type': 'info',
-                'message': message,
+                'message': f'No projects found for {company_names}',
                 'data': None
             }
         
@@ -379,13 +350,9 @@ class GodAIAssistant:
         if 'rnav_value' in display_df.columns:
             display_df['rnav_value'] = display_df['rnav_value'].apply(lambda x: f"{x:,.1f}B" if pd.notna(x) else "N/A")
         
-        # Add debug info to success message
-        debug_summary = "\n".join(debug_messages)
-        success_message = f"{debug_summary}\n\n✅ Found {len(display_df)} projects for {company_names}"
-        
         return {
             'type': 'project_list',
-            'message': success_message,
+            'message': f"Found {len(display_df)} projects for {company_names}",
             'summary': f"Showing {len(display_df)} projects",
             'data': display_df
         }
@@ -717,50 +684,37 @@ class GodAIAssistant:
         tickers = entities.get('tickers', [])
         metric = entities.get('metric', None)
         
-        # Debug info
-        debug_messages = []
-        debug_messages.append(f"📊 **Project Details Debug**")
-        debug_messages.append(f"Project Name: {project_name if project_name else 'Not specified'}")
-        debug_messages.append(f"Tickers: {tickers if tickers else 'Not specified'}")
-        debug_messages.append(f"Metric: {metric if metric else 'Not specified'}")
-        
         # Load all projects from MongoDB with FULL details
         from .mongodb_utils import load_projects_data
         all_projects_df = load_projects_data()
         
-        debug_messages.append(f"Total projects loaded: {len(all_projects_df)}")
-        
         if all_projects_df.empty:
-            message = "\n".join(debug_messages) + "\n\n❌ No projects found in database"
             return {
                 'type': 'error',
-                'message': message,
+                'message': 'No projects found in database',
                 'data': None
             }
         
         # Filter by ticker if specified
         if tickers:
             projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
-            debug_messages.append(f"After ticker filter: {len(projects_df)} projects")
         else:
             projects_df = all_projects_df
         
         # Filter by project name if specified
         if project_name:
             projects_df = projects_df[projects_df['project_name'] == project_name]
-            debug_messages.append(f"After name filter: {len(projects_df)} projects")
         
         if projects_df.empty:
-            message = "\n".join(debug_messages) + "\n\n❌ No projects found for criteria"
             return {
                 'type': 'error',
-                'message': message,
+                'message': 'No projects found for specified criteria',
                 'data': None
             }
         
         # If specific metric requested, extract that
         if metric:
-            return self._extract_project_metrics(projects_df, metric, debug_messages)
+            return self._extract_project_metrics(projects_df, metric)
         
         # Otherwise return general project details
         if len(projects_df) == 1:
@@ -897,12 +851,81 @@ class GodAIAssistant:
         except:
             return "N/A"
     
-    def _extract_project_metrics(self, projects_df: pd.DataFrame, metric: str, debug_messages: list = None) -> Dict[str, Any]:
+    def _create_trends_chart(self, chart_df: pd.DataFrame) -> go.Figure:
+        """Create a visualization chart for presales and revenue booking trends"""
+        fig = go.Figure()
+        
+        # Group by project for multiple project comparison
+        projects = chart_df['Project'].unique()
+        
+        if len(projects) == 1:
+            # Single project - show detailed trend
+            project_data = chart_df[chart_df['Project'] == projects[0]]
+            
+            # Add presales percentage line
+            fig.add_trace(go.Scatter(
+                x=project_data['Year'],
+                y=project_data['Presales %'],
+                mode='lines+markers',
+                name='Presales %',
+                line=dict(color='blue', width=2),
+                marker=dict(size=8)
+            ))
+            
+            # Add revenue booking percentage line
+            fig.add_trace(go.Scatter(
+                x=project_data['Year'],
+                y=project_data['Revenue %'],
+                mode='lines+markers',
+                name='Revenue Booking %',
+                line=dict(color='green', width=2),
+                marker=dict(size=8)
+            ))
+            
+            # Add actual revenue bars
+            fig.add_trace(go.Bar(
+                x=project_data['Year'],
+                y=project_data['Revenue (B VND)'],
+                name='Actual Revenue (B VND)',
+                marker_color='lightgreen',
+                yaxis='y2'
+            ))
+            
+            fig.update_layout(
+                title=f'Presales & Revenue Trends - {projects[0]}',
+                xaxis_title='Year',
+                yaxis=dict(title='Percentage (%)', side='left'),
+                yaxis2=dict(title='Revenue (Billion VND)', overlaying='y', side='right'),
+                hovermode='x unified',
+                height=400
+            )
+        else:
+            # Multiple projects - show comparison
+            for project in projects[:5]:  # Limit to 5 projects for clarity
+                project_data = chart_df[chart_df['Project'] == project]
+                
+                # Add revenue percentage line for each project
+                fig.add_trace(go.Scatter(
+                    x=project_data['Year'],
+                    y=project_data['Revenue %'],
+                    mode='lines+markers',
+                    name=f'{project}',
+                    marker=dict(size=6)
+                ))
+            
+            fig.update_layout(
+                title='Revenue Booking Trends Comparison',
+                xaxis_title='Year',
+                yaxis_title='Revenue Booking %',
+                hovermode='x unified',
+                height=400
+            )
+        
+        return fig
+    
+    def _extract_project_metrics(self, projects_df: pd.DataFrame, metric: str) -> Dict[str, Any]:
         """Extract specific metrics from projects with comprehensive financial data"""
         metric_lower = metric.lower()
-        
-        if debug_messages is None:
-            debug_messages = []
         
         # Total Revenue
         if any(word in metric_lower for word in ['revenue', 'total revenue', 'sales']):
@@ -925,8 +948,7 @@ class GodAIAssistant:
             
             if revenue_data:
                 revenue_df = pd.DataFrame(revenue_data)
-                message = "\n".join(debug_messages) if debug_messages else ""
-                message += f"\n\n💰 **Revenue Analysis**\nShowing total revenue for {len(revenue_df)} projects"
+                message = f"💰 **Revenue Analysis**\nShowing total revenue for {len(revenue_df)} projects"
                 
                 return {
                     'type': 'metric_revenue',
@@ -961,8 +983,7 @@ class GodAIAssistant:
             
             if profit_data:
                 profit_df = pd.DataFrame(profit_data)
-                message = "\n".join(debug_messages) if debug_messages else ""
-                message += f"\n\n📊 **Profit Analysis**\nShowing net profit for {len(profit_df)} projects"
+                message = f"📊 **Profit Analysis**\nShowing net profit for {len(profit_df)} projects"
                 
                 return {
                     'type': 'metric_profit',
@@ -974,14 +995,17 @@ class GodAIAssistant:
         # Presales and Revenue Booking Trends
         elif any(word in metric_lower for word in ['presales', 'presale', 'booking', 'revenue booking']):
             trends_data = []
+            chart_data = []
+            
             for _, project in projects_df.iterrows():
                 # Get presales and revenue distributions
                 presales_dist = project.get('presales_distribution', {})
                 revenue_dist = project.get('revenue_distribution', {})
+                pnl_schedule = project.get('pnl_schedule', {})
                 
-                if presales_dist or revenue_dist:
+                if presales_dist or revenue_dist or pnl_schedule:
                     # Create trend visualization data
-                    years = sorted(set(list(presales_dist.keys()) + list(revenue_dist.keys())))
+                    years = sorted(set(list(presales_dist.keys()) + list(revenue_dist.keys()) + list(pnl_schedule.keys())))
                     
                     trend_info = {
                         'Company': project['company_ticker'],
@@ -995,20 +1019,46 @@ class GodAIAssistant:
                     for year in years:
                         trend_info[f'Presales {year}'] = f"{presales_dist.get(year, 0)}%"
                         trend_info[f'Revenue {year}'] = f"{revenue_dist.get(year, 0)}%"
+                        
+                        # Add actual revenue from P&L schedule
+                        if year in pnl_schedule:
+                            revenue_value = pnl_schedule[year].get('revenue', 0) / 1e9
+                            trend_info[f'Revenue {year} (B)'] = f"{revenue_value:,.0f}"
                     
                     trends_data.append(trend_info)
+                    
+                    # Prepare chart data
+                    for year in years:
+                        chart_data.append({
+                            'Year': year,
+                            'Project': project['project_name'],
+                            'Presales %': float(presales_dist.get(year, 0)),
+                            'Revenue %': float(revenue_dist.get(year, 0)),
+                            'Revenue (B VND)': pnl_schedule.get(year, {}).get('revenue', 0) / 1e9 if year in pnl_schedule else 0
+                        })
             
             if trends_data:
                 trends_df = pd.DataFrame(trends_data)
-                message = "\n".join(debug_messages) if debug_messages else ""
-                message += f"\n\n📈 **Presales & Revenue Booking Trends**\nShowing trends for {len(trends_df)} projects"
+                chart_df = pd.DataFrame(chart_data) if chart_data else None
                 
-                return {
+                # Create visualization if we have chart data
+                fig = None
+                if chart_df is not None and not chart_df.empty:
+                    fig = self._create_trends_chart(chart_df)
+                
+                message = f"📈 **Presales & Revenue Booking Trends**\nShowing trends for {len(trends_df)} projects"
+                
+                result = {
                     'type': 'metric_trends',
                     'message': message,
                     'summary': f"Trends analysis for {len(trends_df)} projects",
                     'data': trends_df
                 }
+                
+                if fig:
+                    result['chart'] = fig
+                
+                return result
         
         # Financial Summary (all key metrics)
         elif any(word in metric_lower for word in ['financial', 'summary', 'all metrics', 'overview']):
@@ -1045,8 +1095,7 @@ class GodAIAssistant:
             
             if summary_data:
                 summary_df = pd.DataFrame(summary_data)
-                message = "\n".join(debug_messages) if debug_messages else ""
-                message += f"\n\n📊 **Financial Summary**\nComplete financial overview for {len(summary_df)} projects"
+                message = f"📊 **Financial Summary**\nComplete financial overview for {len(summary_df)} projects"
                 
                 return {
                     'type': 'metric_financial_summary',
@@ -1204,29 +1253,18 @@ class GodAIAssistant:
         # Extract entities to check if user is asking about specific tickers
         entities = self.extract_entities(query, context)
         
-        # Build debug info for general query
-        debug_messages = []
-        debug_messages.append(f"🔎 **General Query Handler Debug**")
-        debug_messages.append(f"Detected tickers: {entities.get('tickers', 'None')}")
-        
         # If tickers are mentioned, try to handle it as a project query
         if entities.get('tickers'):
-            debug_messages.append(f"Tickers found, routing to appropriate handler...")
-            
             # Determine what to do based on keywords
             query_lower = query.lower()
             if any(word in query_lower for word in ['project', 'list', 'show', 'display']):
-                debug_messages.append(f"Keywords suggest LIST_PROJECTS")
                 return self.handle_list_projects(entities, context)
             elif any(word in query_lower for word in ['rank', 'top', 'largest', 'biggest']):
-                debug_messages.append(f"Keywords suggest RANK_PROJECTS")
                 return self.handle_rank_projects(entities, context)
             elif any(word in query_lower for word in ['detail', 'information', 'about']):
-                debug_messages.append(f"Keywords suggest PROJECT_DETAILS")
                 return self.handle_project_details(entities, context)
             else:
                 # Default to listing projects for the ticker
-                debug_messages.append(f"No specific keywords, defaulting to LIST_PROJECTS")
                 return self.handle_list_projects(entities, context)
         
         # Original general query handling
