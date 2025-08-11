@@ -209,7 +209,7 @@ class RealEstateFinancialModel:
         st.sidebar.subheader("Data Management")
         if st.sidebar.button("Refresh Financial Data"):
             self.refresh_financial_data()
-        if st.sidebar.button("🏗️ Sync Project Data"):
+        if st.sidebar.button("Sync Project Data"):
             self.sync_project_data()
             
         # DO NOT auto-load any data in sidebar to prevent blocking
