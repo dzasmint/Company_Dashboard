@@ -1228,6 +1228,7 @@ class RealEstateFinancialModel:
         else:
             st.info("Select a company to view discovery history")
     
+    @st.fragment
     def render_assumptions_interface(self):
         """Render enhanced assumptions interface with business segment support"""
         st.header("Model Assumptions")
