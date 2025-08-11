@@ -134,7 +134,7 @@ class RealEstateFinancialModel:
     
     def setup_sidebar(self):
         """Setup sidebar for company selection and controls"""
-        st.sidebar.title("🏢 Real Estate Model")
+        st.sidebar.title("Real Estate Model")
         
         # Load companies with caching
         companies = self.load_real_estate_companies()
@@ -207,13 +207,13 @@ class RealEstateFinancialModel:
         
         # Data refresh buttons
         st.sidebar.subheader("Data Management")
-        if st.sidebar.button("📊 Refresh Financial Data"):
+        if st.sidebar.button("Refresh Financial Data"):
             self.refresh_financial_data()
         if st.sidebar.button("🏗️ Sync Project Data"):
             self.sync_project_data()
             
         # DO NOT auto-load any data in sidebar to prevent blocking
-        if st.sidebar.button("📰 Fetch Latest Reports"):
+        if st.sidebar.button("Fetch Latest Reports"):
             self.fetch_analyst_reports()
             
     def load_project_data_from_mongodb(self, ticker):
@@ -437,7 +437,7 @@ class RealEstateFinancialModel:
     
     def render_main_interface(self):
         """Render the main modeling interface"""
-        st.title("🏢 Real Estate Financial Model - God AI Edition 🧠")
+        st.title("Real Estate Financial Model - God AI Edition")
         st.caption("Ultimate AI-powered financial modeling with intelligent assistant at your command")
         
         if not st.session_state.selected_company:
@@ -638,7 +638,7 @@ class RealEstateFinancialModel:
         st.header("🤖 AI-Powered Project Discovery")
         
         # Initialize pipeline manager - with force reload option
-        force_reload = st.sidebar.button("🔄 Reload AI Agents", help="Click if you see parameter errors")
+        force_reload = st.sidebar.button("Reload AI Agents", help="Click if you see parameter errors")
         
         if 'pipeline_manager' not in st.session_state or force_reload:
             try:
