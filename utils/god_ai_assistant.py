@@ -1550,8 +1550,7 @@ Respond with ONLY the intent name."""
             showlegend=True,
             height=500,
             yaxis=dict(
-                tickformat=',.0f',  # Format with thousands separator, no decimals
-                ticksuffix='B'      # Add 'B' suffix for billions
+                tickformat=',.0f'  # Just format with thousands separator, no suffix since values are already in billions
             )
         )
         
@@ -1691,8 +1690,7 @@ Respond with ONLY the intent name."""
             showlegend=True,
             height=500,
             yaxis=dict(
-                tickformat=',.0f',  # Format with thousands separator, no decimals
-                ticksuffix='B'      # Add 'B' suffix for billions
+                tickformat=',.0f'  # Just format with thousands separator, no suffix since values are already in billions
             )
         )
         
@@ -1781,15 +1779,13 @@ Respond with ONLY the intent name."""
             xaxis_title='Year',
             yaxis_title='Amount (Billion VND)',
             yaxis=dict(
-                tickformat=',.0f',
-                ticksuffix='B'
+                tickformat=',.0f'  # No suffix since values are already in billions
             ),
             yaxis2=dict(
                 title='Net Profit (Billion VND)',
                 overlaying='y',
                 side='right',
-                tickformat=',.0f',
-                ticksuffix='B'
+                tickformat=',.0f'  # No suffix since values are already in billions
             ),
             barmode='relative',
             hovermode='x unified',
@@ -1900,10 +1896,10 @@ Respond with ONLY the intent name."""
         # Update axes labels and formatting
         fig.update_xaxes(title_text="Year", row=2, col=1)
         fig.update_xaxes(title_text="Year", row=2, col=2)
-        fig.update_yaxes(title_text="Billion VND", row=1, col=1, tickformat=',.0f', ticksuffix='B')
-        fig.update_yaxes(title_text="Billion VND", row=1, col=2, tickformat=',.0f', ticksuffix='B')
-        fig.update_yaxes(title_text="Billion VND", row=2, col=1, tickformat=',.0f', ticksuffix='B')
-        fig.update_yaxes(title_text="Margin %", row=2, col=2, tickformat='.1f', ticksuffix='%')
+        fig.update_yaxes(title_text="Billion VND", row=1, col=1, tickformat=',.0f')
+        fig.update_yaxes(title_text="Billion VND", row=1, col=2, tickformat=',.0f')
+        fig.update_yaxes(title_text="Billion VND", row=2, col=1, tickformat=',.0f')
+        fig.update_yaxes(title_text="Margin %", row=2, col=2, tickformat='.1f')
         
         return fig
     
