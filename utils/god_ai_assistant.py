@@ -180,6 +180,7 @@ Available intents and their purposes:
 - RANK_PROJECTS: User wants to rank/sort/find top/highest/largest/best projects by some metric (e.g., "which project has highest gross margin", "top 5 by revenue", "largest RNAV")
 - CALCULATE_METRICS: User wants to calculate aggregate metrics across multiple projects or portfolio-level calculations
 - ANALYZE_GROWTH: User asks about growth trends, revenue progression over time, or year-over-year analysis
+- CREATE_CHART: User wants to chart/plot/visualize/graph financial data (revenue, presales, NPATMI, P&L) over time for one or more projects
 - SUGGEST_PARAMETERS: User needs AI suggestions for project parameters like ASP or construction costs
 - RESEARCH_INSIGHTS: User wants market research, news, or external insights
 - UPDATE_PROJECT: User wants to modify or update project data
@@ -189,6 +190,7 @@ Important distinctions:
 - If user asks "which project has the highest/largest/best X" or "rank by X" → RANK_PROJECTS
 - If user asks "what is the X of project Y" → PROJECT_DETAILS
 - If user asks about comparing or ranking multiple projects → RANK_PROJECTS
+- If user asks to "chart", "plot", "visualize", "graph" any financial metric → CREATE_CHART
 
 Respond with ONLY the intent name."""
                     }]
@@ -198,8 +200,9 @@ Respond with ONLY the intent name."""
                 # Validate the intent
                 valid_intents = [
                     'LIST_PROJECTS', 'PROJECT_DETAILS', 'RANK_PROJECTS', 
-                    'CALCULATE_METRICS', 'ANALYZE_GROWTH', 'SUGGEST_PARAMETERS',
-                    'RESEARCH_INSIGHTS', 'UPDATE_PROJECT', 'GENERAL_QUERY'
+                    'CALCULATE_METRICS', 'ANALYZE_GROWTH', 'CREATE_CHART',
+                    'SUGGEST_PARAMETERS', 'RESEARCH_INSIGHTS', 'UPDATE_PROJECT', 
+                    'GENERAL_QUERY'
                 ]
                 
                 if intent in valid_intents:
@@ -213,7 +216,9 @@ Respond with ONLY the intent name."""
         query_lower = query.lower()
         
         # Quick fallback patterns
-        if any(word in query_lower for word in ['list', 'show', 'display', 'what projects']):
+        if any(word in query_lower for word in ['chart', 'plot', 'visualize', 'graph', 'draw']):
+            return 'CREATE_CHART'
+        elif any(word in query_lower for word in ['list', 'show', 'display', 'what projects']):
             return 'LIST_PROJECTS'
         elif any(word in query_lower for word in ['revenue', 'profit', 'margin', 'asp', 'cost', 'financial']):
             return 'PROJECT_DETAILS'
@@ -346,7 +351,7 @@ Respond with ONLY the intent name."""
             'rnav', 'revenue', 'sales', 'asp', 'nsa', 
             'presales', 'presale', 'booking',
             'units', 'gfa', 'land area', 'sga', 'interest', 'debt', 
-            'pat', 'profit', 'pbt', 'ebitda',
+            'pat', 'profit', 'pbt', 'ebitda', 'npatmi',
             'financial', 'summary', 'overview', 'trends', 'margin'
         ]
         
@@ -362,6 +367,21 @@ Respond with ONLY the intent name."""
             extraction_debug.append(f"Final metric set to: {metric_found}")
         else:
             extraction_debug.append("No specific metric found in query")
+        
+        # Extract chart type for visualization requests
+        if any(word in query_lower for word in ['chart', 'plot', 'visualize', 'graph']):
+            # Determine what to chart based on metrics mentioned
+            if 'revenue' in query_lower:
+                entities['chart_type'] = 'revenue'
+            elif 'presales' in query_lower or 'presale' in query_lower:
+                entities['chart_type'] = 'presales'
+            elif 'npatmi' in query_lower or 'net profit' in query_lower or 'pat' in query_lower:
+                entities['chart_type'] = 'npatmi'
+            elif 'pnl' in query_lower or 'p&l' in query_lower:
+                entities['chart_type'] = 'pnl'
+            else:
+                entities['chart_type'] = 'combined'  # Default to showing all metrics
+            extraction_debug.append(f"Chart type detected: {entities['chart_type']}")
         
         extraction_debug.append(f"Final entities extracted: {entities}")
         
@@ -395,6 +415,10 @@ Respond with ONLY the intent name."""
         elif intent == 'ANALYZE_GROWTH':
             routing_debug.append("→ ANALYZE_GROWTH: Analyzing growth trends")
             result = self.handle_growth_analysis(entities, context)
+        
+        elif intent == 'CREATE_CHART':
+            routing_debug.append("→ CREATE_CHART: Creating financial charts")
+            result = self.handle_create_chart(entities, context)
         
         elif intent == 'SUGGEST_PARAMETERS':
             routing_debug.append("→ SUGGEST_PARAMETERS: Getting AI suggestions")
@@ -1259,6 +1283,393 @@ Respond with ONLY the intent name."""
         
         return fig
     
+    def _create_revenue_schedule_chart(self, projects_df: pd.DataFrame) -> go.Figure:
+        """Create revenue schedule chart for one or more projects"""
+        fig = go.Figure()
+        
+        # Collect all years and aggregate data
+        years_set = set()
+        project_revenues = {}
+        
+        for _, project in projects_df.iterrows():
+            project_name = f"{project['company_ticker']} - {project['project_name']}"
+            pnl_schedule = project.get('pnl_schedule', {})
+            
+            if isinstance(pnl_schedule, dict):
+                project_revenues[project_name] = {}
+                for year_str, pnl_data in pnl_schedule.items():
+                    try:
+                        year = int(year_str)
+                        years_set.add(year)
+                        revenue = pnl_data.get('revenue', 0) / 1e9 if isinstance(pnl_data, dict) else 0
+                        project_revenues[project_name][year] = revenue
+                    except (ValueError, TypeError):
+                        continue
+        
+        # Sort years
+        years = sorted(years_set)
+        
+        # If multiple projects, show stacked or grouped bars
+        if len(projects_df) > 1:
+            # Create stacked bar chart for aggregated view
+            total_revenues = {year: 0 for year in years}
+            for project_name, revenues in project_revenues.items():
+                year_revenues = [revenues.get(year, 0) for year in years]
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=year_revenues,
+                    name=project_name[:30],  # Truncate long names
+                    text=[f'{v:.0f}B' if v > 0 else '' for v in year_revenues],
+                    textposition='inside'
+                ))
+                for year in years:
+                    total_revenues[year] += revenues.get(year, 0)
+            
+            # Add total line
+            fig.add_trace(go.Scatter(
+                x=years,
+                y=[total_revenues[year] for year in years],
+                mode='lines+markers',
+                name='Total',
+                line=dict(color='red', width=2),
+                marker=dict(size=8)
+            ))
+            
+            fig.update_layout(barmode='stack')
+        else:
+            # Single project - simple bar chart
+            for project_name, revenues in project_revenues.items():
+                year_revenues = [revenues.get(year, 0) for year in years]
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=year_revenues,
+                    name='Revenue',
+                    marker_color='green',
+                    text=[f'{v:.0f}B' for v in year_revenues],
+                    textposition='outside'
+                ))
+        
+        fig.update_layout(
+            title='Revenue Schedule by Year',
+            xaxis_title='Year',
+            yaxis_title='Revenue (Billion VND)',
+            hovermode='x unified',
+            showlegend=True,
+            height=500
+        )
+        
+        return fig
+    
+    def _create_presales_chart(self, projects_df: pd.DataFrame) -> go.Figure:
+        """Create presales distribution chart"""
+        fig = go.Figure()
+        
+        for _, project in projects_df.iterrows():
+            project_name = f"{project['company_ticker']} - {project['project_name']}"
+            presales_dist = project.get('presales_distribution', {})
+            
+            if presales_dist and isinstance(presales_dist, dict):
+                years = sorted([int(y) for y in presales_dist.keys() if y.isdigit()])
+                percentages = [float(presales_dist.get(str(y), 0)) for y in years]
+                
+                fig.add_trace(go.Scatter(
+                    x=years,
+                    y=percentages,
+                    mode='lines+markers',
+                    name=project_name[:30],
+                    marker=dict(size=8)
+                ))
+        
+        fig.update_layout(
+            title='Presales Distribution Over Time',
+            xaxis_title='Year',
+            yaxis_title='Presales %',
+            hovermode='x unified',
+            showlegend=True,
+            height=500
+        )
+        
+        return fig
+    
+    def _create_npatmi_chart(self, projects_df: pd.DataFrame) -> go.Figure:
+        """Create NPATMI (Net Profit After Tax) chart"""
+        fig = go.Figure()
+        
+        # Collect all years and aggregate data
+        years_set = set()
+        project_profits = {}
+        
+        for _, project in projects_df.iterrows():
+            project_name = f"{project['company_ticker']} - {project['project_name']}"
+            pnl_schedule = project.get('pnl_schedule', {})
+            
+            if isinstance(pnl_schedule, dict):
+                project_profits[project_name] = {}
+                for year_str, pnl_data in pnl_schedule.items():
+                    try:
+                        year = int(year_str)
+                        years_set.add(year)
+                        # Use PAT (Profit After Tax) from P&L schedule
+                        pat = pnl_data.get('pat', 0) / 1e9 if isinstance(pnl_data, dict) else 0
+                        project_profits[project_name][year] = pat
+                    except (ValueError, TypeError):
+                        continue
+        
+        # Sort years
+        years = sorted(years_set)
+        
+        # Create chart
+        if len(projects_df) > 1:
+            # Multiple projects - show as lines for easier comparison
+            total_profits = {year: 0 for year in years}
+            for project_name, profits in project_profits.items():
+                year_profits = [profits.get(year, 0) for year in years]
+                fig.add_trace(go.Scatter(
+                    x=years,
+                    y=year_profits,
+                    mode='lines+markers',
+                    name=project_name[:30],
+                    marker=dict(size=6)
+                ))
+                for year in years:
+                    total_profits[year] += profits.get(year, 0)
+            
+            # Add total line
+            fig.add_trace(go.Scatter(
+                x=years,
+                y=[total_profits[year] for year in years],
+                mode='lines+markers',
+                name='Total NPATMI',
+                line=dict(color='red', width=3, dash='dash'),
+                marker=dict(size=8)
+            ))
+        else:
+            # Single project
+            for project_name, profits in project_profits.items():
+                year_profits = [profits.get(year, 0) for year in years]
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=year_profits,
+                    name='NPATMI',
+                    marker_color='blue',
+                    text=[f'{v:.0f}B' for v in year_profits],
+                    textposition='outside'
+                ))
+        
+        fig.update_layout(
+            title='Net Profit After Tax (NPATMI) by Year',
+            xaxis_title='Year',
+            yaxis_title='NPATMI (Billion VND)',
+            hovermode='x unified',
+            showlegend=True,
+            height=500
+        )
+        
+        return fig
+    
+    def _create_pnl_chart(self, projects_df: pd.DataFrame) -> go.Figure:
+        """Create comprehensive P&L chart"""
+        fig = go.Figure()
+        
+        # For P&L, we'll show revenue, costs, and profit for better understanding
+        years_set = set()
+        aggregated_pnl = {}
+        
+        for _, project in projects_df.iterrows():
+            pnl_schedule = project.get('pnl_schedule', {})
+            
+            if isinstance(pnl_schedule, dict):
+                for year_str, pnl_data in pnl_schedule.items():
+                    try:
+                        year = int(year_str)
+                        years_set.add(year)
+                        
+                        if year not in aggregated_pnl:
+                            aggregated_pnl[year] = {
+                                'revenue': 0,
+                                'construction': 0,
+                                'land': 0,
+                                'sga': 0,
+                                'pat': 0
+                            }
+                        
+                        if isinstance(pnl_data, dict):
+                            aggregated_pnl[year]['revenue'] += pnl_data.get('revenue', 0) / 1e9
+                            aggregated_pnl[year]['construction'] += abs(pnl_data.get('construction_cost', 0)) / 1e9
+                            aggregated_pnl[year]['land'] += abs(pnl_data.get('land_cost', 0)) / 1e9
+                            aggregated_pnl[year]['sga'] += abs(pnl_data.get('sga', 0)) / 1e9
+                            aggregated_pnl[year]['pat'] += pnl_data.get('pat', 0) / 1e9
+                    except (ValueError, TypeError):
+                        continue
+        
+        # Sort years
+        years = sorted(years_set)
+        
+        # Create stacked bar chart for costs and revenue
+        fig.add_trace(go.Bar(
+            x=years,
+            y=[aggregated_pnl[y]['revenue'] for y in years],
+            name='Revenue',
+            marker_color='green'
+        ))
+        
+        fig.add_trace(go.Bar(
+            x=years,
+            y=[-aggregated_pnl[y]['construction'] for y in years],
+            name='Construction Cost',
+            marker_color='orange'
+        ))
+        
+        fig.add_trace(go.Bar(
+            x=years,
+            y=[-aggregated_pnl[y]['land'] for y in years],
+            name='Land Cost',
+            marker_color='brown'
+        ))
+        
+        fig.add_trace(go.Bar(
+            x=years,
+            y=[-aggregated_pnl[y]['sga'] for y in years],
+            name='SG&A',
+            marker_color='gray'
+        ))
+        
+        # Add PAT as a line
+        fig.add_trace(go.Scatter(
+            x=years,
+            y=[aggregated_pnl[y]['pat'] for y in years],
+            mode='lines+markers',
+            name='Net Profit (PAT)',
+            line=dict(color='blue', width=2),
+            marker=dict(size=8),
+            yaxis='y2'
+        ))
+        
+        fig.update_layout(
+            title='P&L Schedule Overview',
+            xaxis_title='Year',
+            yaxis_title='Amount (Billion VND)',
+            yaxis2=dict(
+                title='Net Profit (Billion VND)',
+                overlaying='y',
+                side='right'
+            ),
+            barmode='relative',
+            hovermode='x unified',
+            showlegend=True,
+            height=600
+        )
+        
+        return fig
+    
+    def _create_combined_financial_chart(self, projects_df: pd.DataFrame) -> go.Figure:
+        """Create combined chart showing revenue, costs, and profit"""
+        # Create subplots
+        from plotly.subplots import make_subplots
+        
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=('Revenue Schedule', 'Net Profit (NPATMI)', 
+                          'Cost Breakdown', 'Profit Margin %'),
+            specs=[[{'type': 'bar'}, {'type': 'scatter'}],
+                   [{'type': 'bar'}, {'type': 'scatter'}]]
+        )
+        
+        # Aggregate data
+        years_set = set()
+        aggregated_data = {}
+        
+        for _, project in projects_df.iterrows():
+            pnl_schedule = project.get('pnl_schedule', {})
+            
+            if isinstance(pnl_schedule, dict):
+                for year_str, pnl_data in pnl_schedule.items():
+                    try:
+                        year = int(year_str)
+                        years_set.add(year)
+                        
+                        if year not in aggregated_data:
+                            aggregated_data[year] = {
+                                'revenue': 0,
+                                'construction': 0,
+                                'land': 0,
+                                'sga': 0,
+                                'pat': 0
+                            }
+                        
+                        if isinstance(pnl_data, dict):
+                            aggregated_data[year]['revenue'] += pnl_data.get('revenue', 0) / 1e9
+                            aggregated_data[year]['construction'] += abs(pnl_data.get('construction_cost', 0)) / 1e9
+                            aggregated_data[year]['land'] += abs(pnl_data.get('land_cost', 0)) / 1e9
+                            aggregated_data[year]['sga'] += abs(pnl_data.get('sga', 0)) / 1e9
+                            aggregated_data[year]['pat'] += pnl_data.get('pat', 0) / 1e9
+                    except (ValueError, TypeError):
+                        continue
+        
+        years = sorted(years_set)
+        
+        # Revenue chart (top left)
+        fig.add_trace(
+            go.Bar(x=years, y=[aggregated_data[y]['revenue'] for y in years], 
+                  name='Revenue', marker_color='green'),
+            row=1, col=1
+        )
+        
+        # Net Profit chart (top right)
+        fig.add_trace(
+            go.Scatter(x=years, y=[aggregated_data[y]['pat'] for y in years],
+                      mode='lines+markers', name='NPATMI', line=dict(color='blue')),
+            row=1, col=2
+        )
+        
+        # Cost breakdown (bottom left)
+        fig.add_trace(
+            go.Bar(x=years, y=[aggregated_data[y]['construction'] for y in years],
+                  name='Construction', marker_color='orange'),
+            row=2, col=1
+        )
+        fig.add_trace(
+            go.Bar(x=years, y=[aggregated_data[y]['land'] for y in years],
+                  name='Land', marker_color='brown'),
+            row=2, col=1
+        )
+        fig.add_trace(
+            go.Bar(x=years, y=[aggregated_data[y]['sga'] for y in years],
+                  name='SG&A', marker_color='gray'),
+            row=2, col=1
+        )
+        
+        # Profit margin % (bottom right)
+        margins = []
+        for year in years:
+            revenue = aggregated_data[year]['revenue']
+            pat = aggregated_data[year]['pat']
+            margin = (pat / revenue * 100) if revenue > 0 else 0
+            margins.append(margin)
+        
+        fig.add_trace(
+            go.Scatter(x=years, y=margins,
+                      mode='lines+markers', name='Net Margin %', 
+                      line=dict(color='purple')),
+            row=2, col=2
+        )
+        
+        fig.update_layout(
+            title_text='Combined Financial Analysis',
+            showlegend=True,
+            height=800
+        )
+        
+        # Update axes labels
+        fig.update_xaxes(title_text="Year", row=2, col=1)
+        fig.update_xaxes(title_text="Year", row=2, col=2)
+        fig.update_yaxes(title_text="Billion VND", row=1, col=1)
+        fig.update_yaxes(title_text="Billion VND", row=1, col=2)
+        fig.update_yaxes(title_text="Billion VND", row=2, col=1)
+        fig.update_yaxes(title_text="Margin %", row=2, col=2)
+        
+        return fig
+    
     def _extract_project_metrics(self, projects_df: pd.DataFrame, metric: str) -> Dict[str, Any]:
         """Extract specific metrics from projects with comprehensive financial data"""
         metric_lower = metric.lower()
@@ -1581,6 +1992,96 @@ Respond with ONLY the intent name."""
                 'message': f"Metric '{metric}' not specifically handled",
                 'summary': f"Showing {len(projects_df)} projects",
                 'data': projects_df[['company_ticker', 'project_name', 'location']]
+            }
+    
+    def handle_create_chart(self, entities: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle chart creation requests for project financials"""
+        debug_msg = []
+        debug_msg.append("\n📊 **CREATE CHART HANDLER**")
+        
+        project_name = entities.get('project_name')
+        tickers = entities.get('tickers', [])
+        chart_type = entities.get('chart_type', 'combined')
+        
+        debug_msg.append(f"Project name: {project_name}")
+        debug_msg.append(f"Tickers: {tickers}")
+        debug_msg.append(f"Chart type: {chart_type}")
+        
+        # Load all projects from MongoDB
+        from .mongodb_utils import load_projects_data
+        all_projects_df = load_projects_data()
+        
+        if all_projects_df.empty:
+            return {
+                'type': 'error',
+                'message': '\n'.join(debug_msg) + '\n\n❌ No projects found in database',
+                'data': None
+            }
+        
+        # Filter projects
+        if project_name:
+            # Specific project by name
+            projects_df = all_projects_df[all_projects_df['project_name'] == project_name]
+            debug_msg.append(f"Filtered by project name: {len(projects_df)} projects")
+        elif tickers:
+            # Projects for specific tickers
+            projects_df = all_projects_df[all_projects_df['company_ticker'].isin(tickers)]
+            debug_msg.append(f"Filtered by tickers: {len(projects_df)} projects")
+        else:
+            # All projects
+            projects_df = all_projects_df
+            debug_msg.append(f"Using all {len(projects_df)} projects")
+        
+        if projects_df.empty:
+            return {
+                'type': 'error',
+                'message': '\n'.join(debug_msg) + '\n\n❌ No projects found for specified criteria',
+                'data': None
+            }
+        
+        # Create appropriate chart based on type
+        try:
+            if chart_type == 'revenue':
+                fig = self._create_revenue_schedule_chart(projects_df)
+                chart_title = "Revenue Schedule"
+            elif chart_type == 'presales':
+                fig = self._create_presales_chart(projects_df)
+                chart_title = "Presales Distribution"
+            elif chart_type == 'npatmi':
+                fig = self._create_npatmi_chart(projects_df)
+                chart_title = "NPATMI (Net Profit After Tax)"
+            elif chart_type == 'pnl':
+                fig = self._create_pnl_chart(projects_df)
+                chart_title = "P&L Schedule"
+            else:  # combined
+                fig = self._create_combined_financial_chart(projects_df)
+                chart_title = "Combined Financial Metrics"
+            
+            debug_msg.append(f"✅ Successfully created {chart_title} chart")
+            
+            # Prepare summary data
+            summary_data = []
+            for _, project in projects_df.iterrows():
+                summary_data.append({
+                    'Company': project['company_ticker'],
+                    'Project': project['project_name'],
+                    'Total Revenue': f"{project.get('total_revenue', 0):,.0f}B VND" if project.get('total_revenue') else 'N/A',
+                    'Total PAT': f"{project.get('total_pat', 0):,.0f}B VND" if project.get('total_pat') else 'N/A'
+                })
+            
+            return {
+                'type': 'chart',
+                'message': '\n'.join(debug_msg) + f'\n\n✅ {chart_title} for {len(projects_df)} project(s)',
+                'summary': f"Showing {chart_title}",
+                'chart': fig,
+                'data': pd.DataFrame(summary_data) if summary_data else None
+            }
+            
+        except Exception as e:
+            return {
+                'type': 'error',
+                'message': '\n'.join(debug_msg) + f'\n\n❌ Error creating chart: {str(e)}',
+                'data': None
             }
     
     def handle_general_query(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:

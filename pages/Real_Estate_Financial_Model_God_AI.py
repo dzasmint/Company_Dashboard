@@ -5798,6 +5798,19 @@ class RealEstateFinancialModel:
             if result.get('data') is not None:
                 st.dataframe(result['data'], use_container_width=True, height=400)
         
+        # Handle chart results
+        elif result['type'] == 'chart':
+            st.markdown("#### 📈 Financial Chart")
+            
+            # Display the chart
+            if result.get('chart'):
+                st.plotly_chart(result['chart'], use_container_width=True)
+            
+            # Display summary data if available
+            if result.get('data') is not None and not result['data'].empty:
+                with st.expander("View Project Summary"):
+                    st.dataframe(result['data'], use_container_width=True)
+        
         # Handle all metric-specific result types
         elif result['type'].startswith('metric_'):
             # Extract the metric type name for display
