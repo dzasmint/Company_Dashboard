@@ -1487,7 +1487,7 @@ class RealEstateFinancialModel:
         col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
         
         with col1:
-            if st.button("💾 Save to MongoDB", type="primary"):
+            if st.button("💾 Save to MongoDB", type="primary", key=f"save_assumptions_{selected_ticker}"):
                 # Get the current data from session state (which is now always up-to-date)
                 current_df = st.session_state[assumptions_key]
                 if isinstance(current_df, pd.DataFrame):
@@ -1600,7 +1600,7 @@ class RealEstateFinancialModel:
                     st.error(f"❌ {result['message']}")
         
         with col2:
-            if st.button("🔄 Reload from DB"):
+            if st.button("🔄 Reload from DB", key=f"reload_assumptions_{selected_ticker}"):
                 # Force reload from MongoDB
                 company_assumptions = get_company_assumptions(selected_ticker)
                 
@@ -1690,7 +1690,7 @@ class RealEstateFinancialModel:
                 st.rerun()
         
         with col3:
-            if st.button("🗑️ Clear All"):
+            if st.button("🗑️ Clear All", key=f"clear_assumptions_{selected_ticker}"):
                 if st.session_state.get('confirm_clear', False):
                     # Clear all assumptions
                     st.session_state[assumptions_key] = pd.DataFrame(columns=["Category", "Type", "Item", "Value", "Unit"])
@@ -1715,7 +1715,7 @@ class RealEstateFinancialModel:
                     st.warning("⚠️ Click again to confirm clearing all assumptions")
         
         with col4:
-            if st.button("📋 Load Defaults"):
+            if st.button("📋 Load Defaults", key=f"load_defaults_{selected_ticker}"):
                 # Load default assumptions with business segments using new Type column
                 default_assumptions = [
                     {"Category": "Financial", "Type": "N/A", "Item": "WACC", "Value": 12.0, "Unit": "%"},
