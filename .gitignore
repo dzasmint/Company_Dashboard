@@ -116,3 +116,7 @@ dmypy.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Data and Reports
+data/Reports/
+data/Reports/*
