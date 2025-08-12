@@ -247,40 +247,60 @@ class SimplifiedAIDiscovery:
         for doc in documents:
             doc_list.append(doc['name'])
             combined_text += f"\n\n=== DOC: {doc['name']} ===\n"
-            combined_text += doc['text'][:40000]  # Reduced limit
-            if len(combined_text) > 80000:  # Reduced total
+            combined_text += doc['text'][:30000]  # Moderate limit per doc
+            if len(combined_text) > 60000:  # Moderate total limit
                 break
         
-        prompt = """Extract real estate projects (Vietnamese/English docs).
+        prompt = """Extract ALL real estate projects from these documents. Look for project names with variations (e.g., Hoang Huy Commerce, HH Commerce, Hoàng Huy Commerce are the same).
+
+        IMPORTANT PROJECT NAMES TO FIND:
+        1. Hoang Huy Commerce (H1, H2, or phases/toà/tower)
+        2. Hoang Huy New City (Phase 1, II, or zones like Prince Park, Queen Park)
+        3. Hoang Huy Green River
+        4. Hoàng Huy Sở Dầu / Hoang Huy Grand Tower
+        5. Hoang Huy Riverside
+        6. Any other projects mentioned
         
-        TERMS:
-        VN: Dự án, Diện tích đất, Tổng diện tích sàn, Số căn, Giá bán
-        EN: Project, Land area, GFA, NSA, Units, Price
+        KEY TERMS (Vietnamese/English):
+        - Dự án/Project
+        - Diện tích/Area: ha (hectare), m2/sqm
+        - Căn hộ/Units/Apartments
+        - Townhouse/Nhà phố/Shophouse
+        - Villa/Biệt thự
+        - Tòa/Tower/Block (H1, H2, etc.)
+        - Giai đoạn/Phase (1, 2, I, II)
+        - Giá bán/Selling price (triệu/million, tỷ/billion VND)
+        - Doanh thu/Revenue
+        - Tiến độ/Progress/Status
         
-        Extract for each project:
-        - project_name
-        - land_area_sqm
-        - gfa_sqm, nsa_sqm
-        - total_units
-        - avg_selling_price
-        - construction_cost_bn_vnd
-        - land_cost_bn_vnd
-        - legal_status
-        - selling_status
-        - remaining_units
+        EXTRACTION RULES:
+        1. Convert all areas to sqm (1 ha = 10,000 sqm)
+        2. Look for numbers near project names
+        3. Extract phases/towers as separate entries if they have different data
+        4. Check tables, bullet points, and narrative text
+        5. Look for launch dates, handover dates, construction status
         
-        Return JSON array:
-        [{
-            "project_name": "Project A",
-            "land_area_sqm": 50000,
-            "total_units": 1000,
-            "selling_status": "70% sold",
-            ...use "N/A" for missing
-        }]
+        For EACH project/phase, extract:
+        {
+            "project_name": "Full name with phase/tower",
+            "land_area_sqm": numeric or "N/A",
+            "total_units": numeric or "N/A",
+            "unit_types": "apartments/townhouse/villa/mixed",
+            "avg_selling_price": "price per sqm in million VND",
+            "total_revenue_bn_vnd": numeric or "N/A",
+            "construction_status": "planning/under construction/completed/%",
+            "launch_year": "2024/2025/etc",
+            "handover_year": "2025/2026/etc",
+            "ownership_pct": "TCH ownership %",
+            "location": "district/city",
+            "phases": "list of phases if mentioned",
+            "notes": "any other important info"
+        }
         
+        Return JSON array. Include ALL projects found, even with partial data.
         Start [ end ]
         
-        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:40000]
+        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:60000]
         
         try:
             response = self.client.messages.create(
