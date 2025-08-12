@@ -687,8 +687,6 @@ class RealEstateFinancialModel:
         **Claude AI will extract:**
         1. **Business Segments** - Revenue, COGS, Gross Profit and Margins by segment
         2. **Real Estate Projects** - Comprehensive project details with intelligent merging
-        
-        ⏱️ **Note**: To avoid rate limits, there's a 1-minute wait between API calls.
         """)
         
         # File uploader
