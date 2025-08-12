@@ -531,6 +531,274 @@ Return JSON array with merged projects. Start [ end ]
         
         return projects
     
+    def save_edited_projects_to_database(self, edited_df):
+        """Save edited projects from the dataframe to MongoDB database"""
+        from utils.mongodb_utils import save_project_to_mongodb
+        
+        if edited_df is None or edited_df.empty:
+            st.error("No projects to save")
+            return
+        
+        success_count = 0
+        error_count = 0
+        error_messages = []
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i, row in edited_df.iterrows():
+            progress = (i + 1) / len(edited_df)
+            progress_bar.progress(progress)
+            status_text.text(f"Saving project {i+1}/{len(edited_df)}: {row.get('project_name', 'Unknown')}")
+            
+            try:
+                # Parse values from edited dataframe - NO DEFAULTS
+                project_data = {
+                    'company_ticker': row.get('ticker', st.session_state.get('selected_company', '')),
+                    'company_name': st.session_state.get('selected_company_name', ''),
+                    'location': row.get('location', ''),
+                    'project_ownership': 0,  # No default
+                    'total_units': self._parse_number(row.get('total_units', 0)),
+                    'net_sellable_area': self._parse_number(row.get('net_sellable_area', 0)),
+                    'average_unit_size': 0,  # Will calculate if possible
+                    'average_selling_price': self._parse_number(row.get('average_selling_price', 0)),
+                    'price_increment_factor': 0,
+                    'gross_floor_area': 0,  # Not in edited table
+                    'land_area': self._parse_number(row.get('land_area_sqm', 0)),
+                    'construction_cost_per_sqm': 0,  # No default
+                    'land_cost_per_sqm': 0,  # Not in edited table
+                    'construction_start_year': self._parse_year(row.get('construction_start_year', '')),
+                    'sale_start_year': self._parse_year(row.get('revenue_booking_start_year', '')),
+                    'land_payment_year': self._parse_year(row.get('revenue_booking_start_year', '')),
+                    'construction_years': 0,  # No default
+                    'sales_years': 0,  # No default
+                    'revenue_booking_start_year': self._parse_year(row.get('revenue_booking_start_year', '')),
+                    'project_completion_year': self._parse_year(row.get('project_completion_year', '')),
+                    'sga_percentage': 0,  # No default
+                    'wacc_rate': 0,  # No default
+                    'cost_of_debt': 0,  # No default
+                    # Financial metrics
+                    'total_revenue': 0,  # Not in edited table
+                    'total_construction_cost': 0,
+                    'total_land_cost': 0,
+                    'total_sga_cost': 0,
+                    'total_pat': 0,
+                    'total_pbt': 0,
+                    # Additional fields
+                    'development_status': row.get('development_status', ''),
+                    'sales_status': row.get('sales_progress', ''),
+                    'remaining_units': self._parse_number(row.get('remaining_units', 0)),
+                    # Empty distribution fields
+                    'revenue_distribution': {},
+                    'presales_distribution': {},
+                    'pnl_schedule': {}
+                }
+                
+                # Calculate average unit size if possible
+                if project_data['net_sellable_area'] > 0 and project_data['total_units'] > 0:
+                    project_data['average_unit_size'] = project_data['net_sellable_area'] / project_data['total_units']
+                
+                # Save to MongoDB
+                result = save_project_to_mongodb(
+                    project_data,
+                    row.get('project_name', f"Project_{i+1}")
+                )
+                
+                if result.get('success', False):
+                    success_count += 1
+                else:
+                    error_count += 1
+                    error_messages.append(f"{row.get('project_name', 'Unknown')}: {result.get('message', 'Unknown error')}")
+                    
+            except Exception as e:
+                error_count += 1
+                error_messages.append(f"{row.get('project_name', 'Unknown')}: {str(e)}")
+        
+        progress_bar.empty()
+        status_text.empty()
+        
+        # Display results
+        if success_count > 0:
+            st.success(f"✅ Successfully saved {success_count} project(s) to database")
+        
+        if error_count > 0:
+            st.error(f"❌ Failed to save {error_count} project(s)")
+            with st.expander("View error details"):
+                for error_msg in error_messages:
+                    st.write(f"• {error_msg}")
+        
+        # Clear selected projects after saving
+        if success_count > 0:
+            st.session_state.selected_projects_for_db = []
+            st.rerun()
+    
+    def save_projects_to_database(self, projects: List[Dict]):
+        """Save selected projects to MongoDB database"""
+        from utils.mongodb_utils import save_project_to_mongodb
+        
+        if not projects:
+            st.error("No projects to save")
+            return
+        
+        success_count = 0
+        error_count = 0
+        error_messages = []
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i, project in enumerate(projects):
+            progress = (i + 1) / len(projects)
+            progress_bar.progress(progress)
+            status_text.text(f"Saving project {i+1}/{len(projects)}: {project.get('project_name', 'Unknown')}")
+            
+            try:
+                # Parse key numeric values - no defaults
+                total_units = self._parse_number(project.get('total_units', 0))
+                land_area = self._parse_number(project.get('land_area_sqm', 0))
+                gfa = self._parse_number(project.get('gfa_sqm', 0))
+                nsa = self._parse_number(project.get('nsa_sqm', 0))
+                avg_price = self._parse_number(project.get('avg_selling_price', 0))
+                
+                # Calculate average unit size only if we have data
+                avg_unit_size = 0
+                if nsa > 0 and total_units > 0:
+                    avg_unit_size = nsa / total_units
+                
+                # Calculate net sellable area only if we have data
+                net_sellable_area = 0
+                if nsa > 0:
+                    net_sellable_area = nsa
+                elif total_units > 0 and avg_unit_size > 0:
+                    net_sellable_area = total_units * avg_unit_size
+                
+                # Parse financial values
+                total_revenue_bn = self._parse_number(project.get('total_revenue_bn_vnd', 0))
+                construction_cost_bn = self._parse_number(project.get('construction_cost_bn_vnd', 0))
+                land_cost_bn = self._parse_number(project.get('land_cost_bn_vnd', 0))
+                
+                # Calculate land cost per sqm only if data available
+                land_cost_per_sqm = 0
+                if land_cost_bn > 0 and land_area > 0:
+                    land_cost_per_sqm = (land_cost_bn * 1000) / land_area  # Convert bn to million then to per sqm
+                
+                # Parse years - use 0 if not available
+                construction_start = self._parse_year(project.get('construction_start', ''))
+                launch_date = self._parse_year(project.get('launch_date', ''))
+                handover_date = self._parse_year(project.get('handover_date', ''))
+                
+                # Prepare project data - NO DEFAULTS, only map what exists
+                project_data = {
+                    'company_ticker': st.session_state.get('selected_company', ''),
+                    'company_name': st.session_state.get('selected_company_name', ''),
+                    'location': project.get('location', ''),
+                    'project_ownership': 0,  # No default ownership
+                    'total_units': total_units,
+                    'net_sellable_area': net_sellable_area,
+                    'average_unit_size': avg_unit_size,
+                    'average_selling_price': avg_price,
+                    'price_increment_factor': 0,
+                    'gross_floor_area': gfa,
+                    'land_area': land_area,
+                    'construction_cost_per_sqm': 0,  # No default
+                    'land_cost_per_sqm': land_cost_per_sqm,
+                    'construction_start_year': construction_start,
+                    'sale_start_year': launch_date,
+                    'land_payment_year': launch_date,
+                    'construction_years': 0,  # No default
+                    'sales_years': 0,  # No default
+                    'revenue_booking_start_year': launch_date,
+                    'project_completion_year': handover_date,
+                    'sga_percentage': 0,  # No default
+                    'wacc_rate': 0,  # No default
+                    'cost_of_debt': 0,  # No default
+                    # Financial metrics
+                    'total_revenue': total_revenue_bn * 1000 if total_revenue_bn > 0 else 0,
+                    'total_construction_cost': construction_cost_bn * 1000 if construction_cost_bn > 0 else 0,
+                    'total_land_cost': land_cost_bn * 1000 if land_cost_bn > 0 else 0,
+                    'total_sga_cost': 0,
+                    'total_pat': 0,
+                    'total_pbt': 0,
+                    # Additional fields
+                    'development_status': project.get('development_status', ''),
+                    'sales_status': project.get('sales_status', ''),
+                    'remaining_units': self._parse_number(project.get('remaining_units', 0)),
+                    # Empty distribution fields
+                    'revenue_distribution': {},
+                    'presales_distribution': {},
+                    'pnl_schedule': {}
+                }
+                
+                # Save to MongoDB
+                result = save_project_to_mongodb(
+                    project_data,
+                    project.get('project_name', f"Project_{i+1}")
+                )
+                
+                if result.get('success', False):
+                    success_count += 1
+                else:
+                    error_count += 1
+                    error_messages.append(f"{project.get('project_name', 'Unknown')}: {result.get('message', 'Unknown error')}")
+                    
+            except Exception as e:
+                error_count += 1
+                error_messages.append(f"{project.get('project_name', 'Unknown')}: {str(e)}")
+        
+        progress_bar.empty()
+        status_text.empty()
+        
+        # Display results
+        if success_count > 0:
+            st.success(f"✅ Successfully saved {success_count} project(s) to database")
+        
+        if error_count > 0:
+            st.error(f"❌ Failed to save {error_count} project(s)")
+            with st.expander("View error details"):
+                for error_msg in error_messages:
+                    st.write(f"• {error_msg}")
+        
+        # Clear selected projects after saving
+        if success_count > 0:
+            st.session_state.selected_projects_for_db = []
+            st.rerun()
+    
+    def _parse_number(self, value):
+        """Parse number from various formats"""
+        if value == 'N/A' or value is None or value == '':
+            return 0
+        if isinstance(value, (int, float)):
+            return float(value)
+        # Handle string numbers with commas
+        if isinstance(value, str):
+            # Remove commas and convert
+            try:
+                return float(str(value).replace(',', '').strip())
+            except:
+                return 0
+        return 0
+    
+    def _parse_year(self, value):
+        """Parse year from various formats"""
+        if value == 'N/A' or value is None or value == '':
+            return 0  # Return 0 for no data
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            # Try to extract year from string (e.g., "Q1/2025" -> 2025)
+            import re
+            year_match = re.search(r'20\d{2}', str(value))
+            if year_match:
+                return int(year_match.group())
+            # Try direct conversion
+            try:
+                year = int(value)
+                if 2000 <= year <= 2050:
+                    return year
+            except:
+                pass
+        return 0  # Return 0 for no valid year found
+    
     def merge_duplicate_projects(self, projects: List[Dict]) -> List[Dict]:
         """Merge duplicate projects intelligently using Claude AI"""
         
@@ -688,12 +956,39 @@ Return JSON array with merged projects. Start [ end ]
             if 'selected_projects_for_db' in st.session_state and st.session_state.selected_projects_for_db:
                 st.markdown("---")
                 st.subheader("📋 Projects to be Added to Database")
-                st.info(f"Selected {len(st.session_state.selected_projects_for_db)} projects ready for database addition")
                 
-                # Create pipeline-compatible table
-                pipeline_data = []
+                # Load existing projects from MongoDB for comparison
+                existing_pipeline_data = []
+                try:
+                    from utils.mongodb_utils import load_projects_data
+                    existing_projects_df = load_projects_data()
+                    if not existing_projects_df.empty:
+                        # Convert existing projects to pipeline format
+                        for _, row in existing_projects_df.iterrows():
+                            existing_pipeline_data.append({
+                                'Source': '📂 Existing in DB',
+                                'project_name': row.get('project_name', 'N/A'),
+                                'location': row.get('location', 'N/A'),
+                                'land_area_sqm': row.get('land_area_sqm', 'N/A'),
+                                'total_units': row.get('total_units', 'N/A'),
+                                'net_sellable_area': row.get('net_sellable_area', 'N/A'),
+                                'average_selling_price': row.get('average_selling_price', 'N/A'),
+                                'construction_start_year': row.get('construction_start_year', 'N/A'),
+                                'project_completion_year': row.get('project_completion_year', 'N/A'),
+                                'revenue_booking_start_year': row.get('revenue_booking_start_year', 'N/A'),
+                                'development_status': row.get('development_status', 'N/A'),
+                                'sales_progress': row.get('sales_progress', 'N/A'),
+                                'remaining_units': row.get('remaining_units', 'N/A'),
+                                'ticker': row.get('ticker', st.session_state.get('selected_company', 'N/A'))
+                            })
+                except:
+                    pass
+                
+                # Create pipeline-compatible table for NEW projects
+                new_pipeline_data = []
                 for proj in st.session_state.selected_projects_for_db:
-                    pipeline_data.append({
+                    new_pipeline_data.append({
+                        'Source': '✨ New Project',
                         'project_name': proj.get('project_name', 'N/A'),
                         'location': proj.get('location', 'N/A'),
                         'land_area_sqm': proj.get('land_area_sqm', 'N/A'),
@@ -709,7 +1004,104 @@ Return JSON array with merged projects. Start [ end ]
                         'ticker': st.session_state.get('selected_company', 'N/A')
                     })
                 
-                pipeline_df = pd.DataFrame(pipeline_data)
-                st.dataframe(pipeline_df, use_container_width=True, height=300)
+                # Combine existing and new projects
+                all_pipeline_data = existing_pipeline_data + new_pipeline_data
                 
-                st.info("🔍 Review the data above. Save functionality will be implemented after GUI verification.")
+                if all_pipeline_data:
+                    pipeline_df = pd.DataFrame(all_pipeline_data)
+                    
+                    # Display metrics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Existing Projects in DB", len(existing_pipeline_data))
+                    with col2:
+                        st.metric("New Projects to Add", len(new_pipeline_data))
+                    with col3:
+                        # Check for potential duplicates
+                        if existing_pipeline_data and new_pipeline_data:
+                            existing_names = [p['project_name'].lower() for p in existing_pipeline_data if p['project_name'] != 'N/A']
+                            new_names = [p['project_name'].lower() for p in new_pipeline_data if p['project_name'] != 'N/A']
+                            duplicates = len([n for n in new_names if n in existing_names])
+                            st.metric("Potential Duplicates", duplicates)
+                        else:
+                            st.metric("Potential Duplicates", 0)
+                    
+                    # Split dataframe for display
+                    existing_df = pipeline_df[pipeline_df['Source'] == '📂 Existing in DB']
+                    new_df = pipeline_df[pipeline_df['Source'] == '✨ New Project']
+                    
+                    # Display existing projects (non-editable)
+                    if not existing_df.empty:
+                        st.markdown("**📂 Existing Projects in Database (Reference Only)**")
+                        st.dataframe(
+                            existing_df.style.applymap(
+                                lambda x: 'background-color: #f0f0f0; color: #666;',
+                                subset=['Source']
+                            ),
+                            use_container_width=True,
+                            height=min(200, len(existing_df) * 40 + 40)
+                        )
+                    
+                    # Display new projects (editable)
+                    if not new_df.empty:
+                        st.markdown("**✨ New Projects to Add (Editable)**")
+                        
+                        # Make new projects editable
+                        edited_new_df = st.data_editor(
+                            new_df,
+                            use_container_width=True,
+                            height=min(300, len(new_df) * 40 + 40),
+                            column_config={
+                                "Source": st.column_config.TextColumn(
+                                    "Source",
+                                    help="✨ = New project to add",
+                                    disabled=True,
+                                    width="small"
+                                )
+                            },
+                            disabled=['Source'],  # Only Source column is disabled
+                            hide_index=True,
+                            key="editable_new_projects"
+                        )
+                        
+                        # Update session state with edited values
+                        if edited_new_df is not None:
+                            # Update the selected projects with edited values
+                            updated_projects = []
+                            for idx, row in edited_new_df.iterrows():
+                                # Convert row back to project format
+                                updated_project = {
+                                    'project_name': row['project_name'],
+                                    'location': row['location'],
+                                    'land_area_sqm': row['land_area_sqm'],
+                                    'total_units': row['total_units'],
+                                    'nsa_sqm': row['net_sellable_area'],
+                                    'avg_selling_price': row['average_selling_price'],
+                                    'construction_start': row['construction_start_year'],
+                                    'handover_date': row['project_completion_year'],
+                                    'launch_date': row['revenue_booking_start_year'],
+                                    'development_status': row['development_status'],
+                                    'sales_status': row['sales_progress'],
+                                    'remaining_units': row['remaining_units']
+                                }
+                                updated_projects.append(updated_project)
+                            st.session_state.selected_projects_for_db = updated_projects
+                    
+                    if new_pipeline_data:
+                        st.success(f"✅ {len(new_pipeline_data)} new project(s) ready for database addition")
+                        if duplicates > 0:
+                            st.warning(f"⚠️ {duplicates} project name(s) match existing database entries. Please review before saving.")
+                        
+                        # Save button
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        with col2:
+                            if st.button("💾 Save New Projects to Database", type="primary", use_container_width=True):
+                                # Use the edited dataframe values
+                                if edited_new_df is not None:
+                                    self.save_edited_projects_to_database(edited_new_df)
+                                else:
+                                    self.save_projects_to_database(st.session_state.selected_projects_for_db)
+                    
+                    st.info("🔍 Review the projects above. Existing database projects (gray rows) are shown for duplicate checking.")
+                else:
+                    st.info("No projects to display")
