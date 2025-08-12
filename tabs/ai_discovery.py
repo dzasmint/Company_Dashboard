@@ -35,7 +35,6 @@ class AIDiscoveryTab:
     
     def render(self):
         """Render AI discovery interface focused on project extraction"""
-        st.header("🤖 AI-Powered Real Estate Project Extraction")
         
         st.markdown("""
         Upload multiple PDF files (annual reports, earnings reports, analyst reports, or company presentations) for comprehensive project extraction.
@@ -50,6 +49,7 @@ class AIDiscoveryTab:
         
         # File uploader section
         st.subheader("📄 Document Upload")
+        
         uploaded_files = st.file_uploader(
             "Choose PDF documents",
             type=['pdf'],
@@ -62,7 +62,7 @@ class AIDiscoveryTab:
             st.success(f"✅ {len(uploaded_files)} document(s) uploaded")
             
             # Process uploaded files
-            if st.button("🚀 Process Documents", type="primary", use_container_width=True):
+            if st.button("Process Documents", type="primary", use_container_width=True):
                 self.process_documents(uploaded_files)
         
         # Display results if available

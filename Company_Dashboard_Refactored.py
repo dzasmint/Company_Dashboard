@@ -165,7 +165,7 @@ def main():
     with col1:
         st.header(f"Financial Analysis: {selected_ticker}")
         
-        # Financial plots tabs
+        # Financial plots tabs - use key parameter for state persistence
         tab1, tab2, tab3, tab4 = st.tabs(["Income Statement", "Growth Rates", "Margins", "Banking Metrics"])
         
         with tab1:

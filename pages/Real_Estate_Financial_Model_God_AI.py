@@ -227,6 +227,55 @@ class RealEstateFinancialModel:
                     # Clear the refresh flag
                     st.session_state.needs_data_refresh = False
                 
+        # Navigation section (moved here to be above Data Management)
+        if st.session_state.selected_company:
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("Navigation")
+            
+            # Define tab names for navigation
+            tab_names = [
+                "Historical Analysis",
+                "AI Project Discovery", 
+                "Assumptions",
+                "Project Pipeline",
+                "Revenue Forecast",
+                "Valuation",
+                "Research Insights",
+                "Export Model",
+                "God AI Assistant"
+            ]
+            
+            # Initialize selected tab if not exists
+            if 'selected_re_tab' not in st.session_state:
+                st.session_state.selected_re_tab = tab_names[0]
+            
+            # Create vertical button navigation
+            for tab_name in tab_names:
+                # Determine button type based on selection
+                if tab_name == st.session_state.selected_re_tab:
+                    # Selected tab - use primary button
+                    if st.sidebar.button(
+                        tab_name,
+                        key=f"nav_{tab_name}",
+                        use_container_width=True,
+                        type="primary"
+                    ):
+                        st.session_state.selected_re_tab = tab_name
+                        st.rerun()
+                else:
+                    # Unselected tab - use secondary button
+                    if st.sidebar.button(
+                        tab_name,
+                        key=f"nav_{tab_name}",
+                        use_container_width=True,
+                        type="secondary"
+                    ):
+                        st.session_state.selected_re_tab = tab_name
+                        st.rerun()
+            
+            # Store tab names for use in render_main_interface
+            st.session_state.tab_names = tab_names
+        
         # Forecast parameters
         st.sidebar.subheader("Forecast Settings")
         st.session_state.forecast_years = st.sidebar.slider(
@@ -238,13 +287,33 @@ class RealEstateFinancialModel:
         
         # Data refresh buttons
         st.sidebar.subheader("Data Management")
-        if st.sidebar.button("Refresh Financial Data", key="refresh_financial_btn_v2"):
+        
+        # Refresh Financial Data button
+        if st.sidebar.button(
+            "🔄 Refresh Financial Data",
+            key="refresh_financial_btn_v2",
+            use_container_width=True,
+            type="secondary"
+        ):
             self.refresh_financial_data()
-        if st.sidebar.button("Sync Project Data", key="sync_project_btn_v2"):
+            
+        # Sync Project Data button
+        if st.sidebar.button(
+            "🔗 Sync Project Data",
+            key="sync_project_btn_v2",
+            use_container_width=True,
+            type="secondary"
+        ):
             self.sync_project_data()
             
+        # Fetch Latest Reports button
         # DO NOT auto-load any data in sidebar to prevent blocking
-        if st.sidebar.button("Fetch Latest Reports", key="fetch_reports_btn_v2"):
+        if st.sidebar.button(
+            "📥 Fetch Latest Reports",
+            key="fetch_reports_btn_v2",
+            use_container_width=True,
+            type="secondary"
+        ):
             self.fetch_analyst_reports()
             
     def load_project_data_from_mongodb(self, ticker):
@@ -475,53 +544,40 @@ class RealEstateFinancialModel:
             st.info("👈 Please select a company from the sidebar to begin")
             return
             
-        # Define tab names for easier reference
-        tab_names = [
-            "Historical Analysis",
-            "AI Project Discovery",
-            "Assumptions",
-            "Project Pipeline",
-            "Revenue Forecast",
-            "Valuation",
-            "Research Insights",
-            "Export Model",
-            "God AI Assistant"
-        ]
+        # Get selected tab from session state (set in sidebar)
+        selected_tab = st.session_state.get('selected_re_tab', None)
+        tab_names = st.session_state.get('tab_names', [])
         
-        # Create tabs - use a key to maintain state
-        tabs = st.tabs(tab_names)
+        if not selected_tab or not tab_names:
+            st.warning("Please select a module from the sidebar navigation")
+            return
         
-        # Render each tab content
-        with tabs[0]:
+        # Display current module as header
+        st.header(selected_tab)
+        
+        # Render content based on selection
+        if selected_tab == tab_names[0]:  # Historical Analysis
             self.render_historical_analysis()
-            
-        with tabs[1]:
+        elif selected_tab == tab_names[1]:  # AI Project Discovery
             self.render_ai_discovery()
-            
-        with tabs[2]:
+        elif selected_tab == tab_names[2]:  # Assumptions
             self.render_assumptions_interface()
-            
-        with tabs[3]:
+        elif selected_tab == tab_names[3]:  # Project Pipeline
             self.render_project_pipeline()
-            
-        with tabs[4]:
+        elif selected_tab == tab_names[4]:  # Revenue Forecast
             self.render_revenue_forecast()
-            
-        with tabs[5]:
+        elif selected_tab == tab_names[5]:  # Valuation
             self.render_valuation()
-            
-        with tabs[6]:
+        elif selected_tab == tab_names[6]:  # Research Insights
             self.render_research_insights()
-            
-        with tabs[7]:
+        elif selected_tab == tab_names[7]:  # Export Model
             self.render_export_interface()
-        
-        with tabs[8]:
+        elif selected_tab == tab_names[8]:  # God AI Assistant
             self.render_god_ai_assistant()
+        
     
     def render_historical_analysis(self):
         """Render historical financial analysis - Simple P&L Table"""
-        st.header("Historical Financial Analysis")
         
         # Load data if not already loaded
         if st.session_state.historical_data is None and st.session_state.selected_company:
@@ -670,7 +726,6 @@ class RealEstateFinancialModel:
     
     def render_ai_discovery(self):
         """Render AI-powered project discovery interface"""
-        st.header("🤖 AI-Powered Project Discovery")
         
         # Import the original AIDiscoveryTab
         from tabs.ai_discovery import AIDiscoveryTab
@@ -727,7 +782,7 @@ class RealEstateFinancialModel:
                 st.info(f"📚 {len(uploaded_files)} document(s) uploaded")
         
         if uploaded_files and company_name and company_ticker:
-            if st.button("🤖 Extract Projects from All Documents", type="primary", use_container_width=True):
+            if st.button("Extract Projects from All Documents", type="primary", use_container_width=True):
                 # Process multiple documents
                 extraction_results = st.session_state.pipeline_manager.claude_extractor.process_multiple_documents(
                     pdf_files=uploaded_files,
@@ -783,8 +838,8 @@ class RealEstateFinancialModel:
                     
                     # Show combined project table
                     if st.session_state.claude_projects:
-                        st.subheader("📊 All Extracted Projects")
-                        
+                        st.subheader("All Extracted Projects")
+
                         # Create enhanced summary table with source information
                         projects_for_table = []
                         for project in st.session_state.claude_projects:
@@ -965,13 +1020,13 @@ class RealEstateFinancialModel:
             ticker = st.session_state.claude_metadata.get('company_ticker', '') if has_claude else ''
             if ticker:
                 existing_projects = st.session_state.pipeline_manager.mongo_helper.get_real_estate_projects(ticker)
-                st.info("📊 Database Projects")
+                st.info("Database Projects")
                 st.metric("Existing", len(existing_projects))
             else:
                 existing_projects = []
         
         # Merge button
-        if st.button("🤖 AI Merge & Compare with Database", type="primary", use_container_width=True):
+        if st.button("AI Merge & Compare with Database", type="primary", use_container_width=True):
             # Get company info
             company_name = st.session_state.claude_metadata.get('company_name', '') if has_claude else ''
             company_ticker = st.session_state.claude_metadata.get('company_ticker', '') if has_claude else ''
@@ -981,7 +1036,7 @@ class RealEstateFinancialModel:
                 company_name = st.session_state.perplexity_metadata.get('company_name', '')
             
             # Step 1: AI-powered merge of Claude and Perplexity results
-            with st.spinner("🤖 Using Claude AI to intelligently merge results..."):
+            with st.spinner("Using Claude AI to intelligently merge results..."):
                 claude_projects = st.session_state.claude_projects if has_claude else []
                 perplexity_projects = st.session_state.perplexity_projects if has_perplexity else []
                 
@@ -1000,7 +1055,7 @@ class RealEstateFinancialModel:
                 st.session_state.merge_summary = merge_summary
             
             # Step 2: Compare with database
-            with st.spinner("📊 Comparing with existing database projects..."):
+            with st.spinner("Comparing with existing database projects..."):
                 comparison_result = st.session_state.pipeline_manager.claude_extractor.compare_with_database_projects(
                     merged_projects=merged_projects,
                     existing_projects=existing_projects
@@ -1048,7 +1103,7 @@ class RealEstateFinancialModel:
                             st.write(f"  • {change}")
             
             # Show all merged projects
-            with st.expander("📊 All Merged Projects", expanded=True):
+            with st.expander("All Merged Projects", expanded=True):
                 display_data = []
                 for proj in merged_projects:
                     display_data.append({
@@ -1325,7 +1380,7 @@ class RealEstateFinancialModel:
             assumptions_df = pd.DataFrame(assumptions_df)
         
         # Display editable assumptions table
-        st.subheader("📊 Assumptions Table")
+        st.subheader("Assumptions Table")
         st.info("💡 **How to use:** Click any cell to edit | Use '+' button to add rows | Select row(s) and press Delete/Backspace to remove | Click 'Apply Changes' to save edits")
         
         # Use a form to batch updates and prevent double-entry issues
@@ -2277,7 +2332,7 @@ class RealEstateFinancialModel:
                         st.session_state[f"ai_raw_response_{project_name}"] = response
                         
                         # Display summary in full width expander
-                        with st.expander("📊 AI Research Summary", expanded=True):
+                        with st.expander("AI Research Summary", expanded=True):
                             # Show basic info if available in full width
                             if parsed_info.get("basic_info"):
                                 st.info(f"**Project Description:** {parsed_info['basic_info']}")
@@ -2431,7 +2486,7 @@ class RealEstateFinancialModel:
         # Add AI Suggestion button
         col_ai, col_space = st.columns([2, 3])
         with col_ai:
-            if st.button("🤖 AI Suggest Parameters", key=f"ai_suggest_{project_name}", type="primary"):
+            if st.button("AI Suggest Parameters", key=f"ai_suggest_{project_name}", type="primary"):
                 self.get_ai_project_suggestions(project_name, project_data)
         
         # Check if we're switching to a different project
@@ -2490,7 +2545,7 @@ class RealEstateFinancialModel:
             )
             # Show AI suggestion inline if available
             if ai_suggestions.get("location"):
-                st.caption(f"🤖 AI Suggestion: {ai_suggestions['location']}")
+                st.caption(f"AI Suggestion: {ai_suggestions['location']}")
             st.session_state.edited_project['location'] = location
             
             # Total Units
@@ -2504,9 +2559,9 @@ class RealEstateFinancialModel:
             if ai_suggestions.get("total_units"):
                 try:
                     ai_units = float(ai_suggestions['total_units'])
-                    st.caption(f"🤖 AI Suggestion: {ai_units:,.0f} units")
+                    st.caption(f"AI Suggestion: {ai_units:,.0f} units")
                 except:
-                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['total_units']} units")
+                    st.caption(f"AI Suggestion: {ai_suggestions['total_units']} units")
             st.session_state.edited_project['total_units'] = total_units
             
             # Average Unit Size
@@ -2520,9 +2575,9 @@ class RealEstateFinancialModel:
             if ai_suggestions.get("average_unit_size"):
                 try:
                     ai_size = float(ai_suggestions['average_unit_size'])
-                    st.caption(f"🤖 AI Suggestion: {ai_size:,.0f} m²")
+                    st.caption(f"AI Suggestion: {ai_size:,.0f} m²")
                 except:
-                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['average_unit_size']} m²")
+                    st.caption(f"AI Suggestion: {ai_suggestions['average_unit_size']} m²")
             st.session_state.edited_project['average_unit_size'] = avg_unit_size
             
             # Calculate NSA
@@ -2554,9 +2609,9 @@ class RealEstateFinancialModel:
             if ai_suggestions.get("avg_selling_price_per_sqm"):
                 try:
                     ai_price = float(ai_suggestions['avg_selling_price_per_sqm'])
-                    st.caption(f"🤖 AI Suggestion: {ai_price:,.0f} VND/m²")
+                    st.caption(f"AI Suggestion: {ai_price:,.0f} VND/m²")
                 except:
-                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['avg_selling_price_per_sqm']} VND/m²")
+                    st.caption(f"AI Suggestion: {ai_suggestions['avg_selling_price_per_sqm']} VND/m²")
             st.session_state.edited_project['average_selling_price'] = asp
             
             # Land Area
@@ -2570,9 +2625,9 @@ class RealEstateFinancialModel:
             if ai_suggestions.get("land_area_sqm"):
                 try:
                     ai_land = float(ai_suggestions['land_area_sqm'])
-                    st.caption(f"🤖 AI Suggestion: {ai_land:,.0f} m²")
+                    st.caption(f"AI Suggestion: {ai_land:,.0f} m²")
                 except:
-                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['land_area_sqm']} m²")
+                    st.caption(f"AI Suggestion: {ai_suggestions['land_area_sqm']} m²")
             st.session_state.edited_project['land_area'] = land_area
             
             # Construction Cost per sqm
@@ -2587,9 +2642,9 @@ class RealEstateFinancialModel:
             if ai_suggestions.get("construction_cost_per_sqm"):
                 try:
                     ai_const = float(ai_suggestions['construction_cost_per_sqm'])
-                    st.caption(f"🤖 AI Suggestion: {ai_const:,.0f} VND/m²")
+                    st.caption(f"AI Suggestion: {ai_const:,.0f} VND/m²")
                 except:
-                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
+                    st.caption(f"AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
             st.session_state.edited_project['construction_cost_per_sqm'] = const_cost
             
             # Land Cost per sqm
@@ -2604,9 +2659,9 @@ class RealEstateFinancialModel:
             if ai_suggestions.get("land_cost_per_sqm"):
                 try:
                     ai_land_cost = float(ai_suggestions['land_cost_per_sqm'])
-                    st.caption(f"🤖 AI Suggestion: {ai_land_cost:,.0f} VND/m²")
+                    st.caption(f"AI Suggestion: {ai_land_cost:,.0f} VND/m²")
                 except:
-                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
+                    st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
             st.session_state.edited_project['land_cost_per_sqm'] = land_cost
             
             # GFA
@@ -2620,9 +2675,9 @@ class RealEstateFinancialModel:
             if ai_suggestions.get("total_area_sqm"):
                 try:
                     ai_gfa = float(ai_suggestions['total_area_sqm'])
-                    st.caption(f"🤖 AI Suggestion: {ai_gfa:,.0f} m²")
+                    st.caption(f"AI Suggestion: {ai_gfa:,.0f} m²")
                 except:
-                    st.caption(f"🤖 AI Suggestion: {ai_suggestions['total_area_sqm']} m²")
+                    st.caption(f"AI Suggestion: {ai_suggestions['total_area_sqm']} m²")
             st.session_state.edited_project['gross_floor_area'] = gfa
     
     def render_project_timeline(self, project_data):
@@ -3344,7 +3399,7 @@ class RealEstateFinancialModel:
         st.session_state.base_year_revenues = st.session_state[revenue_key]
         
         # Section 1: Other Revenue Streams Setup
-        st.subheader("📊 Business Segments Revenue")
+        st.subheader("Business Segments Revenue")
         # Get base_year from session state or from the analysis above
         display_base_year = st.session_state.get('base_year', base_year if 'base_year' in locals() else 2024)
         st.info(f"Enter base year ({display_base_year} - latest historical) revenue for business segments defined in Assumptions")
@@ -3617,7 +3672,7 @@ class RealEstateFinancialModel:
             # Project breakdown data is now incorporated into Total Revenue Forecast table
             
             # Section 2: Total Revenue Forecast
-            st.subheader("📊 Total Revenue Forecast")
+            st.subheader("Total Revenue Forecast")
             
             # Create revenue table with rows as revenue sources and columns as years
             revenue_rows = []
@@ -3804,7 +3859,7 @@ class RealEstateFinancialModel:
             
             # Section 4: Gross Profit
             st.markdown("---")
-            st.subheader("📈 Gross Profit")
+            st.subheader("Gross Profit")
             
             # Get total revenue and COGS from the last row of each DataFrame
             total_revenue_row = revenue_df[revenue_df['Revenue Source'] == 'TOTAL REVENUE'].iloc[0]
@@ -4797,7 +4852,7 @@ class RealEstateFinancialModel:
             
             # Section 6: Visualization Chart (moved to bottom)
             st.markdown("---")
-            st.subheader("📊 Revenue, COGS, and Gross Profit Visualization")
+            st.subheader("Revenue, COGS, and Gross Profit Visualization")
             
             # Create visualization
             fig = go.Figure()
@@ -4855,7 +4910,7 @@ class RealEstateFinancialModel:
     
     def render_total_company_forecast(self):
         """Render total company revenue forecast combining selected segments only"""
-        st.subheader("📊 Total Company Revenue Forecast")
+        st.subheader("Total Company Revenue Forecast")
         
         # Get only selected revenue streams
         if 'selected_streams_data' in st.session_state:
@@ -5168,7 +5223,7 @@ class RealEstateFinancialModel:
     
     def render_consolidated_forecast(self):
         """Render consolidated P&L forecast combining all segments"""
-        st.subheader("📈 Consolidated Financial Forecast")
+        st.subheader("Consolidated Financial Forecast")
         
         current_year = datetime.now().year
         forecast_years = st.session_state.get('forecast_years', 5)
@@ -5849,7 +5904,7 @@ class RealEstateFinancialModel:
         st.header("Research & Analytics Insights")
         
         # Earnings Commentary Analysis
-        st.subheader("📊 Earnings Commentary Analysis")
+        st.subheader("Earnings Commentary Analysis")
         
         if 'earnings_analysis' in st.session_state.model_data:
             analysis = st.session_state.model_data['earnings_analysis']
@@ -5868,7 +5923,7 @@ class RealEstateFinancialModel:
             st.info("Click 'Fetch Latest Reports' to analyze earnings commentary")
         
         # Sell-Side Research Insights
-        st.subheader("📈 Sell-Side Research Summary")
+        st.subheader("Sell-Side Research Summary")
         
         if 'sellside_insights' in st.session_state.model_data:
             insights = st.session_state.model_data['sellside_insights']
@@ -5897,7 +5952,7 @@ class RealEstateFinancialModel:
             st.info("Click 'Fetch Latest Reports' to analyze sell-side research")
         
         # AI-Generated Investment Thesis
-        st.subheader("🤖 AI-Generated Investment Thesis")
+        st.subheader("AI-Generated Investment Thesis")
         
         if st.button("Generate Investment Thesis"):
             with st.spinner("Generating investment thesis..."):
@@ -5933,15 +5988,15 @@ class RealEstateFinancialModel:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("📊 Export to Excel", use_container_width=True):
+            if st.button("Export to Excel", use_container_width=True):
                 self.export_to_excel()
                 
         with col2:
-            if st.button("📄 Generate PDF Report", use_container_width=True):
+            if st.button("Generate PDF Report", use_container_width=True):
                 self.generate_pdf_report()
                 
         with col3:
-            if st.button("💾 Save Model State", use_container_width=True):
+            if st.button("Save Model State", use_container_width=True):
                 self.save_model_state()
         
         # Model sharing
@@ -6321,7 +6376,7 @@ class RealEstateFinancialModel:
                     st.caption(f"Source: {suggestion['source']}")
         
         elif result['type'] == 'growth_analysis':
-            st.markdown("#### 📈 Growth Analysis")
+            st.markdown("#### Growth Analysis")
             
             # Display chart if available
             if result.get('chart'):
@@ -6345,7 +6400,7 @@ class RealEstateFinancialModel:
                 st.dataframe(result['data'], use_container_width=True)
         
         elif result['type'] == 'metrics':
-            st.markdown("#### 📊 Portfolio Metrics")
+            st.markdown("#### Portfolio Metrics")
             
             if result.get('data') is not None:
                 st.dataframe(result['data'], use_container_width=True)
@@ -6380,7 +6435,7 @@ class RealEstateFinancialModel:
         
         # Handle chart results
         elif result['type'] == 'chart':
-            st.markdown("#### 📈 Financial Chart")
+            st.markdown("#### Financial Chart")
             
             # Display the chart
             if result.get('chart'):
@@ -6397,7 +6452,7 @@ class RealEstateFinancialModel:
         elif result['type'].startswith('metric_'):
             # Extract the metric type name for display
             metric_name = result['type'].replace('metric_', '').replace('_', ' ').title()
-            st.markdown(f"#### 📊 {metric_name} Analysis")
+            st.markdown(f"#### {metric_name} Analysis")
             
             # Display the message if available
             if result.get('message'):
