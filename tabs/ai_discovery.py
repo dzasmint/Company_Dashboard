@@ -552,50 +552,52 @@ Return JSON array with merged projects. Start [ end ]
             status_text.text(f"Saving project {i+1}/{len(edited_df)}: {row.get('project_name', 'Unknown')}")
             
             try:
-                # Parse values from edited dataframe - NO DEFAULTS
+                # Parse values from edited dataframe - NO DEFAULTS, use actual column names
                 project_data = {
-                    'company_ticker': row.get('ticker', st.session_state.get('selected_company', '')),
+                    'company_ticker': row.get('company_ticker', st.session_state.get('selected_company', '')),
                     'company_name': st.session_state.get('selected_company_name', ''),
                     'location': row.get('location', ''),
-                    'project_ownership': 0,  # No default
+                    'project_ownership': self._parse_number(row.get('project_ownership', 0)),
                     'total_units': self._parse_number(row.get('total_units', 0)),
                     'net_sellable_area': self._parse_number(row.get('net_sellable_area', 0)),
-                    'average_unit_size': 0,  # Will calculate if possible
+                    'average_unit_size': self._parse_number(row.get('average_unit_size', 0)),
                     'average_selling_price': self._parse_number(row.get('average_selling_price', 0)),
-                    'price_increment_factor': 0,
-                    'gross_floor_area': 0,  # Not in edited table
-                    'land_area': self._parse_number(row.get('land_area_sqm', 0)),
-                    'construction_cost_per_sqm': 0,  # No default
-                    'land_cost_per_sqm': 0,  # Not in edited table
+                    'price_increment_factor': self._parse_number(row.get('price_increment_factor', 0)),
+                    'gross_floor_area': self._parse_number(row.get('gross_floor_area', 0)),
+                    'land_area': self._parse_number(row.get('land_area', 0)),
+                    'construction_cost_per_sqm': self._parse_number(row.get('construction_cost_per_sqm', 0)),
+                    'land_cost_per_sqm': self._parse_number(row.get('land_cost_per_sqm', 0)),
                     'construction_start_year': self._parse_year(row.get('construction_start_year', '')),
-                    'sale_start_year': self._parse_year(row.get('revenue_booking_start_year', '')),
-                    'land_payment_year': self._parse_year(row.get('revenue_booking_start_year', '')),
-                    'construction_years': 0,  # No default
-                    'sales_years': 0,  # No default
+                    'sale_start_year': self._parse_year(row.get('sale_start_year', '')),
+                    'land_payment_year': self._parse_year(row.get('sale_start_year', '')),  # Default to sale start
+                    'construction_years': self._parse_number(row.get('construction_years', 0)),
+                    'sales_years': self._parse_number(row.get('sales_years', 0)),
                     'revenue_booking_start_year': self._parse_year(row.get('revenue_booking_start_year', '')),
                     'project_completion_year': self._parse_year(row.get('project_completion_year', '')),
-                    'sga_percentage': 0,  # No default
-                    'wacc_rate': 0,  # No default
-                    'cost_of_debt': 0,  # No default
-                    # Financial metrics
-                    'total_revenue': 0,  # Not in edited table
+                    'sga_percentage': 0,  # Not in table
+                    'wacc_rate': 0,  # Not in table
+                    'cost_of_debt': 0,  # Not in table
+                    # Financial metrics - not in edited table
+                    'total_revenue': 0,
                     'total_construction_cost': 0,
                     'total_land_cost': 0,
                     'total_sga_cost': 0,
                     'total_pat': 0,
                     'total_pbt': 0,
-                    # Additional fields
-                    'development_status': row.get('development_status', ''),
-                    'sales_status': row.get('sales_progress', ''),
-                    'remaining_units': self._parse_number(row.get('remaining_units', 0)),
+                    # Additional fields - not in the new column structure
+                    'development_status': '',
+                    'sales_status': '',
+                    'remaining_units': 0,
                     # Empty distribution fields
                     'revenue_distribution': {},
                     'presales_distribution': {},
-                    'pnl_schedule': {}
+                    'pnl_schedule': {},
+                    # RNAV value if provided
+                    'rnav_value': self._parse_number(row.get('rnav_value', 0)) if row.get('rnav_value', 'N/A') != 'N/A' else None
                 }
                 
-                # Calculate average unit size if possible
-                if project_data['net_sellable_area'] > 0 and project_data['total_units'] > 0:
+                # Recalculate average unit size if needed
+                if project_data['average_unit_size'] == 0 and project_data['net_sellable_area'] > 0 and project_data['total_units'] > 0:
                     project_data['average_unit_size'] = project_data['net_sellable_area'] / project_data['total_units']
                 
                 # Save to MongoDB
@@ -957,51 +959,74 @@ Return JSON array with merged projects. Start [ end ]
                 st.markdown("---")
                 st.subheader("📋 Projects to be Added to Database")
                 
-                # Load existing projects from MongoDB for comparison
+                # Load existing projects from MongoDB for comparison - ONLY for selected ticker
                 existing_pipeline_data = []
+                selected_ticker = st.session_state.get('selected_company', '')
                 try:
                     from utils.mongodb_utils import load_projects_data
                     existing_projects_df = load_projects_data()
-                    if not existing_projects_df.empty:
-                        # Convert existing projects to pipeline format
-                        for _, row in existing_projects_df.iterrows():
+                    if not existing_projects_df.empty and selected_ticker:
+                        # Filter by selected company ticker
+                        filtered_df = existing_projects_df[existing_projects_df['company_ticker'] == selected_ticker]
+                        
+                        # Convert existing projects to pipeline format - ONLY specified columns
+                        for _, row in filtered_df.iterrows():
                             existing_pipeline_data.append({
                                 'Source': '📂 Existing in DB',
                                 'project_name': row.get('project_name', 'N/A'),
+                                'company_ticker': row.get('company_ticker', 'N/A'),
                                 'location': row.get('location', 'N/A'),
-                                'land_area_sqm': row.get('land_area_sqm', 'N/A'),
+                                'project_ownership': row.get('project_ownership', 'N/A'),
                                 'total_units': row.get('total_units', 'N/A'),
                                 'net_sellable_area': row.get('net_sellable_area', 'N/A'),
+                                'average_unit_size': row.get('average_unit_size', 'N/A'),
                                 'average_selling_price': row.get('average_selling_price', 'N/A'),
+                                'price_increment_factor': row.get('price_increment_factor', 'N/A'),
+                                'gross_floor_area': row.get('gross_floor_area', 'N/A'),
+                                'land_area': row.get('land_area', 'N/A'),
+                                'construction_cost_per_sqm': row.get('construction_cost_per_sqm', 'N/A'),
+                                'land_cost_per_sqm': row.get('land_cost_per_sqm', 'N/A'),
                                 'construction_start_year': row.get('construction_start_year', 'N/A'),
-                                'project_completion_year': row.get('project_completion_year', 'N/A'),
+                                'construction_years': row.get('construction_years', 'N/A'),
+                                'sale_start_year': row.get('sale_start_year', 'N/A'),
+                                'sales_years': row.get('sales_years', 'N/A'),
                                 'revenue_booking_start_year': row.get('revenue_booking_start_year', 'N/A'),
-                                'development_status': row.get('development_status', 'N/A'),
-                                'sales_progress': row.get('sales_progress', 'N/A'),
-                                'remaining_units': row.get('remaining_units', 'N/A'),
-                                'ticker': row.get('ticker', st.session_state.get('selected_company', 'N/A'))
+                                'project_completion_year': row.get('project_completion_year', 'N/A'),
+                                'rnav_value': row.get('rnav_value', 'N/A')
                             })
                 except:
                     pass
                 
-                # Create pipeline-compatible table for NEW projects
+                # Create pipeline-compatible table for NEW projects - matching existing columns
                 new_pipeline_data = []
                 for proj in st.session_state.selected_projects_for_db:
+                    # Parse NSA and calculate average unit size
+                    nsa = self._parse_number(proj.get('nsa_sqm', 0))
+                    total_units = self._parse_number(proj.get('total_units', 0))
+                    avg_unit_size = nsa / total_units if total_units > 0 and nsa > 0 else 'N/A'
+                    
                     new_pipeline_data.append({
                         'Source': '✨ New Project',
                         'project_name': proj.get('project_name', 'N/A'),
+                        'company_ticker': st.session_state.get('selected_company', 'N/A'),
                         'location': proj.get('location', 'N/A'),
-                        'land_area_sqm': proj.get('land_area_sqm', 'N/A'),
+                        'project_ownership': 'N/A',  # Will be set by user
                         'total_units': proj.get('total_units', 'N/A'),
                         'net_sellable_area': proj.get('nsa_sqm', 'N/A'),
+                        'average_unit_size': avg_unit_size if avg_unit_size != 'N/A' else 'N/A',
                         'average_selling_price': proj.get('avg_selling_price', 'N/A'),
+                        'price_increment_factor': 'N/A',  # Will be set by user
+                        'gross_floor_area': proj.get('gfa_sqm', 'N/A'),
+                        'land_area': proj.get('land_area_sqm', 'N/A'),
+                        'construction_cost_per_sqm': 'N/A',  # Will be set by user
+                        'land_cost_per_sqm': 'N/A',  # Will be calculated or set
                         'construction_start_year': proj.get('construction_start', 'N/A'),
-                        'project_completion_year': proj.get('handover_date', 'N/A'),
+                        'construction_years': 'N/A',  # Will be set by user
+                        'sale_start_year': proj.get('launch_date', 'N/A'),
+                        'sales_years': 'N/A',  # Will be set by user
                         'revenue_booking_start_year': proj.get('launch_date', 'N/A'),
-                        'development_status': proj.get('development_status', 'N/A'),
-                        'sales_progress': proj.get('sales_status', proj.get('selling_status', 'N/A')),
-                        'remaining_units': proj.get('remaining_units', 'N/A'),
-                        'ticker': st.session_state.get('selected_company', 'N/A')
+                        'project_completion_year': proj.get('handover_date', 'N/A'),
+                        'rnav_value': 'N/A'  # Will be calculated
                     })
                 
                 # Combine existing and new projects
@@ -1064,28 +1089,6 @@ Return JSON array with merged projects. Start [ end ]
                             key="editable_new_projects"
                         )
                         
-                        # Update session state with edited values
-                        if edited_new_df is not None:
-                            # Update the selected projects with edited values
-                            updated_projects = []
-                            for idx, row in edited_new_df.iterrows():
-                                # Convert row back to project format
-                                updated_project = {
-                                    'project_name': row['project_name'],
-                                    'location': row['location'],
-                                    'land_area_sqm': row['land_area_sqm'],
-                                    'total_units': row['total_units'],
-                                    'nsa_sqm': row['net_sellable_area'],
-                                    'avg_selling_price': row['average_selling_price'],
-                                    'construction_start': row['construction_start_year'],
-                                    'handover_date': row['project_completion_year'],
-                                    'launch_date': row['revenue_booking_start_year'],
-                                    'development_status': row['development_status'],
-                                    'sales_status': row['sales_progress'],
-                                    'remaining_units': row['remaining_units']
-                                }
-                                updated_projects.append(updated_project)
-                            st.session_state.selected_projects_for_db = updated_projects
                     
                     if new_pipeline_data:
                         st.success(f"✅ {len(new_pipeline_data)} new project(s) ready for database addition")
@@ -1096,11 +1099,16 @@ Return JSON array with merged projects. Start [ end ]
                         col1, col2, col3 = st.columns([1, 2, 1])
                         with col2:
                             if st.button("💾 Save New Projects to Database", type="primary", use_container_width=True):
-                                # Use the edited dataframe values
-                                if edited_new_df is not None:
-                                    self.save_edited_projects_to_database(edited_new_df)
+                                # Always use the edited dataframe values
+                                if edited_new_df is not None and not edited_new_df.empty:
+                                    # Filter to only new projects (not existing ones)
+                                    new_projects_only = edited_new_df[edited_new_df['Source'] == '✨ New Project']
+                                    if not new_projects_only.empty:
+                                        self.save_edited_projects_to_database(new_projects_only)
+                                    else:
+                                        st.warning("No new projects to save")
                                 else:
-                                    self.save_projects_to_database(st.session_state.selected_projects_for_db)
+                                    st.warning("No projects available to save")
                     
                     st.info("🔍 Review the projects above. Existing database projects (gray rows) are shown for duplicate checking.")
                 else:
