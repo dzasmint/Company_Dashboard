@@ -14,7 +14,11 @@ class ProjectPipelineTab:
     
     def render(self):
         """Render project pipeline and timeline"""
-        st.header("Project Pipeline Analysis")
+        selected_ticker = st.session_state.get('selected_company', '')
+        if selected_ticker:
+            st.header(f"Project Pipeline Analysis - {selected_ticker}")
+        else:
+            st.header("Project Pipeline Analysis")
         
         df_projects = st.session_state.project_data
         

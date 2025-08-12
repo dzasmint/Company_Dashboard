@@ -160,7 +160,12 @@ class RealEstateFinancialModel:
             
             selected = st.session_state.company_selector_refactored
             if selected and selected != "Select a company":
-                ticker = selected.split(" - ")[0]
+                # Extract ticker - handle both "TICKER" and "TICKER - Company Name" formats
+                if " - " in selected:
+                    ticker = selected.split(" - ")[0].strip()
+                else:
+                    ticker = selected.strip()
+                    
                 if st.session_state.get('selected_company') != ticker:
                     # Clean state for new company
                     self._reset_company_state(ticker)
@@ -213,19 +218,22 @@ class RealEstateFinancialModel:
             st.sidebar.metric("Last Calc Time", f"{st.session_state.last_calculation_time:.2f}s")
     
     def _reset_company_state(self, ticker):
-        """Reset session state for new company selection"""
-        keys_to_reset = [
-            'selected_company', 'historical_data', 'project_data',
-            'base_year_revenues', 'comprehensive_model'
-        ]
+        """Reset session state for new company selection and load data"""
+        # Clear previous data
+        st.session_state.historical_data = None
+        st.session_state.project_data = None
         
-        # Reset company-specific keys
-        for key in list(st.session_state.keys()):
-            if any(reset_key in key for reset_key in keys_to_reset):
-                if key.endswith(f'_{ticker}') or key in keys_to_reset:
-                    del st.session_state[key]
-        
+        # Set new company
         st.session_state.selected_company = ticker
+        
+        # Auto-load historical data
+        with st.spinner(f"Loading data for {ticker}..."):
+            data = self.load_historical_data_from_csv(ticker)
+            if not data.empty:
+                st.session_state.historical_data = data
+                
+        # Auto-sync project data
+        self.sync_project_data()
     
     def _get_current_company_index(self, companies):
         """Get current company index for selectbox"""
@@ -234,7 +242,8 @@ class RealEstateFinancialModel:
         
         if selected_company:
             for i, company in enumerate(companies):
-                if company.startswith(f"{selected_company} - "):
+                # Check if company starts with the ticker
+                if company.startswith(f"{selected_company} - ") or company == selected_company:
                     current_index = i
                     break
         
@@ -348,24 +357,44 @@ class RealEstateFinancialModel:
     
     def sync_project_data(self):
         """Sync project data from MongoDB with progress tracking"""
-        with st.spinner("Syncing project data from MongoDB..."):
+        selected_ticker = st.session_state.get('selected_company')
+        
+        if not selected_ticker:
+            st.sidebar.warning("⚠️ Please select a company first")
+            return
+            
+        with st.spinner(f"Syncing project data for {selected_ticker}..."):
             start_time = time.time()
             
             try:
-                df_projects = load_projects_data()
+                # Load ALL projects first
+                df_all_projects = load_projects_data()
                 
-                if not df_projects.empty:
-                    st.session_state.project_data = df_projects
+                if not df_all_projects.empty:
+                    # Filter for selected ticker
+                    if 'ticker' in df_all_projects.columns:
+                        df_projects = df_all_projects[df_all_projects['ticker'] == selected_ticker].copy()
+                    else:
+                        # If no ticker column, return empty
+                        df_projects = pd.DataFrame()
                     
-                    # Calculate sync time
-                    sync_time = time.time() - start_time
-                    st.session_state.last_calculation_time = sync_time
-                    
-                    st.sidebar.success(f"✅ Synced {len(df_projects)} projects ({sync_time:.2f}s)")
+                    if not df_projects.empty:
+                        st.session_state.project_data = df_projects
+                        
+                        # Calculate sync time
+                        sync_time = time.time() - start_time
+                        st.session_state.last_calculation_time = sync_time
+                        
+                        st.sidebar.success(f"✅ Synced {len(df_projects)} projects for {selected_ticker} ({sync_time:.2f}s)")
+                    else:
+                        st.session_state.project_data = pd.DataFrame()
+                        st.sidebar.info(f"No projects found for {selected_ticker}")
                 else:
+                    st.session_state.project_data = pd.DataFrame()
                     st.sidebar.warning("⚠️ No projects found in MongoDB")
                     
             except Exception as e:
+                st.session_state.project_data = pd.DataFrame()
                 st.sidebar.error(f"❌ Error syncing data: {str(e)}")
     
     def load_and_cache_financial_data(self):
@@ -398,16 +427,22 @@ class RealEstateFinancialModel:
     
     def load_historical_data_from_csv(self, ticker):
         """Load historical data from CSV files with vectorized operations"""
-        @st.cache_data(ttl=300)
+        @st.cache_data(ttl=300, show_spinner=False)
         def _load_data(ticker):
             try:
                 # Load financial statements
                 fa_df = pd.read_csv('data/FA_A_processed.csv')
                 
+                # Debug: Show unique tickers available
+                # st.sidebar.info(f"Loading data for ticker: {ticker}")
+                
                 # Filter for specific ticker using vectorized operation
                 ticker_data = fa_df[fa_df['TICKER'] == ticker].copy()
                 
                 if ticker_data.empty:
+                    # Debug to see why no data found
+                    available_tickers = fa_df['TICKER'].unique()[:10]  # Show first 10
+                    st.sidebar.warning(f"No data found for {ticker}. Sample tickers: {', '.join(available_tickers)}")
                     return pd.DataFrame()
                 
                 # Set date as index and convert to datetime
@@ -425,6 +460,7 @@ class RealEstateFinancialModel:
                     # Flatten column names
                     pivot_data.columns = [col[0] if isinstance(col, tuple) else col for col in pivot_data.columns]
                     
+                    # st.sidebar.success(f"Loaded {len(pivot_data)} years of data for {ticker}")
                     return pivot_data.sort_index()
                 
                 return pd.DataFrame()

@@ -13,7 +13,11 @@ class HistoricalAnalysisTab:
     
     def render(self):
         """Render historical financial analysis - Simple P&L Table"""
-        st.header("Historical Financial Analysis")
+        selected_ticker = st.session_state.get('selected_company', '')
+        if selected_ticker:
+            st.header(f"Historical Financial Analysis - {selected_ticker}")
+        else:
+            st.header("Historical Financial Analysis")
         
         # Load data if not already loaded
         if st.session_state.historical_data is None and st.session_state.selected_company:
@@ -21,8 +25,16 @@ class HistoricalAnalysisTab:
                 data = self.parent.load_historical_data_from_csv(st.session_state.selected_company)
                 if not data.empty:
                     st.session_state.historical_data = data
+                else:
+                    st.warning(f"No historical data found for {st.session_state.selected_company}")
+                    return
         
         if st.session_state.historical_data is None:
+            st.info("👈 Select a company to view historical data")
+            return
+        
+        # Double-check we have the right ticker's data
+        if not st.session_state.selected_company:
             st.info("👈 Select a company to view historical data")
             return
             
