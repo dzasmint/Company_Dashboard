@@ -669,133 +669,18 @@ class RealEstateFinancialModel:
         st.markdown(growth_html, unsafe_allow_html=True)
     
     def render_ai_discovery(self):
-        """Render simplified AI-powered document analysis"""
-        st.header("🤖 AI Document Analysis")
+        """Render AI-powered project discovery interface"""
+        st.header("🤖 AI-Powered Project Discovery")
         
-        # Import and use SimplifiedAIDiscovery
-        from utils.simplified_ai_discovery import SimplifiedAIDiscovery
+        # Import the original AIDiscoveryTab
+        from tabs.ai_discovery import AIDiscoveryTab
         
-        # Initialize the simplified AI discovery
-        if 'simplified_ai' not in st.session_state:
-            st.session_state.simplified_ai = SimplifiedAIDiscovery()
+        # Initialize the AI discovery tab
+        if 'ai_discovery_tab' not in st.session_state:
+            st.session_state.ai_discovery_tab = AIDiscoveryTab(parent=self)
         
-        simplified_ai = st.session_state.simplified_ai
-        
-        st.markdown("""
-        Upload multiple PDF files (annual reports, earnings reports, or analyst reports) for AI-powered analysis.
-        
-        **Claude AI will extract:**
-        1. **Business Segments** - Revenue, COGS, Gross Profit and Margins by segment
-        2. **Real Estate Projects** - Comprehensive project details with intelligent merging
-        """)
-        
-        # File uploader
-        uploaded_files = st.file_uploader(
-            "Choose PDF documents",
-            type=['pdf'],
-            accept_multiple_files=True,
-            help="Upload one or more PDFs (Financial Reports, Analyst Reports, etc.)",
-            key="ai_pdf_uploads"
-        )
-        
-        if uploaded_files:
-            st.info(f"📚 {len(uploaded_files)} document(s) uploaded")
-            
-            # Extract text from PDFs
-            documents = []
-            for pdf_file in uploaded_files:
-                with st.spinner(f"Reading {pdf_file.name}..."):
-                    text = simplified_ai.extract_text_from_pdf(pdf_file)
-                    if text:
-                        documents.append({
-                            'name': pdf_file.name,
-                            'text': text
-                        })
-            
-            if documents:
-                st.success(f"✅ Successfully read {len(documents)} document(s)")
-                
-                # Analysis buttons
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if st.button("📊 Analyze Business Segments", type="primary", use_container_width=True):
-                        with st.spinner("Analyzing business segments..."):
-                            segments_df = simplified_ai.analyze_business_segments(documents)
-                            if not segments_df.empty:
-                                st.session_state.business_segments_data = segments_df
-                                st.success("✅ Business segments analysis complete!")
-                            else:
-                                st.error("❌ No business segments data found")
-                
-                with col2:
-                    if st.button("🏢 Extract Real Estate Projects", type="primary", use_container_width=True):
-                        with st.spinner("Extracting real estate projects..."):
-                            projects = simplified_ai.extract_real_estate_projects(documents)
-                            if projects:
-                                # Merge duplicates
-                                with st.spinner("Merging duplicate projects..."):
-                                    merged_projects = simplified_ai.merge_duplicate_projects(projects)
-                                st.session_state.real_estate_projects = merged_projects
-                                st.success(f"✅ Extracted {len(merged_projects)} unique projects!")
-                            else:
-                                st.error("❌ No real estate projects found")
-        
-        # Display results
-        if st.session_state.get('business_segments_data') is not None:
-            st.subheader("📊 Business Segments Analysis")
-            st.dataframe(
-                st.session_state.business_segments_data,
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Download button for segments
-            csv = st.session_state.business_segments_data.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Business Segments CSV",
-                data=csv,
-                file_name=f"business_segments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-        
-        if st.session_state.get('real_estate_projects'):
-            st.subheader("🏢 Extracted Real Estate Projects")
-            
-            # Convert to DataFrame for display
-            projects_df = pd.DataFrame(st.session_state.real_estate_projects)
-            st.dataframe(
-                projects_df,
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Save to MongoDB button
-            if st.button("💾 Save Projects to MongoDB", type="secondary"):
-                saved_count = 0
-                for project in st.session_state.real_estate_projects:
-                    # Add company ticker if available
-                    if st.session_state.get('selected_company'):
-                        project['ticker'] = st.session_state.selected_company
-                    
-                    # Save to MongoDB
-                    result = save_project_to_mongodb(project)
-                    if result:
-                        saved_count += 1
-                
-                if saved_count > 0:
-                    st.success(f"✅ Saved {saved_count} projects to MongoDB")
-                else:
-                    st.error("❌ Failed to save projects")
-            
-            # Download button for projects
-            csv = projects_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Projects CSV",
-                data=csv,
-                file_name=f"real_estate_projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
+        # Render the original AI discovery interface
+        st.session_state.ai_discovery_tab.render()
     
     def render_claude_discovery(self):
         """Render Claude AI interface for PDF analysis"""

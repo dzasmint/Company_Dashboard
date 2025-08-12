@@ -7,7 +7,6 @@ import anthropic
 import os
 import json
 import re
-import time
 from datetime import datetime
 from typing import List, Dict, Any
 from dotenv import load_dotenv
@@ -72,25 +71,16 @@ class AIDiscoveryTab:
         try:
             pdf_reader = PyPDF2.PdfReader(pdf_file)
             text = ""
-            total_pages = len(pdf_reader.pages)
-            
-            # Read all pages but show progress
-            for page_num in range(total_pages):
+            for page_num in range(min(len(pdf_reader.pages), 100)):  # Limit to first 100 pages
                 page = pdf_reader.pages[page_num]
-                page_text = page.extract_text()
-                text += page_text + "\n"
-            
-            # Show extraction stats
-            if text:
-                st.info(f"📄 {pdf_file.name}: {total_pages} pages, {len(text):,} characters extracted")
-            
+                text += page.extract_text() + "\n"
             return text
         except Exception as e:
             st.error(f"Error reading PDF {pdf_file.name}: {str(e)}")
             return ""
     
     def process_documents(self, uploaded_files):
-        """Process all uploaded documents with separate analyses"""
+        """Process all uploaded documents"""
         if not self.client:
             st.error("❌ Claude AI not initialized. Please set ANTHROPIC_API_KEY in your .env file")
             return
@@ -101,7 +91,7 @@ class AIDiscoveryTab:
         status_text = st.empty()
         
         for i, file in enumerate(uploaded_files):
-            progress = (i + 1) / len(uploaded_files) * 0.2  # 20% for reading
+            progress = (i + 1) / len(uploaded_files) * 0.3  # 30% for reading
             progress_bar.progress(progress)
             status_text.text(f"Reading {file.name}...")
             
@@ -118,64 +108,36 @@ class AIDiscoveryTab:
         
         st.session_state.uploaded_documents = documents
         
-        # Create two columns for parallel processing status
-        col1, col2 = st.columns(2)
-        
-        # Analyze business segments in first column
-        with col1:
-            st.markdown("**📊 Business Segments Analysis**")
-            segments_container = st.container()
-            with segments_container:
-                with st.spinner("Analyzing business segments..."):
-                    segments_df = self.analyze_business_segments(documents)
-                    if not segments_df.empty:
-                        st.session_state.business_segments_data = segments_df
-                        st.success("✅ Business segments extracted")
-                    else:
-                        st.session_state.business_segments_data = None
-                        st.warning("⚠️ No business segments found")
-        
+        # Analyze business segments
         progress_bar.progress(0.5)
+        status_text.text("Analyzing business segments...")
+        segments_df = self.analyze_business_segments(documents)
+        if not segments_df.empty:
+            st.session_state.business_segments_data = segments_df
         
-        # Extract real estate projects in second column
-        with col2:
-            st.markdown("**🏢 Real Estate Projects Analysis**")
-            projects_container = st.container()
-            with projects_container:
-                with st.spinner("Extracting real estate projects..."):
-                    # Add small delay to avoid rate limits
-                    time.sleep(2)
-                    projects = self.extract_real_estate_projects(documents)
-                    if projects:
-                        # Merge duplicate projects
-                        with st.spinner("Merging duplicate projects..."):
-                            merged_projects = self.merge_duplicate_projects(projects)
-                        st.session_state.real_estate_projects = merged_projects
-                        st.success(f"✅ Found {len(merged_projects)} projects")
-                    else:
-                        st.session_state.real_estate_projects = []
-                        st.warning("⚠️ No real estate projects found")
+        # Extract real estate projects
+        progress_bar.progress(0.7)
+        status_text.text("Extracting real estate projects...")
+        projects = self.extract_real_estate_projects(documents)
+        
+        # Merge duplicate projects
+        if projects:
+            progress_bar.progress(0.9)
+            status_text.text("Merging duplicate projects...")
+            merged_projects = self.merge_duplicate_projects(projects)
+            st.session_state.real_estate_projects = merged_projects
         
         progress_bar.progress(1.0)
+        status_text.text("✅ Analysis complete!")
         progress_bar.empty()
         status_text.empty()
         
-        # Show overall success message
+        # Show success message
         st.success(f"✅ Successfully analyzed {len(documents)} document(s)")
-        
-        # Summary of results
-        segments_found = st.session_state.business_segments_data is not None and not st.session_state.business_segments_data.empty
-        projects_found = len(st.session_state.real_estate_projects) > 0
-        
-        if segments_found and projects_found:
-            st.balloons()
-            st.info("📊 Both business segments and real estate projects were successfully extracted!")
-        elif segments_found:
-            st.info("📊 Business segments extracted. No real estate projects found.")
-        elif projects_found:
-            st.info("🏢 Real estate projects extracted. No business segments found.")
-        else:
-            st.warning("⚠️ Could not extract data. Please check if the documents contain financial or real estate information.")
+        if not segments_df.empty:
+            st.info(f"📊 Found business segments data")
+        if projects:
+            st.info(f"🏢 Found {len(merged_projects)} unique real estate projects")
     
     def analyze_business_segments(self, documents: List[Dict[str, str]]) -> pd.DataFrame:
         """Analyze business segments using Claude AI"""
@@ -184,19 +146,11 @@ class AIDiscoveryTab:
         combined_text = ""
         for doc in documents:
             combined_text += f"\n\n--- Document: {doc['name']} ---\n"
-            combined_text += doc['text'][:50000]  # Increased limit per document
-            if len(combined_text) > 100000:  # Increased overall limit
+            combined_text += doc['text'][:30000]  # Limit each document
+            if len(combined_text) > 80000:  # Overall limit
                 break
         
         prompt = """Analyze these financial documents and extract business segment information.
-        
-        Look for business segments such as:
-        - Real Estate Development
-        - Property Investment
-        - Construction
-        - Hospitality
-        - Retail
-        - Or any other business divisions mentioned
         
         Create a table with:
         - Columns: Time periods (e.g., 2023, 2024, Q1/2024, Q2/2024)
@@ -218,10 +172,7 @@ class AIDiscoveryTab:
           15. ... (other segments margins)
           16. Blended Gross Margin %
         
-        If no clear segments are found, use the main revenue streams as segments.
-        
-        Return your response as a valid JSON object ONLY, with no additional text before or after.
-        The JSON must have this exact structure:
+        Return ONLY a JSON object with structure:
         {
             "segments": ["Actual Segment Name 1", "Actual Segment Name 2"],
             "periods": ["2023", "Q1/2024"],
@@ -229,16 +180,14 @@ class AIDiscoveryTab:
                 "revenue": {"Segment1": {"2023": 1234.5}, "Total": {"2023": 5678.9}},
                 "cogs": {...},
                 "gross_profit": {...},
-                "gross_margin": {"Segment1": {"2023": 25.5}, "Blended": {"2023": 30.2}}
+                "gross_margin": {...}
             }
         }
         
-        IMPORTANT: Use actual numbers where available. Use "N/A" only for truly missing values.
-        All amounts in VND billions. Margins as percentages (e.g., 25.5 for 25.5%).
-        Start your response with { and end with }
+        Use "N/A" for missing values. All amounts in VND billions.
         
         Documents:
-        """ + combined_text[:100000]  # Match the new limit
+        """ + combined_text[:90000]
         
         try:
             response = self.client.messages.create(
@@ -248,31 +197,14 @@ class AIDiscoveryTab:
                 messages=[{"role": "user", "content": prompt}]
             )
             
-            response_text = response.content[0].text.strip()
+            response_text = response.content[0].text
             
-            # Try to parse the response directly first
-            try:
-                result = json.loads(response_text)
+            # Extract JSON
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
                 return self.format_segments_dataframe(result)
-            except json.JSONDecodeError:
-                # If direct parsing fails, try to extract JSON
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                if json_match:
-                    try:
-                        result = json.loads(json_match.group())
-                        return self.format_segments_dataframe(result)
-                    except json.JSONDecodeError as je:
-                        st.error(f"Failed to parse JSON response: {str(je)}")
-                        st.text("Response received (first 500 chars):")
-                        st.code(response_text[:500])
-                else:
-                    st.error("No JSON object found in response")
-                    st.text("Response received (first 500 chars):")
-                    st.code(response_text[:500])
             
-        except anthropic.RateLimitError as e:
-            st.error("⏱️ Rate limit reached. Please wait a moment and try again.")
-            st.info("Tip: Process fewer documents at once or wait 1 minute between analyses.")
         except Exception as e:
             st.error(f"Error analyzing segments: {str(e)}")
         
@@ -280,18 +212,10 @@ class AIDiscoveryTab:
     
     def format_segments_dataframe(self, result: Dict) -> pd.DataFrame:
         """Format segments data into DataFrame"""
-        if not result:
-            return pd.DataFrame()
-            
         df_data = []
         segments = result.get('segments', [])
         periods = result.get('periods', [])
         data = result.get('data', {})
-        
-        # Check if we have valid data
-        if not segments or not periods:
-            st.warning("No segments or periods found in the data")
-            return pd.DataFrame()
         
         # Revenue rows
         for segment in segments:
@@ -386,11 +310,10 @@ class AIDiscoveryTab:
         - Use "N/A" for unavailable information
         - If same project appears multiple times, include all instances (will merge later)
         
-        Return your response as a valid JSON array ONLY, with no additional text.
-        Start your response with [ and end with ]
+        Return ONLY a JSON array of projects.
         
         Documents:
-        """ + combined_text[:100000]  # Match the new limit
+        """ + combined_text[:90000]
         
         try:
             response = self.client.messages.create(
@@ -400,34 +323,13 @@ class AIDiscoveryTab:
                 messages=[{"role": "user", "content": prompt}]
             )
             
-            response_text = response.content[0].text.strip()
+            response_text = response.content[0].text
             
-            # Try to parse the response directly first
-            try:
-                result = json.loads(response_text)
-                if isinstance(result, list):
-                    return result
-                else:
-                    st.error("Response is not a JSON array")
-                    return []
-            except json.JSONDecodeError:
-                # If direct parsing fails, try to extract JSON array
-                json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-                if json_match:
-                    try:
-                        return json.loads(json_match.group())
-                    except json.JSONDecodeError as je:
-                        st.error(f"Failed to parse JSON array: {str(je)}")
-                        st.text("Response received (first 500 chars):")
-                        st.code(response_text[:500])
-                else:
-                    st.error("No JSON array found in response")
-                    st.text("Response received (first 500 chars):")
-                    st.code(response_text[:500])
+            # Extract JSON array
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
             
-        except anthropic.RateLimitError as e:
-            st.error("⏱️ Rate limit reached. Please wait a moment and try again.")
-            st.info("Tip: Process fewer documents at once or wait 1 minute between analyses.")
         except Exception as e:
             st.error(f"Error extracting projects: {str(e)}")
         
@@ -450,8 +352,7 @@ class AIDiscoveryTab:
         3. Prefer non-"N/A" values
         4. Add a "data_sources" field listing which documents mentioned the project
         
-        Return your response as a valid JSON array ONLY, with no additional text.
-        Start with [ and end with ]
+        Return ONLY a JSON array of merged projects.
         """
         
         try:
@@ -462,23 +363,10 @@ class AIDiscoveryTab:
                 messages=[{"role": "user", "content": prompt}]
             )
             
-            response_text = response.content[0].text.strip()
-            
-            # Try direct parsing first
-            try:
-                result = json.loads(response_text)
-                if isinstance(result, list):
-                    return result
-            except json.JSONDecodeError:
-                # Fall back to regex extraction
-                json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-                if json_match:
-                    try:
-                        return json.loads(json_match.group())
-                    except json.JSONDecodeError:
-                        pass
-            
-            st.warning("Could not parse merge response, returning original projects")
+            response_text = response.content[0].text
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
             
         except Exception as e:
             st.warning(f"Could not merge projects: {str(e)}")
@@ -488,17 +376,10 @@ class AIDiscoveryTab:
     def display_results(self):
         """Display analysis results"""
         
-        # Check if any analysis has been performed
-        has_segments = st.session_state.business_segments_data is not None and not st.session_state.business_segments_data.empty
-        has_projects = bool(st.session_state.real_estate_projects)
-        
-        if not has_segments and not has_projects:
-            st.info("📄 Upload PDF documents and click 'Process Documents' to start analysis")
-            return
-        
         # Business Segments Table
-        st.subheader("📊 1. Business Segments Analysis")
-        if has_segments:
+        if st.session_state.business_segments_data is not None:
+            st.subheader("📊 1. Business Segments Analysis")
+            
             df = st.session_state.business_segments_data
             
             # Style the dataframe
@@ -520,18 +401,9 @@ class AIDiscoveryTab:
                 file_name=f"business_segments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
-        else:
-            st.info("No business segment data found in the uploaded documents. This might be because:")
-            st.markdown("""
-            - The documents don't contain segmented financial data
-            - The financial data is not broken down by business segments
-            - The format is not recognized by the AI
-            
-            Try uploading annual reports or quarterly earnings reports that typically contain segment-wise breakdowns.
-            """)
         
         # Real Estate Projects Table
-        if has_projects:
+        if st.session_state.real_estate_projects:
             st.subheader("🏢 2. Real Estate Projects Summary")
             
             projects = st.session_state.real_estate_projects
