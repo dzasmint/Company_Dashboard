@@ -35,18 +35,15 @@ class AIDiscoveryTab:
             st.session_state.uploaded_documents = []
     
     def render(self):
-        """Render AI discovery interface focused on project extraction"""
-        st.header("🤖 AI-Powered Real Estate Project Extraction")
+        """Render simplified AI discovery interface"""
+        st.header("🤖 AI Document Analysis")
         
         st.markdown("""
-        Upload multiple PDF files (annual reports, earnings reports, analyst reports, or company presentations) for comprehensive project extraction.
+        Upload multiple PDF files (annual reports, earnings reports, or analyst reports) for AI-powered analysis.
         
-        **Claude AI will extract ALL real estate projects with:**
-        - Complete project details (name, location, area, units)
-        - Financial metrics (prices, costs, revenues)
-        - Development timeline (launch, construction, handover)
-        - Sales status and legal information
-        - Any other available project data
+        **Claude AI will extract:**
+        1. **Business Segments** - Revenue, COGS, Gross Profit and Margins by segment
+        2. **Real Estate Projects** - Comprehensive project details with intelligent merging
         """)
         
         # File uploader section
@@ -111,9 +108,16 @@ class AIDiscoveryTab:
         
         st.session_state.uploaded_documents = documents
         
-        # Extract real estate projects with enhanced prompt
+        # Analyze business segments
         progress_bar.progress(0.5)
-        status_text.text("Extracting ALL real estate projects...")
+        status_text.text("Analyzing business segments...")
+        segments_df = self.analyze_business_segments(documents)
+        if not segments_df.empty:
+            st.session_state.business_segments_data = segments_df
+        
+        # Extract real estate projects
+        progress_bar.progress(0.7)
+        status_text.text("Extracting real estate projects...")
         projects = self.extract_real_estate_projects(documents)
         
         # Merge duplicate projects
@@ -130,10 +134,10 @@ class AIDiscoveryTab:
         
         # Show success message
         st.success(f"✅ Successfully analyzed {len(documents)} document(s)")
+        if not segments_df.empty:
+            st.info(f"📊 Found business segments data")
         if projects:
             st.info(f"🏢 Found {len(merged_projects)} unique real estate projects")
-        else:
-            st.warning("⚠️ No projects found. Please check if the documents contain real estate project information.")
     
     def analyze_business_segments(self, documents: List[Dict[str, str]]) -> pd.DataFrame:
         """Analyze business segments using Claude AI"""
@@ -276,104 +280,40 @@ class AIDiscoveryTab:
         return pd.DataFrame(df_data)
     
     def extract_real_estate_projects(self, documents: List[Dict[str, str]]) -> List[Dict]:
-        """Extract ALL real estate projects using Claude AI with comprehensive details"""
+        """Extract real estate projects using Claude AI"""
         
-        # Combine document texts with more context
+        # Combine document texts
         combined_text = ""
-        doc_names = []
         for doc in documents:
-            doc_names.append(doc['name'])
-            combined_text += f"\n\n=== DOCUMENT: {doc['name']} ===\n"
-            combined_text += doc['text'][:50000]  # Increased limit for more context
-            if len(combined_text) > 120000:  # Increased total limit
+            combined_text += f"\n\n--- Document: {doc['name']} ---\n"
+            combined_text += doc['text'][:30000]
+            if len(combined_text) > 80000:
                 break
         
-        prompt = """You are analyzing real estate documents. Extract ABSOLUTELY EVERY real estate project mentioned, no matter how briefly.
+        prompt = """Extract ALL real estate projects from these documents.
         
-        CRITICAL: Look for ALL project names including:
-        - Projects with phases/towers (e.g., Hoang Huy Commerce H1, H2)
-        - Projects with zones (e.g., Prince Park, Queen Park)
-        - Projects mentioned in tables, lists, or narrative text
-        - Projects in development pipeline
-        - Completed projects still being sold
-        - Future/planned projects
+        For each project, extract:
+        - project_name: Project name
+        - land_area_sqm: Land area in sqm
+        - gfa_sqm: Gross Floor Area in sqm
+        - nsa_sqm: Net Sellable Area in sqm
+        - total_units: Total units
+        - avg_selling_price: Average selling price
+        - construction_cost_bn_vnd: Construction cost in billion VND
+        - land_cost_bn_vnd: Land cost in billion VND
+        - legal_status: Legal status
+        - selling_status: Selling status (% sold, etc.)
+        - remaining_units: Remaining units to be sold
         
-        For EACH project found, extract AS MUCH information as possible:
+        IMPORTANT:
+        - Extract EVERY project mentioned
+        - Use "N/A" for unavailable information
+        - If same project appears multiple times, include all instances (will merge later)
         
-        BASIC INFORMATION:
-        - project_name: Full project name (include phase/tower if mentioned)
-        - location: District, city, address
-        - developer: Developer name
-        - project_type: apartment/townhouse/villa/shophouse/mixed-use/commercial
+        Return ONLY a JSON array of projects.
         
-        AREA & SIZE:
-        - land_area_sqm: Land area (convert ha to sqm: 1ha = 10,000sqm)
-        - gfa_sqm: Gross Floor Area
-        - nsa_sqm: Net Sellable Area
-        - site_area: Site/plot area
-        - construction_area: Construction area
-        
-        UNITS & COMPOSITION:
-        - total_units: Total number of units
-        - apartments: Number of apartments
-        - townhouses: Number of townhouses
-        - villas: Number of villas
-        - shophouses: Number of shophouses
-        - commercial_units: Commercial units
-        - unit_mix: Description of unit types and sizes
-        
-        FINANCIAL:
-        - avg_selling_price: Average price per sqm (million VND)
-        - price_range: Price range if mentioned
-        - total_revenue_bn_vnd: Total revenue (billion VND)
-        - construction_cost_bn_vnd: Construction cost
-        - land_cost_bn_vnd: Land acquisition cost
-        - total_investment: Total investment amount
-        - revenue_recognition: Revenue recognition schedule
-        
-        TIMELINE:
-        - launch_date: Launch date/quarter/year
-        - construction_start: Construction start date
-        - construction_end: Construction completion date
-        - handover_date: Handover/delivery date
-        - sales_start: Sales launch date
-        - presales_date: Presales date
-        
-        STATUS:
-        - development_status: planning/approved/under construction/completed
-        - construction_progress: Construction progress %
-        - sales_status: Sales progress (e.g., "70% sold", "500 units sold")
-        - units_sold: Number of units sold
-        - remaining_units: Remaining units
-        - inventory_value: Value of remaining inventory
-        
-        LEGAL & PERMITS:
-        - legal_status: Legal status/permits obtained
-        - ownership_structure: Ownership type (freehold/leasehold)
-        - ownership_duration: Ownership duration (e.g., 50 years)
-        - permits: List of permits obtained
-        
-        OTHER:
-        - floors: Number of floors
-        - blocks: Number of blocks/towers
-        - facilities: Amenities and facilities
-        - contractor: Main contractor
-        - architect: Architect/designer
-        - notes: Any other important information
-        - data_source: Which document this info came from
-        
-        IMPORTANT INSTRUCTIONS:
-        1. Extract EVERY project, even if only the name is mentioned
-        2. Include ALL phases/towers as separate entries
-        3. Use "N/A" for missing information
-        4. Include projects at ANY stage (planning to completed)
-        5. If numbers appear near project names, associate them
-        6. Check tables, footnotes, and management discussion sections
-        7. Look for Vietnamese terms: dự án, khu đô thị, chung cư, căn hộ
-        
-        Return a JSON array with ALL projects found. Start with [ and end with ]
-        
-        Documents being analyzed: """ + ", ".join(doc_names) + "\n\n" + combined_text[:120000]
+        Documents:
+        """ + combined_text[:90000]
         
         try:
             response = self.client.messages.create(
@@ -434,32 +374,55 @@ class AIDiscoveryTab:
         return projects
     
     def display_results(self):
-        """Display extracted real estate projects"""
+        """Display analysis results"""
+        
+        # Business Segments Table
+        if st.session_state.business_segments_data is not None:
+            st.subheader("📊 1. Business Segments Analysis")
+            
+            df = st.session_state.business_segments_data
+            
+            # Style the dataframe
+            def style_rows(row):
+                if 'Total' in str(row['Metric']):
+                    return ['background-color: #f0f0f0; font-weight: bold'] * len(row)
+                elif 'Margin' in str(row['Metric']):
+                    return ['background-color: #e8f4f8; font-style: italic'] * len(row)
+                return [''] * len(row)
+            
+            styled_df = df.style.apply(style_rows, axis=1)
+            st.dataframe(styled_df, use_container_width=True, height=600)
+            
+            # Download button
+            csv = df.to_csv(index=False)
+            st.download_button(
+                "📥 Download Business Segments (CSV)",
+                data=csv,
+                file_name=f"business_segments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
         
         # Real Estate Projects Table
         if st.session_state.real_estate_projects:
-            st.subheader("🏢 Extracted Real Estate Projects")
+            st.subheader("🏢 2. Real Estate Projects Summary")
             
             projects = st.session_state.real_estate_projects
             
-            # Create comprehensive display dataframe
+            # Create display dataframe
             display_data = []
             for proj in projects:
                 display_data.append({
                     'Project Name': proj.get('project_name', 'N/A'),
-                    'Location': proj.get('location', 'N/A'),
-                    'Type': proj.get('project_type', 'N/A'),
                     'Land Area (sqm)': proj.get('land_area_sqm', 'N/A'),
+                    'GFA (sqm)': proj.get('gfa_sqm', 'N/A'),
+                    'NSA (sqm)': proj.get('nsa_sqm', 'N/A'),
                     'Total Units': proj.get('total_units', 'N/A'),
-                    'Units Sold': proj.get('units_sold', 'N/A'),
-                    'Sales Status': proj.get('sales_status', proj.get('selling_status', 'N/A')),
-                    'Avg Price/sqm': proj.get('avg_selling_price', 'N/A'),
-                    'Revenue (Bn VND)': proj.get('total_revenue_bn_vnd', 'N/A'),
-                    'Launch': proj.get('launch_date', proj.get('launch_year', 'N/A')),
-                    'Handover': proj.get('handover_date', 'N/A'),
-                    'Dev Status': proj.get('development_status', 'N/A'),
-                    'Progress': proj.get('construction_progress', 'N/A'),
-                    'Source': proj.get('data_source', 'N/A')
+                    'Avg Selling Price': proj.get('avg_selling_price', 'N/A'),
+                    'Construction Cost (Bn VND)': proj.get('construction_cost_bn_vnd', 'N/A'),
+                    'Land Cost (Bn VND)': proj.get('land_cost_bn_vnd', 'N/A'),
+                    'Legal Status': proj.get('legal_status', 'N/A'),
+                    'Selling Status': proj.get('selling_status', 'N/A'),
+                    'Remaining Units': proj.get('remaining_units', 'N/A')
                 })
             
             df = pd.DataFrame(display_data)
@@ -484,29 +447,14 @@ class AIDiscoveryTab:
             # Display table
             st.dataframe(df, use_container_width=True, height=400)
             
-            # Download buttons
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Download summary CSV
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    "📥 Download Summary (CSV)",
-                    data=csv,
-                    file_name=f"projects_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-            
-            with col2:
-                # Download full data with all fields
-                full_df = pd.DataFrame(projects)
-                full_csv = full_df.to_csv(index=False)
-                st.download_button(
-                    "📥 Download Full Data (All Fields)",
-                    data=full_csv,
-                    file_name=f"projects_full_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
+            # Download button
+            csv = df.to_csv(index=False)
+            st.download_button(
+                "📥 Download Projects (CSV)",
+                data=csv,
+                file_name=f"real_estate_projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
             
             # Show data quality info
             with st.expander("📊 Data Quality Information"):
@@ -518,38 +466,3 @@ class AIDiscoveryTab:
                 })
                 na_summary['Completeness %'] = na_summary['Completeness %'].apply(lambda x: f"{x:.0f}%")
                 st.dataframe(na_summary, use_container_width=True)
-            
-            # Show full project details
-            with st.expander("🔍 View Complete Project Details"):
-                for i, proj in enumerate(projects):
-                    st.markdown(f"### 📍 Project {i+1}: **{proj.get('project_name', 'Unknown Project')}**")
-                    
-                    # Organize fields by category
-                    categories = {
-                        "Basic Info": ['location', 'developer', 'project_type', 'data_source'],
-                        "Area & Size": ['land_area_sqm', 'gfa_sqm', 'nsa_sqm', 'site_area', 'construction_area'],
-                        "Units": ['total_units', 'apartments', 'townhouses', 'villas', 'shophouses', 'commercial_units', 'unit_mix'],
-                        "Financial": ['avg_selling_price', 'price_range', 'total_revenue_bn_vnd', 'construction_cost_bn_vnd', 'land_cost_bn_vnd', 'total_investment', 'revenue_recognition', 'inventory_value'],
-                        "Timeline": ['launch_date', 'construction_start', 'construction_end', 'handover_date', 'sales_start', 'presales_date'],
-                        "Status": ['development_status', 'construction_progress', 'sales_status', 'units_sold', 'remaining_units'],
-                        "Legal": ['legal_status', 'ownership_structure', 'ownership_duration', 'permits'],
-                        "Other": ['floors', 'blocks', 'facilities', 'contractor', 'architect', 'notes']
-                    }
-                    
-                    # Display by category
-                    cols = st.columns(2)
-                    col_idx = 0
-                    
-                    for category, fields in categories.items():
-                        has_data = any(proj.get(field) and proj.get(field) != 'N/A' for field in fields)
-                        if has_data:
-                            with cols[col_idx % 2]:
-                                st.markdown(f"**{category}:**")
-                                for field in fields:
-                                    value = proj.get(field)
-                                    if value and value != 'N/A':
-                                        field_name = field.replace('_', ' ').title()
-                                        st.write(f"• {field_name}: {value}")
-                            col_idx += 1
-                    
-                    st.markdown("---")
