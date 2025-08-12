@@ -7,7 +7,6 @@ import anthropic
 import os
 import json
 import re
-from datetime import datetime
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
@@ -571,7 +570,7 @@ Return JSON array with merged projects. Start [ end ]
         return projects
     
     def display_results(self):
-        """Display extracted real estate projects"""
+        """Display extracted real estate projects with selection options"""
         
         # Real Estate Projects Table
         if st.session_state.real_estate_projects:
@@ -579,53 +578,138 @@ Return JSON array with merged projects. Start [ end ]
             
             projects = st.session_state.real_estate_projects
             
-            # Create comprehensive display dataframe
+            # Load existing projects from MongoDB for duplicate detection
+            try:
+                from utils.mongodb_utils import load_projects_data
+                existing_projects_df = load_projects_data()
+                existing_project_names = []
+                if not existing_projects_df.empty:
+                    existing_project_names = existing_projects_df['project_name'].str.lower().tolist() if 'project_name' in existing_projects_df.columns else []
+            except:
+                existing_project_names = []
+            
+            # Create comprehensive display dataframe with selection options
             display_data = []
             for proj in projects:
+                # Check if project is duplicate
+                proj_name = proj.get('project_name', 'N/A')
+                is_duplicate = proj_name.lower() in existing_project_names if proj_name != 'N/A' else False
+                
+                # Determine completion status
+                dev_status = str(proj.get('development_status', '')).lower()
+                progress = str(proj.get('construction_progress', '')).replace('%', '').strip()
+                
+                is_completed = (
+                    'completed' in dev_status or 
+                    'complete' in dev_status or
+                    progress == '100' or
+                    '100%' in str(proj.get('construction_progress', '')) or
+                    'handover' in dev_status
+                )
+                
                 display_data.append({
-                    'Project Name': proj.get('project_name', 'N/A'),
+                    'Add to DB': False,  # Checkbox column
+                    'Duplicate Warning': '⚠️ Duplicate' if is_duplicate else '',
+                    'Status': '✅ Completed' if is_completed else '🔄 In Progress',
+                    'Project Name': proj_name,
                     'Location': proj.get('location', 'N/A'),
                     'Type': proj.get('project_type', 'N/A'),
                     'Land Area (sqm)': proj.get('land_area_sqm', 'N/A'),
                     'Total Units': proj.get('total_units', 'N/A'),
-                    'Units Sold': proj.get('units_sold', 'N/A'),
                     'Sales Status': proj.get('sales_status', proj.get('selling_status', 'N/A')),
-                    'Avg Price/sqm': proj.get('avg_selling_price', 'N/A'),
-                    'Revenue (Bn VND)': proj.get('total_revenue_bn_vnd', 'N/A'),
-                    'Launch': proj.get('launch_date', proj.get('launch_year', 'N/A')),
-                    'Handover': proj.get('handover_date', 'N/A'),
                     'Dev Status': proj.get('development_status', 'N/A'),
                     'Progress': proj.get('construction_progress', 'N/A'),
-                    'Source': proj.get('data_source', 'N/A')
+                    'Launch': proj.get('launch_date', proj.get('launch_year', 'N/A')),
+                    'Handover': proj.get('handover_date', 'N/A'),
+                    '_original_data': proj  # Store original data for later use
                 })
             
             df = pd.DataFrame(display_data)
+            
+            # Sort by status - completed projects first
+            df = df.sort_values('Status', ascending=False).reset_index(drop=True)
             
             # Display metrics
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Total Projects", len(df))
             with col2:
-                units_count = df['Total Units'].apply(
-                    lambda x: int(x) if str(x).isdigit() else 0
-                ).sum()
-                st.metric("Total Units", f"{units_count:,}" if units_count > 0 else "N/A")
+                completed_count = (df['Status'] == '✅ Completed').sum()
+                st.metric("Completed Projects", completed_count)
             with col3:
-                na_count = (df == 'N/A').sum().sum()
-                total_cells = df.size
-                completeness = (1 - na_count/total_cells) * 100
-                st.metric("Data Completeness", f"{completeness:.0f}%")
+                duplicate_count = (df['Duplicate Warning'] != '').sum()
+                st.metric("Duplicate Projects", duplicate_count)
             with col4:
                 st.metric("Documents Analyzed", len(st.session_state.uploaded_documents))
             
-            # Display table
-            st.dataframe(df, use_container_width=True, height=400)
-            
-            # Single download button for the displayed data
-            csv = df.to_csv(index=False)
-            st.download_button(
-                "📥 Download Projects (CSV)",
-                data=csv,
-                file_name=f"real_estate_projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+            # Create editable dataframe with checkboxes
+            edited_df = st.data_editor(
+                df.drop(columns=['_original_data']),
+                column_config={
+                    "Add to DB": st.column_config.CheckboxColumn(
+                        "Add to DB",
+                        help="Select projects to add to database",
+                        default=False,
+                    ),
+                    "Duplicate Warning": st.column_config.TextColumn(
+                        "Duplicate",
+                        help="⚠️ indicates project may already exist in database",
+                        disabled=True,
+                    ),
+                    "Status": st.column_config.TextColumn(
+                        "Status",
+                        help="Project completion status",
+                        disabled=True,
+                    )
+                },
+                disabled=[col for col in df.columns if col not in ['Add to DB']],
+                hide_index=True,
+                use_container_width=True,
+                height=400,
+                key="project_selector"
             )
+            
+            # Button to process selected projects
+            if st.button("📊 Select Projects to Add to Database", type="primary"):
+                # Get selected projects
+                selected_mask = edited_df['Add to DB'] == True
+                selected_projects = []
+                
+                for idx in df[selected_mask].index:
+                    selected_projects.append(df.loc[idx, '_original_data'])
+                
+                if selected_projects:
+                    st.session_state.selected_projects_for_db = selected_projects
+                    st.success(f"✅ Selected {len(selected_projects)} projects for database addition")
+                else:
+                    st.warning("⚠️ No projects selected. Please check the 'Add to DB' boxes for projects you want to add.")
+            
+            # Display selected projects in pipeline format
+            if 'selected_projects_for_db' in st.session_state and st.session_state.selected_projects_for_db:
+                st.markdown("---")
+                st.subheader("📋 Projects to be Added to Database")
+                st.info(f"Selected {len(st.session_state.selected_projects_for_db)} projects ready for database addition")
+                
+                # Create pipeline-compatible table
+                pipeline_data = []
+                for proj in st.session_state.selected_projects_for_db:
+                    pipeline_data.append({
+                        'project_name': proj.get('project_name', 'N/A'),
+                        'location': proj.get('location', 'N/A'),
+                        'land_area_sqm': proj.get('land_area_sqm', 'N/A'),
+                        'total_units': proj.get('total_units', 'N/A'),
+                        'net_sellable_area': proj.get('nsa_sqm', 'N/A'),
+                        'average_selling_price': proj.get('avg_selling_price', 'N/A'),
+                        'construction_start_year': proj.get('construction_start', 'N/A'),
+                        'project_completion_year': proj.get('handover_date', 'N/A'),
+                        'revenue_booking_start_year': proj.get('launch_date', 'N/A'),
+                        'development_status': proj.get('development_status', 'N/A'),
+                        'sales_progress': proj.get('sales_status', proj.get('selling_status', 'N/A')),
+                        'remaining_units': proj.get('remaining_units', 'N/A'),
+                        'ticker': st.session_state.get('selected_company', 'N/A')
+                    })
+                
+                pipeline_df = pd.DataFrame(pipeline_data)
+                st.dataframe(pipeline_df, use_container_width=True, height=300)
+                
+                st.info("🔍 Review the data above. Save functionality will be implemented after GUI verification.")
