@@ -879,8 +879,6 @@ Return JSON array with merged projects. Start [ end ]
                 
                 display_data.append({
                     'Add to DB': False,  # Checkbox column
-                    'Duplicate Warning': '⚠️ Duplicate' if is_duplicate else '',
-                    'Status': '✅ Completed' if is_completed else '🔄 In Progress',
                     'Project Name': proj_name,
                     'Location': proj.get('location', 'N/A'),
                     'Type': proj.get('project_type', 'N/A'),
@@ -896,20 +894,11 @@ Return JSON array with merged projects. Start [ end ]
             
             df = pd.DataFrame(display_data)
             
-            # Sort by status - completed projects first
-            df = df.sort_values('Status', ascending=False).reset_index(drop=True)
-            
             # Display metrics
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2 = st.columns(2)
             with col1:
-                st.metric("Total Projects", len(df))
+                st.metric("Total Projects Found", len(df))
             with col2:
-                completed_count = (df['Status'] == '✅ Completed').sum()
-                st.metric("Completed Projects", completed_count)
-            with col3:
-                duplicate_count = (df['Duplicate Warning'] != '').sum()
-                st.metric("Duplicate Projects", duplicate_count)
-            with col4:
                 st.metric("Documents Analyzed", len(st.session_state.uploaded_documents))
             
             # Create editable dataframe with checkboxes
@@ -920,16 +909,6 @@ Return JSON array with merged projects. Start [ end ]
                         "Add to DB",
                         help="Select projects to add to database",
                         default=False,
-                    ),
-                    "Duplicate Warning": st.column_config.TextColumn(
-                        "Duplicate",
-                        help="⚠️ indicates project may already exist in database",
-                        disabled=True,
-                    ),
-                    "Status": st.column_config.TextColumn(
-                        "Status",
-                        help="Project completion status",
-                        disabled=True,
                     )
                 },
                 disabled=[col for col in df.columns if col not in ['Add to DB']],
@@ -1043,13 +1022,12 @@ Return JSON array with merged projects. Start [ end ]
                         st.metric("New Projects to Add", len(new_pipeline_data))
                     with col3:
                         # Check for potential duplicates
+                        duplicates = 0
                         if existing_pipeline_data and new_pipeline_data:
                             existing_names = [p['project_name'].lower() for p in existing_pipeline_data if p['project_name'] != 'N/A']
                             new_names = [p['project_name'].lower() for p in new_pipeline_data if p['project_name'] != 'N/A']
                             duplicates = len([n for n in new_names if n in existing_names])
-                            st.metric("Potential Duplicates", duplicates)
-                        else:
-                            st.metric("Potential Duplicates", 0)
+                        st.metric("Potential Duplicates", duplicates)
                     
                     # Split dataframe for display
                     existing_df = pipeline_df[pipeline_df['Source'] == '📂 Existing in DB']
@@ -1071,20 +1049,14 @@ Return JSON array with merged projects. Start [ end ]
                     if not new_df.empty:
                         st.markdown("**✨ New Projects to Add (Editable)**")
                         
+                        # Remove Source column for display
+                        new_df_display = new_df.drop(columns=['Source'])
+                        
                         # Make new projects editable
                         edited_new_df = st.data_editor(
-                            new_df,
+                            new_df_display,
                             use_container_width=True,
-                            height=min(300, len(new_df) * 40 + 40),
-                            column_config={
-                                "Source": st.column_config.TextColumn(
-                                    "Source",
-                                    help="✨ = New project to add",
-                                    disabled=True,
-                                    width="small"
-                                )
-                            },
-                            disabled=['Source'],  # Only Source column is disabled
+                            height=min(300, len(new_df_display) * 40 + 40),
                             hide_index=True,
                             key="editable_new_projects"
                         )
@@ -1101,12 +1073,8 @@ Return JSON array with merged projects. Start [ end ]
                             if st.button("💾 Save New Projects to Database", type="primary", use_container_width=True):
                                 # Always use the edited dataframe values
                                 if edited_new_df is not None and not edited_new_df.empty:
-                                    # Filter to only new projects (not existing ones)
-                                    new_projects_only = edited_new_df[edited_new_df['Source'] == '✨ New Project']
-                                    if not new_projects_only.empty:
-                                        self.save_edited_projects_to_database(new_projects_only)
-                                    else:
-                                        st.warning("No new projects to save")
+                                    # All rows in edited_new_df are new projects (Source column was removed)
+                                    self.save_edited_projects_to_database(edited_new_df)
                                 else:
                                     st.warning("No projects available to save")
                     
