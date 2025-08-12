@@ -6225,6 +6225,12 @@ class RealEstateFinancialModel:
             if result.get('metric'):
                 st.caption(f"Ranked by: {result['metric']}")
         
+        elif result['type'] == 'forecast_analysis':
+            if result.get('data') is not None:
+                st.dataframe(result['data'], use_container_width=True)
+            if result.get('summary'):
+                st.caption(f"Analysis: {result['summary']}")
+        
         elif result['type'] == 'parameter_suggestions':
             suggestions = result.get('suggestions', [])
             for suggestion in suggestions:

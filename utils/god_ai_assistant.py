@@ -182,6 +182,7 @@ Available intents and their purposes:
 - COMPARE_PROJECTS: User wants to compare specific projects side-by-side (e.g., "compare Project A vs Project B", "compare margins between X and Y")
 - CALCULATE_METRICS: User wants to calculate aggregate metrics across multiple projects or portfolio-level calculations
 - ANALYZE_GROWTH: User asks about growth trends, revenue progression over time, or year-over-year analysis
+- FORECAST_ANALYSIS: User asks about company financial forecasts stored in MongoDB - revenue growth rates, CAGR, gross margins by year, net profit forecasts, P&L projections (e.g., "what is revenue growth in 2025", "CAGR for next 5 years", "gross margin forecast")
 - CREATE_CHART: User wants to chart/plot/visualize/graph financial data (revenue, presales, NPATMI, P&L) over time for one or more projects
 - SUGGEST_PARAMETERS: User needs AI suggestions for project parameters like ASP or construction costs
 - RESEARCH_INSIGHTS: User wants market research, news, or external insights
@@ -204,8 +205,8 @@ Respond with ONLY the intent name."""
                 valid_intents = [
                     'LIST_PROJECTS', 'PROJECT_DETAILS', 'RANK_PROJECTS', 
                     'COMPARE_PROJECTS', 'CALCULATE_METRICS', 'ANALYZE_GROWTH', 
-                    'CREATE_CHART', 'SUGGEST_PARAMETERS', 'RESEARCH_INSIGHTS', 
-                    'UPDATE_PROJECT', 'GENERAL_QUERY'
+                    'FORECAST_ANALYSIS', 'CREATE_CHART', 'SUGGEST_PARAMETERS', 
+                    'RESEARCH_INSIGHTS', 'UPDATE_PROJECT', 'GENERAL_QUERY'
                 ]
                 
                 if intent in valid_intents:
@@ -223,6 +224,8 @@ Respond with ONLY the intent name."""
             return 'COMPARE_PROJECTS'
         elif any(word in query_lower for word in ['chart', 'plot', 'visualize', 'graph', 'draw']):
             return 'CREATE_CHART'
+        elif any(word in query_lower for word in ['forecast', 'cagr', 'revenue growth', 'profit forecast', 'net profit', 'gross margin', 'next year', 'projection']):
+            return 'FORECAST_ANALYSIS'
         elif any(word in query_lower for word in ['list', 'show', 'display', 'what projects']):
             return 'LIST_PROJECTS'
         elif any(word in query_lower for word in ['revenue', 'profit', 'margin', 'asp', 'cost', 'financial']):
@@ -434,6 +437,10 @@ Respond with ONLY the intent name."""
         elif intent == 'ANALYZE_GROWTH':
             routing_debug.append("→ ANALYZE_GROWTH: Analyzing growth trends")
             result = self.handle_growth_analysis(entities, context)
+        
+        elif intent == 'FORECAST_ANALYSIS':
+            routing_debug.append("→ FORECAST_ANALYSIS: Analyzing company forecasts")
+            result = self.handle_forecast_analysis(entities, context)
         
         elif intent == 'CREATE_CHART':
             routing_debug.append("→ CREATE_CHART: Creating financial charts")
@@ -2470,3 +2477,221 @@ Try asking: "Show KDH projects" or "What's the largest RNAV for VHM?" """
             'summary': 'Help message',
             'data': None
         }
+    
+    def handle_forecast_analysis(self, entities: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle queries about company financial forecasts from MongoDB"""
+        debug_msg = []
+        debug_msg.append("\n📊 **FORECAST ANALYSIS HANDLER**")
+        
+        # Get company ticker from context or entities
+        ticker = context.get('selected_company') or entities.get('ticker', '').upper()
+        
+        if not ticker:
+            return {
+                'type': 'error',
+                'message': '❌ Please specify a company ticker or select a company first',
+                'data': None
+            }
+        
+        # Load forecast data from MongoDB
+        from .mongodb_utils import load_company_forecast
+        forecast_data = load_company_forecast(ticker)
+        
+        if not forecast_data:
+            return {
+                'type': 'error',
+                'message': f'❌ No forecast data found for {ticker}. Please generate forecasts first in the Revenue Forecast tab.',
+                'data': None
+            }
+        
+        debug_msg.append(f"Found forecast data for {ticker} with {len(forecast_data)} years")
+        
+        # Convert forecast data to DataFrame for analysis
+        years = sorted(forecast_data.keys())
+        forecast_df = pd.DataFrame.from_dict(forecast_data, orient='index')
+        forecast_df.index = [int(year) for year in forecast_df.index]
+        forecast_df.sort_index(inplace=True)
+        
+        # Analyze the query to determine what specific metric/analysis is requested
+        query_lower = str(entities.get('original_query', '')).lower()
+        
+        # Revenue Growth Analysis
+        if any(word in query_lower for word in ['revenue growth', 'sales growth', 'top line growth']):
+            debug_msg.append("→ Analyzing revenue growth rates")
+            
+            if 'net_revenue' in forecast_df.columns:
+                revenue_data = []
+                prev_revenue = None
+                
+                for year in years:
+                    year_data = forecast_data[year]
+                    revenue = year_data.get('net_revenue', 0) / 1e9  # Convert to billions
+                    
+                    if prev_revenue is not None:
+                        growth_rate = ((revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0
+                    else:
+                        growth_rate = None
+                    
+                    revenue_data.append({
+                        'Year': int(year),
+                        'Revenue (B VND)': revenue,
+                        'Revenue Growth (%)': f"{growth_rate:.1f}%" if growth_rate is not None else "N/A"
+                    })
+                    
+                    prev_revenue = revenue
+                
+                result_df = pd.DataFrame(revenue_data)
+                
+                return {
+                    'type': 'forecast_analysis',
+                    'message': f"📈 **Revenue Growth Analysis for {ticker}**\n\nRevenue growth rates by year:",
+                    'summary': f"Revenue growth analysis for {ticker}",
+                    'data': result_df
+                }
+        
+        # CAGR Analysis
+        elif any(word in query_lower for word in ['cagr', 'compound annual growth', 'compound growth']):
+            debug_msg.append("→ Calculating CAGR")
+            
+            if 'net_revenue' in forecast_df.columns and len(years) >= 2:
+                start_year = int(years[0])
+                end_year = int(years[-1])
+                start_revenue = forecast_data[years[0]].get('net_revenue', 0) / 1e9
+                end_revenue = forecast_data[years[-1]].get('net_revenue', 0) / 1e9
+                
+                num_years = end_year - start_year
+                if num_years > 0 and start_revenue > 0:
+                    cagr = ((end_revenue / start_revenue) ** (1/num_years) - 1) * 100
+                    
+                    # Also calculate for other key metrics
+                    metrics_cagr = []
+                    
+                    # Revenue CAGR
+                    metrics_cagr.append({
+                        'Metric': 'Revenue',
+                        'Start Value (B VND)': f"{start_revenue:.1f}",
+                        'End Value (B VND)': f"{end_revenue:.1f}",
+                        'CAGR (%)': f"{cagr:.1f}%"
+                    })
+                    
+                    # Net Profit CAGR
+                    if 'pat' in forecast_df.columns:
+                        start_pat = forecast_data[years[0]].get('pat', 0) / 1e9
+                        end_pat = forecast_data[years[-1]].get('pat', 0) / 1e9
+                        if start_pat > 0:
+                            pat_cagr = ((end_pat / start_pat) ** (1/num_years) - 1) * 100
+                            metrics_cagr.append({
+                                'Metric': 'Net Profit (PAT)',
+                                'Start Value (B VND)': f"{start_pat:.1f}",
+                                'End Value (B VND)': f"{end_pat:.1f}",
+                                'CAGR (%)': f"{pat_cagr:.1f}%"
+                            })
+                    
+                    result_df = pd.DataFrame(metrics_cagr)
+                    
+                    return {
+                        'type': 'forecast_analysis',
+                        'message': f"📊 **CAGR Analysis for {ticker} ({start_year}-{end_year})**\n\nCompound Annual Growth Rates:",
+                        'summary': f"CAGR analysis for {ticker}",
+                        'data': result_df
+                    }
+        
+        # Gross Margin Analysis
+        elif any(word in query_lower for word in ['gross margin', 'margin', 'profitability']):
+            debug_msg.append("→ Analyzing gross margins by year")
+            
+            if 'net_revenue' in forecast_df.columns and 'total_cogs' in forecast_df.columns:
+                margin_data = []
+                
+                for year in years:
+                    year_data = forecast_data[year]
+                    revenue = year_data.get('net_revenue', 0)
+                    cogs = abs(year_data.get('total_cogs', 0))  # COGS is typically negative
+                    
+                    if revenue > 0:
+                        gross_profit = revenue - cogs
+                        gross_margin = (gross_profit / revenue) * 100
+                    else:
+                        gross_margin = 0
+                    
+                    margin_data.append({
+                        'Year': int(year),
+                        'Revenue (B VND)': revenue / 1e9,
+                        'COGS (B VND)': cogs / 1e9,
+                        'Gross Profit (B VND)': (revenue - cogs) / 1e9,
+                        'Gross Margin (%)': f"{gross_margin:.1f}%"
+                    })
+                
+                result_df = pd.DataFrame(margin_data)
+                
+                return {
+                    'type': 'forecast_analysis',
+                    'message': f"📊 **Gross Margin Analysis for {ticker}**\n\nGross margins by year:",
+                    'summary': f"Gross margin analysis for {ticker}",
+                    'data': result_df
+                }
+        
+        # Net Profit Analysis
+        elif any(word in query_lower for word in ['net profit', 'pat', 'profit after tax', 'bottom line']):
+            debug_msg.append("→ Analyzing net profit forecasts")
+            
+            if 'pat' in forecast_df.columns:
+                profit_data = []
+                prev_pat = None
+                
+                for year in years:
+                    year_data = forecast_data[year]
+                    pat = year_data.get('pat', 0) / 1e9
+                    revenue = year_data.get('net_revenue', 0) / 1e9
+                    
+                    # Calculate net margin
+                    net_margin = (pat / revenue * 100) if revenue > 0 else 0
+                    
+                    # Calculate growth
+                    if prev_pat is not None and prev_pat != 0:
+                        pat_growth = ((pat - prev_pat) / prev_pat * 100)
+                    else:
+                        pat_growth = None
+                    
+                    profit_data.append({
+                        'Year': int(year),
+                        'Net Profit (B VND)': pat,
+                        'Net Margin (%)': f"{net_margin:.1f}%",
+                        'Growth (%)': f"{pat_growth:.1f}%" if pat_growth is not None else "N/A"
+                    })
+                    
+                    prev_pat = pat
+                
+                result_df = pd.DataFrame(profit_data)
+                
+                return {
+                    'type': 'forecast_analysis',
+                    'message': f"💰 **Net Profit Forecast for {ticker}**\n\nNet profit projections by year:",
+                    'summary': f"Net profit analysis for {ticker}",
+                    'data': result_df
+                }
+        
+        # General forecast overview
+        else:
+            debug_msg.append("→ Providing general forecast overview")
+            
+            overview_data = []
+            for year in years:
+                year_data = forecast_data[year]
+                
+                overview_data.append({
+                    'Year': int(year),
+                    'Revenue (B VND)': year_data.get('net_revenue', 0) / 1e9,
+                    'Gross Profit (B VND)': year_data.get('gross_profit', 0) / 1e9,
+                    'EBITDA (B VND)': year_data.get('ebitda', 0) / 1e9,
+                    'Net Profit (B VND)': year_data.get('pat', 0) / 1e9
+                })
+            
+            result_df = pd.DataFrame(overview_data)
+            
+            return {
+                'type': 'forecast_analysis',
+                'message': f"📋 **Financial Forecast Overview for {ticker}**\n\nKey metrics by year:",
+                'summary': f"Forecast overview for {ticker}",
+                'data': result_df
+            }
