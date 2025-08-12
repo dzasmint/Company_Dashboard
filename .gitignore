@@ -118,5 +118,8 @@ ehthumbs.db
 Thumbs.db
 
 # Data and Reports
+data/Report/
+data/Report/**
 data/Reports/
-data/Reports/*
+data/Reports/**
+*.pdf
