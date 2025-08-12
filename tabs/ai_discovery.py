@@ -539,6 +539,37 @@ Return JSON array with merged projects. Start [ end ]
             st.error("No projects to save")
             return
         
+        # Validate numerical fields
+        numerical_columns = [
+            'project_ownership', 'total_units', 'net_sellable_area', 
+            'average_unit_size', 'average_selling_price', 'price_increment_factor',
+            'gross_floor_area', 'land_area', 'construction_cost_per_sqm',
+            'land_cost_per_sqm', 'construction_start_year', 'construction_years',
+            'sale_start_year', 'sales_years', 'revenue_booking_start_year',
+            'project_completion_year', 'rnav_value'
+        ]
+        
+        validation_errors = []
+        for idx, row in edited_df.iterrows():
+            project_name = row.get('project_name', f'Row {idx+1}')
+            for col in numerical_columns:
+                if col in row:
+                    value = row[col]
+                    # Check if value is not numeric (excluding NaN which is acceptable as 0)
+                    if value is not None and value != '' and pd.notna(value):
+                        try:
+                            float(value)
+                        except (ValueError, TypeError):
+                            validation_errors.append(f"Project '{project_name}': {col} must be a number (got '{value}')")
+        
+        if validation_errors:
+            st.error("❌ Cannot save: Invalid data detected")
+            with st.expander("View validation errors"):
+                for error in validation_errors:
+                    st.write(f"• {error}")
+            st.warning("Please correct the numerical fields and try again.")
+            return
+        
         success_count = 0
         error_count = 0
         error_messages = []
@@ -552,11 +583,17 @@ Return JSON array with merged projects. Start [ end ]
             status_text.text(f"Saving project {i+1}/{len(edited_df)}: {row.get('project_name', 'Unknown')}")
             
             try:
-                # Parse values from edited dataframe - NO DEFAULTS, use actual column names
+                # Parse values from edited dataframe - default to 0 for numerical fields
+                # Text fields
+                company_ticker = str(row.get('company_ticker', st.session_state.get('selected_company', '')))
+                project_name = str(row.get('project_name', ''))
+                location = str(row.get('location', ''))
+                
+                # Numerical fields - use _parse_number which defaults to 0
                 project_data = {
-                    'company_ticker': row.get('company_ticker', st.session_state.get('selected_company', '')),
+                    'company_ticker': company_ticker,
                     'company_name': st.session_state.get('selected_company_name', ''),
-                    'location': row.get('location', ''),
+                    'location': location,
                     'project_ownership': self._parse_number(row.get('project_ownership', 0)),
                     'total_units': self._parse_number(row.get('total_units', 0)),
                     'net_sellable_area': self._parse_number(row.get('net_sellable_area', 0)),
@@ -567,13 +604,13 @@ Return JSON array with merged projects. Start [ end ]
                     'land_area': self._parse_number(row.get('land_area', 0)),
                     'construction_cost_per_sqm': self._parse_number(row.get('construction_cost_per_sqm', 0)),
                     'land_cost_per_sqm': self._parse_number(row.get('land_cost_per_sqm', 0)),
-                    'construction_start_year': self._parse_year(row.get('construction_start_year', '')),
-                    'sale_start_year': self._parse_year(row.get('sale_start_year', '')),
-                    'land_payment_year': self._parse_year(row.get('sale_start_year', '')),  # Default to sale start
+                    'construction_start_year': self._parse_number(row.get('construction_start_year', 0)),
+                    'sale_start_year': self._parse_number(row.get('sale_start_year', 0)),
+                    'land_payment_year': self._parse_number(row.get('sale_start_year', 0)),  # Default to sale start
                     'construction_years': self._parse_number(row.get('construction_years', 0)),
                     'sales_years': self._parse_number(row.get('sales_years', 0)),
-                    'revenue_booking_start_year': self._parse_year(row.get('revenue_booking_start_year', '')),
-                    'project_completion_year': self._parse_year(row.get('project_completion_year', '')),
+                    'revenue_booking_start_year': self._parse_number(row.get('revenue_booking_start_year', 0)),
+                    'project_completion_year': self._parse_number(row.get('project_completion_year', 0)),
                     'sga_percentage': 0,  # Not in table
                     'wacc_rate': 0,  # Not in table
                     'cost_of_debt': 0,  # Not in table
@@ -592,8 +629,8 @@ Return JSON array with merged projects. Start [ end ]
                     'revenue_distribution': {},
                     'presales_distribution': {},
                     'pnl_schedule': {},
-                    # RNAV value if provided
-                    'rnav_value': self._parse_number(row.get('rnav_value', 0)) if row.get('rnav_value', 'N/A') != 'N/A' else None
+                    # RNAV value
+                    'rnav_value': self._parse_number(row.get('rnav_value', 0)) if self._parse_number(row.get('rnav_value', 0)) > 0 else None
                 }
                 
                 # Recalculate average unit size if needed
@@ -603,7 +640,7 @@ Return JSON array with merged projects. Start [ end ]
                 # Save to MongoDB
                 result = save_project_to_mongodb(
                     project_data,
-                    row.get('project_name', f"Project_{i+1}")
+                    project_name if project_name else f"Project_{i+1}"
                 )
                 
                 if result.get('success', False):
@@ -1036,13 +1073,13 @@ Return JSON array with merged projects. Start [ end ]
                     # Display existing projects (non-editable)
                     if not existing_df.empty:
                         st.markdown("**📂 Existing Projects in Database (Reference Only)**")
+                        # Remove Source column for display
+                        existing_df_display = existing_df.drop(columns=['Source'])
                         st.dataframe(
-                            existing_df.style.applymap(
-                                lambda x: 'background-color: #f0f0f0; color: #666;',
-                                subset=['Source']
-                            ),
+                            existing_df_display,
                             use_container_width=True,
-                            height=min(200, len(existing_df) * 40 + 40)
+                            height=min(200, len(existing_df_display) * 40 + 40),
+                            hide_index=True
                         )
                     
                     # Display new projects (editable)
@@ -1052,9 +1089,49 @@ Return JSON array with merged projects. Start [ end ]
                         # Remove Source column for display
                         new_df_display = new_df.drop(columns=['Source'])
                         
+                        # Convert N/A to 0 for numerical columns
+                        numerical_columns = [
+                            'project_ownership', 'total_units', 'net_sellable_area', 
+                            'average_unit_size', 'average_selling_price', 'price_increment_factor',
+                            'gross_floor_area', 'land_area', 'construction_cost_per_sqm',
+                            'land_cost_per_sqm', 'construction_start_year', 'construction_years',
+                            'sale_start_year', 'sales_years', 'revenue_booking_start_year',
+                            'project_completion_year', 'rnav_value'
+                        ]
+                        
+                        for col in numerical_columns:
+                            if col in new_df_display.columns:
+                                new_df_display[col] = new_df_display[col].replace('N/A', 0)
+                                new_df_display[col] = pd.to_numeric(new_df_display[col], errors='coerce').fillna(0)
+                        
+                        # Configure column types
+                        column_config = {
+                            "project_name": st.column_config.TextColumn("project_name", help="Project name (text)"),
+                            "company_ticker": st.column_config.TextColumn("company_ticker", help="Company ticker (text)"),
+                            "location": st.column_config.TextColumn("location", help="Location (text)"),
+                            "project_ownership": st.column_config.NumberColumn("project_ownership", help="Ownership percentage (0-1)", min_value=0, max_value=1, step=0.01, format="%.2f"),
+                            "total_units": st.column_config.NumberColumn("total_units", help="Total units", min_value=0, step=1, format="%.0f"),
+                            "net_sellable_area": st.column_config.NumberColumn("net_sellable_area", help="Net sellable area (sqm)", min_value=0, format="%.0f"),
+                            "average_unit_size": st.column_config.NumberColumn("average_unit_size", help="Average unit size (sqm)", min_value=0, format="%.1f"),
+                            "average_selling_price": st.column_config.NumberColumn("average_selling_price", help="Average selling price (million VND/sqm)", min_value=0, format="%.1f"),
+                            "price_increment_factor": st.column_config.NumberColumn("price_increment_factor", help="Price increment factor", min_value=0, step=0.01, format="%.2f"),
+                            "gross_floor_area": st.column_config.NumberColumn("gross_floor_area", help="Gross floor area (sqm)", min_value=0, format="%.0f"),
+                            "land_area": st.column_config.NumberColumn("land_area", help="Land area (sqm)", min_value=0, format="%.0f"),
+                            "construction_cost_per_sqm": st.column_config.NumberColumn("construction_cost_per_sqm", help="Construction cost (million VND/sqm)", min_value=0, format="%.1f"),
+                            "land_cost_per_sqm": st.column_config.NumberColumn("land_cost_per_sqm", help="Land cost (million VND/sqm)", min_value=0, format="%.1f"),
+                            "construction_start_year": st.column_config.NumberColumn("construction_start_year", help="Construction start year", min_value=0, max_value=2050, step=1, format="%.0f"),
+                            "construction_years": st.column_config.NumberColumn("construction_years", help="Construction years", min_value=0, max_value=10, step=1, format="%.0f"),
+                            "sale_start_year": st.column_config.NumberColumn("sale_start_year", help="Sale start year", min_value=0, max_value=2050, step=1, format="%.0f"),
+                            "sales_years": st.column_config.NumberColumn("sales_years", help="Sales years", min_value=0, max_value=10, step=1, format="%.0f"),
+                            "revenue_booking_start_year": st.column_config.NumberColumn("revenue_booking_start_year", help="Revenue booking start year", min_value=0, max_value=2050, step=1, format="%.0f"),
+                            "project_completion_year": st.column_config.NumberColumn("project_completion_year", help="Project completion year", min_value=0, max_value=2050, step=1, format="%.0f"),
+                            "rnav_value": st.column_config.NumberColumn("rnav_value", help="RNAV value (million VND)", min_value=0, format="%.0f")
+                        }
+                        
                         # Make new projects editable
                         edited_new_df = st.data_editor(
                             new_df_display,
+                            column_config=column_config,
                             use_container_width=True,
                             height=min(300, len(new_df_display) * 40 + 40),
                             hide_index=True,
