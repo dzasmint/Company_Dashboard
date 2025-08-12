@@ -153,39 +153,40 @@ class RealEstateFinancialModel:
         st.sidebar.title("Real Estate Model")
         st.sidebar.caption("🏢 AI-Powered Financial Analysis")
         
-        # Company selection with callback
-        def on_company_change():
-            if 'company_selector_refactored' not in st.session_state:
-                return
-            
-            selected = st.session_state.company_selector_refactored
-            if selected and selected != "Select a company":
-                # Extract ticker - handle both "TICKER" and "TICKER - Company Name" formats
-                if " - " in selected:
-                    ticker = selected.split(" - ")[0].strip()
-                else:
-                    ticker = selected.strip()
-                    
-                if st.session_state.get('selected_company') != ticker:
-                    # Clean state for new company
-                    self._reset_company_state(ticker)
+        # Load real estate companies for dropdown
+        companies = self.load_real_estate_companies()
         
-        # Load all companies
-        companies = self.load_all_companies()
-            
         if companies:
-            # Add default option
-            companies = ["Select a company"] + companies
-            current_index = self._get_current_company_index(companies)
+            # Extract just tickers for simpler selection
+            ticker_list = []
+            for company in companies:
+                if " - " in company:
+                    ticker = company.split(" - ")[0].strip()
+                else:
+                    ticker = company.strip()
+                ticker_list.append(ticker)
             
-            selected = st.sidebar.selectbox(
+            # Remove duplicates and sort
+            ticker_list = sorted(list(set(ticker_list)))
+            
+            # Get current selection index
+            current_ticker = st.session_state.get('selected_company')
+            default_index = 0
+            if current_ticker and current_ticker in ticker_list:
+                default_index = ticker_list.index(current_ticker)
+            
+            # Ticker selection dropdown
+            selected_ticker = st.sidebar.selectbox(
                 "Select Ticker",
-                companies,
-                index=current_index,
-                key="company_selector_refactored",
-                on_change=on_company_change,
+                ticker_list,
+                index=default_index,
+                key="ticker_selector",
                 help="Select a company ticker to analyze"
             )
+            
+            # Update selected company if changed
+            if selected_ticker and selected_ticker != st.session_state.get('selected_company'):
+                self._reset_company_state(selected_ticker)
         
         # Forecast parameters
         st.sidebar.markdown("---")
@@ -371,9 +372,14 @@ class RealEstateFinancialModel:
                 df_all_projects = load_projects_data()
                 
                 if not df_all_projects.empty:
-                    # Filter for selected ticker
+                    # Ensure ticker is properly formatted
+                    selected_ticker = selected_ticker.strip().upper()
+                    
+                    # Filter for selected ticker - check both 'ticker' and 'company_ticker' columns
                     if 'ticker' in df_all_projects.columns:
-                        df_projects = df_all_projects[df_all_projects['ticker'] == selected_ticker].copy()
+                        df_projects = df_all_projects[df_all_projects['ticker'].str.upper() == selected_ticker].copy()
+                    elif 'company_ticker' in df_all_projects.columns:
+                        df_projects = df_all_projects[df_all_projects['company_ticker'].str.upper() == selected_ticker].copy()
                     else:
                         # If no ticker column, return empty
                         df_projects = pd.DataFrame()
@@ -433,8 +439,8 @@ class RealEstateFinancialModel:
                 # Load financial statements
                 fa_df = pd.read_csv('data/FA_A_processed.csv')
                 
-                # Debug: Show unique tickers available
-                # st.sidebar.info(f"Loading data for ticker: {ticker}")
+                # Ensure ticker is properly formatted (uppercase, no spaces)
+                ticker = ticker.strip().upper()
                 
                 # Filter for specific ticker using vectorized operation
                 ticker_data = fa_df[fa_df['TICKER'] == ticker].copy()

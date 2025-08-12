@@ -56,8 +56,8 @@ class SimplifiedAIDiscovery:
         for doc in documents:
             doc_list.append(doc['name'])
             combined_text += f"\n\n=== DOC: {doc['name']} ===\n"
-            combined_text += doc['text'][:40000]  # Reduced limit per doc
-            if len(combined_text) > 80000:  # Reduced total limit
+            combined_text += doc['text'][:20000]  # Further reduced limit per doc
+            if len(combined_text) > 40000:  # Further reduced total limit
                 break
         
         prompt = """Analyze financial documents (Vietnamese/English) and merge business segment data.
@@ -85,7 +85,7 @@ class SimplifiedAIDiscovery:
         
         Amounts in VND billions. Start with { end with }
         
-        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:80000]
+        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:40000]
         
         try:
             response = self.client.messages.create(
@@ -279,7 +279,7 @@ class SimplifiedAIDiscovery:
         
         Start [ end ]
         
-        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:80000]
+        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:40000]
         
         try:
             response = self.client.messages.create(
