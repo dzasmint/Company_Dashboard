@@ -150,8 +150,8 @@ class RealEstateFinancialModel:
     
     def setup_sidebar(self):
         """Setup sidebar for company selection and controls"""
-        st.sidebar.title("Real Estate Model - Refactored")
-        st.sidebar.caption("🚀 Optimized with vectorized calculations")
+        st.sidebar.title("Real Estate Model")
+        st.sidebar.caption("🏢 AI-Powered Financial Analysis")
         
         # Company selection with callback
         def on_company_change():
@@ -159,27 +159,41 @@ class RealEstateFinancialModel:
                 return
             
             selected = st.session_state.company_selector_refactored
-            if selected:
+            if selected and selected != "Select a company":
                 ticker = selected.split(" - ")[0]
                 if st.session_state.get('selected_company') != ticker:
                     # Clean state for new company
                     self._reset_company_state(ticker)
         
-        # Load companies
-        companies = self.load_real_estate_companies()
+        # Load all companies
+        companies = self.load_all_companies()
+            
         if companies:
+            # Add default option
+            companies = ["Select a company"] + companies
             current_index = self._get_current_company_index(companies)
             
             selected = st.sidebar.selectbox(
-                "Select Company",
+                "Select Ticker",
                 companies,
                 index=current_index,
                 key="company_selector_refactored",
                 on_change=on_company_change,
-                help="Select a company to analyze"
+                help="Select a company ticker to analyze"
             )
         
-        # Sync project data controls
+        # Forecast parameters
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Forecast Settings")
+        st.session_state.forecast_years = st.sidebar.slider(
+            "Forecast Years",
+            min_value=3,
+            max_value=10,
+            value=st.session_state.get('forecast_years', 5),
+            help="Number of years to forecast"
+        )
+        
+        # Data management controls
         st.sidebar.markdown("---")
         st.sidebar.subheader("📊 Data Management")
         
@@ -241,6 +255,57 @@ class RealEstateFinancialModel:
             st.sidebar.success(f"🏗️ Projects: {len(st.session_state.project_data)} projects")
         else:
             st.sidebar.info("🏗️ Projects: Not loaded")
+    
+    def load_all_companies(self):
+        """Load all companies from the dataset"""
+        @st.cache_data(ttl=300)  # Cache for 5 minutes
+        def _load_all_companies():
+            try:
+                # Load from CSV files
+                fa_df = pd.read_csv('data/FA_A_processed.csv')
+                classification_df = pd.read_excel('data/Classification.xlsx')
+                
+                # Get unique tickers
+                if 'TICKER' in fa_df.columns and 'Ticker' in classification_df.columns:
+                    # Merge to get company names
+                    merged = fa_df.merge(
+                        classification_df[['Ticker', 'Company_Name']], 
+                        left_on='TICKER', 
+                        right_on='Ticker', 
+                        how='left'
+                    )
+                    
+                    # Get unique companies
+                    unique_companies = merged.drop_duplicates(subset=['TICKER'])
+                    
+                    # Format as ticker - name
+                    companies = []
+                    for _, row in unique_companies.iterrows():
+                        ticker = row['TICKER']
+                        name = row.get('Company_Name', ticker)
+                        if pd.notna(name) and name != ticker:
+                            companies.append(f"{ticker} - {name}")
+                        else:
+                            companies.append(ticker)
+                    
+                    return sorted(companies)
+                else:
+                    # Fallback to just tickers
+                    tickers = fa_df['TICKER'].unique() if 'TICKER' in fa_df.columns else []
+                    return sorted(tickers)
+                    
+            except Exception as e:
+                st.error(f"Error loading companies: {e}")
+                # Try simple fallback
+                try:
+                    fa_df = pd.read_csv('data/FA_A_processed.csv')
+                    if 'TICKER' in fa_df.columns:
+                        return sorted(fa_df['TICKER'].unique().tolist())
+                except:
+                    pass
+                return []
+        
+        return _load_all_companies()
     
     def load_real_estate_companies(self):
         """Load real estate companies with caching"""
