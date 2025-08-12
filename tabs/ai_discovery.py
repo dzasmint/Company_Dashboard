@@ -111,16 +111,27 @@ class AIDiscoveryTab:
         
         st.session_state.uploaded_documents = documents
         
-        # Extract real estate projects with enhanced prompt
-        progress_bar.progress(0.5)
-        status_text.text("Extracting ALL real estate projects...")
-        projects = self.extract_real_estate_projects(documents)
+        # Extract real estate projects from EACH document separately
+        all_projects = []
+        for i, doc in enumerate(documents):
+            progress = 0.3 + (i + 1) / len(documents) * 0.5  # Progress from 30% to 80%
+            progress_bar.progress(progress)
+            status_text.text(f"Extracting projects from {doc['name']}...")
+            
+            # Process single document
+            doc_projects = self.extract_real_estate_projects_single(doc)
+            if doc_projects:
+                # Add source document info to each project
+                for project in doc_projects:
+                    project['source_document'] = doc['name']
+                all_projects.extend(doc_projects)
+                st.info(f"📄 Found {len(doc_projects)} projects in {doc['name']}")
         
-        # Merge duplicate projects
-        if projects:
+        # Merge all projects from all documents
+        if all_projects:
             progress_bar.progress(0.9)
-            status_text.text("Merging duplicate projects...")
-            merged_projects = self.merge_duplicate_projects(projects)
+            status_text.text(f"Merging {len(all_projects)} total projects from all documents...")
+            merged_projects = self.merge_projects_from_multiple_docs(all_projects)
             st.session_state.real_estate_projects = merged_projects
         
         progress_bar.progress(1.0)
@@ -275,6 +286,119 @@ class AIDiscoveryTab:
         
         return pd.DataFrame(df_data)
     
+    def extract_real_estate_projects_single(self, document: Dict[str, str]) -> List[Dict]:
+        """Extract real estate projects from a SINGLE document"""
+        
+        # Use full document text without truncation from combining multiple docs
+        doc_text = document['text'][:100000]  # Generous limit for single document
+        doc_name = document['name']
+        
+        prompt = """You are analyzing a real estate document. Extract ABSOLUTELY EVERY real estate project mentioned, no matter how briefly.
+        
+        CRITICAL: Look for ALL project names including:
+        - Projects with phases/towers (e.g., Hoang Huy Commerce H1, H2)
+        - Projects with zones (e.g., Prince Park, Queen Park)
+        - Projects mentioned in tables, lists, or narrative text
+        - Projects in development pipeline
+        - Completed projects still being sold
+        - Future/planned projects
+        
+        For EACH project found, extract AS MUCH information as possible:
+        
+        BASIC INFORMATION:
+        - project_name: Full project name (include phase/tower if mentioned)
+        - location: District, city, address
+        - developer: Developer name
+        - project_type: apartment/townhouse/villa/shophouse/mixed-use/commercial
+        
+        AREA & SIZE:
+        - land_area_sqm: Land area (convert ha to sqm: 1ha = 10,000sqm)
+        - gfa_sqm: Gross Floor Area
+        - nsa_sqm: Net Sellable Area
+        - site_area: Site/plot area
+        - construction_area: Construction area
+        
+        UNITS & COMPOSITION:
+        - total_units: Total number of units
+        - apartments: Number of apartments
+        - townhouses: Number of townhouses
+        - villas: Number of villas
+        - shophouses: Number of shophouses
+        - commercial_units: Commercial units
+        - unit_mix: Description of unit types and sizes
+        
+        FINANCIAL:
+        - avg_selling_price: Average price per sqm (million VND)
+        - price_range: Price range if mentioned
+        - total_revenue_bn_vnd: Total revenue (billion VND)
+        - construction_cost_bn_vnd: Construction cost
+        - land_cost_bn_vnd: Land acquisition cost
+        - total_investment: Total investment amount
+        - revenue_recognition: Revenue recognition schedule
+        
+        TIMELINE:
+        - launch_date: Launch date/quarter/year
+        - construction_start: Construction start date
+        - construction_end: Construction completion date
+        - handover_date: Handover/delivery date
+        - sales_start: Sales launch date
+        - presales_date: Presales date
+        
+        STATUS:
+        - development_status: planning/approved/under construction/completed
+        - construction_progress: Construction progress %
+        - sales_status: Sales progress (e.g., "70% sold", "500 units sold")
+        - units_sold: Number of units sold
+        - remaining_units: Remaining units
+        - inventory_value: Value of remaining inventory
+        
+        LEGAL & PERMITS:
+        - legal_status: Legal status/permits obtained
+        - ownership_structure: Ownership type (freehold/leasehold)
+        - ownership_duration: Ownership duration (e.g., 50 years)
+        - permits: List of permits obtained
+        
+        OTHER:
+        - floors: Number of floors
+        - blocks: Number of blocks/towers
+        - facilities: Amenities and facilities
+        - contractor: Main contractor
+        - architect: Architect/designer
+        - notes: Any other important information
+        
+        IMPORTANT INSTRUCTIONS:
+        1. Extract EVERY project, even if only the name is mentioned
+        2. Include ALL phases/towers as separate entries
+        3. Use "N/A" for missing information
+        4. Include projects at ANY stage (planning to completed)
+        5. If numbers appear near project names, associate them
+        6. Check tables, footnotes, and management discussion sections
+        7. Look for Vietnamese terms: dự án, khu đô thị, chung cư, căn hộ
+        
+        Return a JSON array with ALL projects found. Start with [ and end with ]
+        
+        Document being analyzed: """ + doc_name + "\n\n" + doc_text
+        
+        try:
+            response = self.client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=6000,  # Increased for more projects
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            response_text = response.content[0].text
+            
+            # Extract JSON array
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
+            
+        except Exception as e:
+            st.error(f"Error extracting projects from {doc_name}: {str(e)}")
+        
+        return []
+    
     def extract_real_estate_projects(self, documents: List[Dict[str, str]]) -> List[Dict]:
         """Extract ALL real estate projects using Claude AI with comprehensive details"""
         
@@ -394,6 +518,93 @@ class AIDiscoveryTab:
             st.error(f"Error extracting projects: {str(e)}")
         
         return []
+    
+    def merge_projects_from_multiple_docs(self, all_projects: List[Dict]) -> List[Dict]:
+        """Intelligently merge projects from multiple documents using Claude AI"""
+        
+        if not all_projects:
+            return []
+        
+        if len(all_projects) <= 1:
+            return all_projects
+        
+        # If too many projects, batch process
+        if len(all_projects) > 50:
+            # Process in batches of 40 to avoid token limits
+            merged = []
+            for i in range(0, len(all_projects), 40):
+                batch = all_projects[i:i+40]
+                batch_merged = self._merge_project_batch(batch)
+                merged.extend(batch_merged)
+            
+            # Merge the batches together
+            if len(merged) > 1:
+                return self._merge_project_batch(merged)
+            return merged
+        else:
+            return self._merge_project_batch(all_projects)
+    
+    def _merge_project_batch(self, projects: List[Dict]) -> List[Dict]:
+        """Merge a batch of projects"""
+        
+        prompt = f"""You have extracted real estate projects from multiple documents. Now intelligently merge duplicate projects.
+        
+        Projects to analyze:
+        {json.dumps(projects, indent=2)}
+        
+        MERGING RULES:
+        1. Projects are the SAME if they have:
+           - Similar names (e.g., "Hoang Huy Commerce H1" = "HH Commerce H1" = "Hoàng Huy Commerce H1")
+           - Same location and developer
+           - Similar characteristics (units, area, etc.)
+        
+        2. When merging duplicates:
+           - Keep the most complete information
+           - Prefer specific values over "N/A"
+           - If different documents have different values for the same field:
+             * For numbers: use the most recent or most detailed
+             * For text: combine if complementary, otherwise use most detailed
+           - Add "merged_from_documents" field listing all source documents
+        
+        3. DO NOT merge if:
+           - Different phases/towers (H1 vs H2, Phase 1 vs Phase 2)
+           - Different locations
+           - Significantly different characteristics
+        
+        4. For each merged project:
+           - Combine all available information
+           - Note which documents provided the information
+           - Keep the most commonly used project name
+        
+        Return a JSON array of merged projects. Each project should have all available information combined.
+        Projects that don't have duplicates should be included as-is.
+        
+        Start with [ and end with ]
+        """
+        
+        try:
+            response = self.client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=8000,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            response_text = response.content[0].text
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if json_match:
+                merged = json.loads(json_match.group())
+                
+                # Add merge statistics
+                st.success(f"✅ Merged {len(projects)} project entries into {len(merged)} unique projects")
+                
+                return merged
+            
+        except Exception as e:
+            st.warning(f"Could not merge projects: {str(e)}")
+            st.info("Returning unmerged projects")
+        
+        return projects
     
     def merge_duplicate_projects(self, projects: List[Dict]) -> List[Dict]:
         """Merge duplicate projects intelligently using Claude AI"""
