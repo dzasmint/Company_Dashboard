@@ -55,78 +55,37 @@ class SimplifiedAIDiscovery:
         doc_list = []
         for doc in documents:
             doc_list.append(doc['name'])
-            combined_text += f"\n\n=== DOCUMENT: {doc['name']} ===\n"
-            combined_text += doc['text'][:60000]  # Increased limit per doc
-            if len(combined_text) > 120000:  # Increased total limit
+            combined_text += f"\n\n=== DOC: {doc['name']} ===\n"
+            combined_text += doc['text'][:40000]  # Reduced limit per doc
+            if len(combined_text) > 80000:  # Reduced total limit
                 break
         
-        prompt = """You are analyzing financial documents that may be in Vietnamese or English. 
-        Extract and intelligently merge business segment information from ALL documents.
+        prompt = """Analyze financial documents (Vietnamese/English) and merge business segment data.
         
-        IMPORTANT INSTRUCTIONS:
-        1. Documents may be in Vietnamese or English - understand both languages
-        2. Merge information from multiple documents to create the MOST COMPLETE picture
-        3. If the same segment appears in multiple documents with different data, use the most recent or complete data
-        4. Common Vietnamese business segments to look for:
-           - Bất động sản (Real Estate)
-           - Phát triển dự án (Project Development)
-           - Xây dựng (Construction)
-           - Cho thuê (Leasing/Rental)
-           - Dịch vụ (Services)
-           - Thương mại (Trading/Commerce)
-           - Sản xuất (Manufacturing)
-           - Du lịch/Khách sạn (Tourism/Hospitality)
-        5. Common English segments: Real Estate Development, Property Investment, Construction, Hospitality, Retail, Services
-        6. Extract data for ALL periods mentioned (yearly: 2022, 2023, 2024 and quarterly: Q1/2023, Q2/2023, etc.)
+        KEY TERMS:
+        VN: Doanh thu, Giá vốn, Lợi nhuận gộp, Bất động sản, Xây dựng, Dịch vụ
+        EN: Revenue, COGS, Gross Profit, Real Estate, Construction, Services
         
-        Look for these metrics (in Vietnamese or English):
-        - Doanh thu/Revenue
-        - Giá vốn hàng bán/COGS/Cost of Goods Sold
-        - Lợi nhuận gộp/Gross Profit
-        - Biên lợi nhuận gộp/Gross Margin
+        MERGE RULES:
+        - Combine ALL segments from ALL documents
+        - Combine ALL periods (2022, 2023, 2024, Q1/2024, etc.)
+        - For conflicts: use most recent/complete data
         
-        MERGE STRATEGY:
-        - If Document 1 has 2023 data and Document 2 has 2024 data, include BOTH
-        - If Document 1 has segments A,B and Document 2 has segments B,C, include ALL (A,B,C)
-        - If both documents have same period/segment but different values, use the one from the most recent document or annual report over quarterly
-        
-        Return ONLY a valid JSON object with this exact structure:
+        Return JSON:
         {
-            "segments": ["Actual Segment Name 1", "Actual Segment Name 2"],
-            "periods": ["2022", "2023", "2024", "Q1/2024", "Q2/2024"],
+            "segments": ["Segment1", "Segment2"],
+            "periods": ["2023", "2024"],
             "data": {
-                "revenue": {
-                    "Segment1": {"2023": 1234.5, "2024": 1456.7},
-                    "Segment2": {"2023": 890.1, "2024": 950.3},
-                    "Total": {"2023": 2124.6, "2024": 2407.0}
-                },
-                "cogs": {
-                    "Segment1": {"2023": 900.0, "2024": 1000.0},
-                    "Segment2": {"2023": 600.0, "2024": 650.0},
-                    "Total": {"2023": 1500.0, "2024": 1650.0}
-                },
-                "gross_profit": {
-                    "Segment1": {"2023": 334.5, "2024": 456.7},
-                    "Segment2": {"2023": 290.1, "2024": 300.3},
-                    "Total": {"2023": 624.6, "2024": 757.0}
-                },
-                "gross_margin": {
-                    "Segment1": {"2023": 27.1, "2024": 31.4},
-                    "Segment2": {"2023": 32.6, "2024": 31.6},
-                    "Blended": {"2023": 29.4, "2024": 31.5}
-                }
-            },
-            "data_sources": ["doc1.pdf", "doc2.pdf"],
-            "merge_notes": "Merged Q1 and Q2 data from quarterly report with annual data from 2023 report"
+                "revenue": {"Segment1": {"2023": 1234.5}, "Total": {"2023": 5678.9}},
+                "cogs": {"Segment1": {"2023": 900.0}, "Total": {"2023": 1500.0}},
+                "gross_profit": {"Segment1": {"2023": 334.5}, "Total": {"2023": 624.6}},
+                "gross_margin": {"Segment1": {"2023": 27.1}, "Blended": {"2023": 29.4}}
+            }
         }
         
-        All amounts in VND billions (tỷ VND).
-        Margins as percentages (e.g., 25.5 for 25.5%).
-        Use "N/A" only for truly missing values.
-        Start with { and end with }
+        Amounts in VND billions. Start with { end with }
         
-        Documents being analyzed:
-        """ + "\n".join(doc_list) + "\n\nDocument contents:\n" + combined_text[:120000]
+        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:80000]
         
         try:
             response = self.client.messages.create(
@@ -286,71 +245,41 @@ class SimplifiedAIDiscovery:
         doc_list = []
         for doc in documents:
             doc_list.append(doc['name'])
-            combined_text += f"\n\n=== DOCUMENT: {doc['name']} ===\n"
-            combined_text += doc['text'][:60000]
-            if len(combined_text) > 120000:
+            combined_text += f"\n\n=== DOC: {doc['name']} ===\n"
+            combined_text += doc['text'][:40000]  # Reduced limit
+            if len(combined_text) > 80000:  # Reduced total
                 break
         
-        prompt = """Extract ALL real estate projects from these documents (Vietnamese or English).
+        prompt = """Extract real estate projects (Vietnamese/English docs).
         
-        IMPORTANT: Documents may be in Vietnamese or English. Understand both languages.
+        TERMS:
+        VN: Dự án, Diện tích đất, Tổng diện tích sàn, Số căn, Giá bán
+        EN: Project, Land area, GFA, NSA, Units, Price
         
-        Vietnamese terms to look for:
-        - Dự án/Project
-        - Diện tích đất/Land area
-        - Tổng diện tích sàn/GFA (Gross Floor Area)
-        - Diện tích bán/NSA (Net Sellable Area)
-        - Số căn/Total units
-        - Giá bán trung bình/Average selling price
-        - Chi phí xây dựng/Construction cost
-        - Chi phí đất/Land cost
-        - Tình trạng pháp lý/Legal status
-        - Tình trạng bán hàng/Selling status
-        - Số căn còn lại/Remaining units
+        Extract for each project:
+        - project_name
+        - land_area_sqm
+        - gfa_sqm, nsa_sqm
+        - total_units
+        - avg_selling_price
+        - construction_cost_bn_vnd
+        - land_cost_bn_vnd
+        - legal_status
+        - selling_status
+        - remaining_units
         
-        For each project, extract:
-        - project_name: Project name (keep original name)
-        - land_area_sqm: Land area in sqm (diện tích đất)
-        - gfa_sqm: Gross Floor Area in sqm (tổng diện tích sàn)
-        - nsa_sqm: Net Sellable Area in sqm (diện tích bán)
-        - total_units: Total units (tổng số căn)
-        - avg_selling_price: Average selling price (giá bán trung bình)
-        - construction_cost_bn_vnd: Construction cost in billion VND (chi phí xây dựng)
-        - land_cost_bn_vnd: Land cost in billion VND (chi phí đất)
-        - legal_status: Legal status (e.g., "Có sổ đỏ", "Has LURC", "Pending approval")
-        - selling_status: Selling status (e.g., "Đã bán 70%", "70% sold", "Pre-sales started")
-        - remaining_units: Remaining units to be sold (số căn còn lại)
-        - source_document: Which document this came from
+        Return JSON array:
+        [{
+            "project_name": "Project A",
+            "land_area_sqm": 50000,
+            "total_units": 1000,
+            "selling_status": "70% sold",
+            ...use "N/A" for missing
+        }]
         
-        MERGING STRATEGY:
-        - If the same project appears in multiple documents, include ALL instances
-        - We will merge them later
-        - Projects may have slightly different names (e.g., "The Manor" vs "Manor Central Park")
-        - Include ALL projects, even if only partial information is available
+        Start [ end ]
         
-        Use "N/A" for unavailable information.
-        Return ONLY a valid JSON array. Start with [ and end with ]
-        
-        Example format:
-        [
-            {
-                "project_name": "Vinhomes Grand Park",
-                "land_area_sqm": 271000,
-                "gfa_sqm": 850000,
-                "nsa_sqm": 680000,
-                "total_units": 10000,
-                "avg_selling_price": "65 triệu/m2",
-                "construction_cost_bn_vnd": 15000,
-                "land_cost_bn_vnd": 8000,
-                "legal_status": "Có sổ đỏ",
-                "selling_status": "Đã bán 85%",
-                "remaining_units": 1500,
-                "source_document": "BCTN_2023.pdf"
-            }
-        ]
-        
-        Documents being analyzed:
-        """ + "\n".join(doc_list) + "\n\nDocument contents:\n" + combined_text[:120000]
+        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:80000]
         
         try:
             response = self.client.messages.create(
@@ -382,38 +311,18 @@ class SimplifiedAIDiscovery:
         if not self.client or not projects or len(projects) <= 1:
             return projects
         
-        prompt = f"""Review these real estate projects extracted from multiple documents and merge duplicates intelligently.
+        prompt = f"""Merge duplicate real estate projects.
         
-        Projects to merge:
-        {json.dumps(projects, indent=2)}
+        Projects:
+        {json.dumps(projects[:20], indent=1)}  # Limit to first 20 projects
         
-        MERGING RULES:
-        1. Identify same projects even with slightly different names:
-           - "The Manor" = "Manor Central Park" = "Dự án Manor"
-           - "Vinhomes Grand Park" = "VH Grand Park" = "Grand Park"
-           - Look for common keywords and locations
+        RULES:
+        - Same project = similar names (Manor = Manor Central Park)
+        - Keep most complete data
+        - Prefer non-"N/A" values
+        - Add "merged_from" field if merged
         
-        2. When merging, create the MOST COMPLETE record:
-           - Keep the most descriptive project name
-           - For numeric values: prefer non-"N/A" values
-           - If both have values, prefer the larger/more recent one
-           - For status fields: prefer more detailed descriptions
-        
-        3. Track data sources:
-           - Add "merged_from" field listing all source_documents
-           - Add "merge_confidence" field: "high", "medium", or "low"
-           - Add "merge_notes" explaining any conflicts resolved
-        
-        4. Vietnamese/English handling:
-           - If project has both Vietnamese and English names, keep both
-           - Legal status can be in either language
-           - Selling status can be mixed (e.g., "Đã bán 70%" or "70% sold")
-        
-        Return ONLY a valid JSON array of merged projects.
-        Each project should have all original fields plus:
-        - "merged_from": ["doc1.pdf", "doc2.pdf"] (if merged)
-        - "merge_confidence": "high/medium/low"
-        - "merge_notes": "Any important notes about the merge"
+        Return JSON array. Start [ end ]
         """
         
         try:

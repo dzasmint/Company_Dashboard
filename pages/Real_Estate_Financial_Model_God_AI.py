@@ -731,6 +731,8 @@ class RealEstateFinancialModel:
                     with col2:
                         st.markdown("**🏢 Real Estate Projects Analysis**")
                         with st.spinner("Extracting real estate projects..."):
+                            import time
+                            time.sleep(2)  # Add delay to avoid rate limits
                             projects = ai_discovery.extract_real_estate_projects(documents)
                             if projects:
                                 with st.spinner("Merging duplicate projects..."):
