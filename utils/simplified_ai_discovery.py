@@ -246,61 +246,84 @@ class SimplifiedAIDiscovery:
         doc_list = []
         for doc in documents:
             doc_list.append(doc['name'])
-            combined_text += f"\n\n=== DOC: {doc['name']} ===\n"
-            combined_text += doc['text'][:30000]  # Moderate limit per doc
-            if len(combined_text) > 60000:  # Moderate total limit
+            combined_text += f"\n\n=== DOCUMENT: {doc['name']} ===\n"
+            combined_text += doc['text'][:60000]  # Original limit per doc
+            if len(combined_text) > 120000:  # Original total
                 break
         
-        prompt = """Extract ALL real estate projects from these documents. Look for project names with variations (e.g., Hoang Huy Commerce, HH Commerce, Hoàng Huy Commerce are the same).
-
-        IMPORTANT PROJECT NAMES TO FIND:
-        1. Hoang Huy Commerce (H1, H2, or phases/toà/tower)
-        2. Hoang Huy New City (Phase 1, II, or zones like Prince Park, Queen Park)
-        3. Hoang Huy Green River
-        4. Hoàng Huy Sở Dầu / Hoang Huy Grand Tower
-        5. Hoang Huy Riverside
-        6. Any other projects mentioned
+        prompt = """You are analyzing real estate documents that may be in Vietnamese or English. Extract ALL real estate projects mentioned across all documents.
         
-        KEY TERMS (Vietnamese/English):
-        - Dự án/Project
-        - Diện tích/Area: ha (hectare), m2/sqm
-        - Căn hộ/Units/Apartments
-        - Townhouse/Nhà phố/Shophouse
-        - Villa/Biệt thự
-        - Tòa/Tower/Block (H1, H2, etc.)
-        - Giai đoạn/Phase (1, 2, I, II)
-        - Giá bán/Selling price (triệu/million, tỷ/billion VND)
-        - Doanh thu/Revenue
-        - Tiến độ/Progress/Status
+        Vietnamese terms to look for:
+        - Dự án (Project)
+        - Diện tích đất (Land area)
+        - Tổng diện tích sàn (GFA - Gross Floor Area)
+        - Diện tích bán được (NSA - Net Sellable Area)
+        - Số căn/Số lượng căn hộ (Number of units)
+        - Giá bán trung bình (Average selling price)
+        - Chi phí xây dựng (Construction cost)
+        - Chi phí đất (Land cost)
+        - Tình trạng pháp lý (Legal status)
+        - Tiến độ bán hàng (Selling progress)
+        - Số căn còn lại (Remaining units)
         
-        EXTRACTION RULES:
-        1. Convert all areas to sqm (1 ha = 10,000 sqm)
-        2. Look for numbers near project names
-        3. Extract phases/towers as separate entries if they have different data
-        4. Check tables, bullet points, and narrative text
-        5. Look for launch dates, handover dates, construction status
+        English terms to look for:
+        - Project name/Development name
+        - Land area (hectares or sqm)
+        - Gross Floor Area (GFA)
+        - Net Sellable Area (NSA)
+        - Total units/Number of units
+        - Average selling price (per sqm)
+        - Construction cost
+        - Land cost
+        - Legal status/Permits
+        - Sales status/Selling progress
+        - Units sold/Remaining inventory
         
-        For EACH project/phase, extract:
-        {
-            "project_name": "Full name with phase/tower",
-            "land_area_sqm": numeric or "N/A",
-            "total_units": numeric or "N/A",
-            "unit_types": "apartments/townhouse/villa/mixed",
-            "avg_selling_price": "price per sqm in million VND",
-            "total_revenue_bn_vnd": numeric or "N/A",
-            "construction_status": "planning/under construction/completed/%",
-            "launch_year": "2024/2025/etc",
-            "handover_year": "2025/2026/etc",
-            "ownership_pct": "TCH ownership %",
-            "location": "district/city",
-            "phases": "list of phases if mentioned",
-            "notes": "any other important info"
-        }
+        For EACH project found, extract:
+        - project_name: Full name of the project
+        - land_area_sqm: Total land area in square meters (convert from hectares if needed)
+        - gfa_sqm: Gross floor area in square meters
+        - nsa_sqm: Net sellable area in square meters
+        - total_units: Total number of units in the project
+        - avg_selling_price: Average selling price per sqm in millions VND
+        - construction_cost_bn_vnd: Total construction cost in billions VND
+        - land_cost_bn_vnd: Total land cost in billions VND
+        - legal_status: Current legal/permit status
+        - selling_status: Current sales progress (e.g., "70% sold", "Launching Q3/2024")
+        - remaining_units: Number of unsold units
+        - location: Project location/district
+        - project_type: Type of development (apartment, villa, townhouse, mixed-use)
+        - construction_start: Construction start date/year
+        - completion_date: Expected completion date/year
+        - handover_date: Expected handover date to customers
         
-        Return JSON array. Include ALL projects found, even with partial data.
-        Start [ end ]
+        Return a JSON array with all projects found. Use "N/A" for any missing information.
         
-        Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:60000]
+        Example format:
+        [
+            {
+                "project_name": "The Manor Central Park",
+                "land_area_sqm": 50000,
+                "gfa_sqm": 250000,
+                "nsa_sqm": 180000,
+                "total_units": 2000,
+                "avg_selling_price": 65,
+                "construction_cost_bn_vnd": 3500,
+                "land_cost_bn_vnd": 2000,
+                "legal_status": "Full permits obtained",
+                "selling_status": "70% sold",
+                "remaining_units": 600,
+                "location": "Thu Duc City, HCMC",
+                "project_type": "High-rise apartment",
+                "construction_start": "2023",
+                "completion_date": "2026",
+                "handover_date": "Q4/2026"
+            }
+        ]
+        
+        Return only valid JSON starting with [ and ending with ]
+        
+        Documents to analyze: """ + ", ".join(doc_list) + "\n\n" + combined_text[:120000]
         
         try:
             response = self.client.messages.create(
