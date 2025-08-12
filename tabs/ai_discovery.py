@@ -7,6 +7,7 @@ import anthropic
 import os
 import json
 import re
+import time
 from datetime import datetime
 from typing import List, Dict, Any
 from dotenv import load_dotenv
@@ -71,9 +72,18 @@ class AIDiscoveryTab:
         try:
             pdf_reader = PyPDF2.PdfReader(pdf_file)
             text = ""
-            for page_num in range(min(len(pdf_reader.pages), 100)):  # Limit to first 100 pages
+            total_pages = len(pdf_reader.pages)
+            
+            # Read all pages but show progress
+            for page_num in range(total_pages):
                 page = pdf_reader.pages[page_num]
-                text += page.extract_text() + "\n"
+                page_text = page.extract_text()
+                text += page_text + "\n"
+            
+            # Show extraction stats
+            if text:
+                st.info(f"📄 {pdf_file.name}: {total_pages} pages, {len(text):,} characters extracted")
+            
             return text
         except Exception as e:
             st.error(f"Error reading PDF {pdf_file.name}: {str(e)}")
@@ -133,6 +143,8 @@ class AIDiscoveryTab:
             projects_container = st.container()
             with projects_container:
                 with st.spinner("Extracting real estate projects..."):
+                    # Add small delay to avoid rate limits
+                    time.sleep(2)
                     projects = self.extract_real_estate_projects(documents)
                     if projects:
                         # Merge duplicate projects
@@ -172,8 +184,8 @@ class AIDiscoveryTab:
         combined_text = ""
         for doc in documents:
             combined_text += f"\n\n--- Document: {doc['name']} ---\n"
-            combined_text += doc['text'][:30000]  # Limit each document
-            if len(combined_text) > 80000:  # Overall limit
+            combined_text += doc['text'][:50000]  # Increased limit per document
+            if len(combined_text) > 100000:  # Increased overall limit
                 break
         
         prompt = """Analyze these financial documents and extract business segment information.
@@ -226,7 +238,7 @@ class AIDiscoveryTab:
         Start your response with { and end with }
         
         Documents:
-        """ + combined_text[:90000]
+        """ + combined_text[:100000]  # Match the new limit
         
         try:
             response = self.client.messages.create(
@@ -258,6 +270,9 @@ class AIDiscoveryTab:
                     st.text("Response received (first 500 chars):")
                     st.code(response_text[:500])
             
+        except anthropic.RateLimitError as e:
+            st.error("⏱️ Rate limit reached. Please wait a moment and try again.")
+            st.info("Tip: Process fewer documents at once or wait 1 minute between analyses.")
         except Exception as e:
             st.error(f"Error analyzing segments: {str(e)}")
         
@@ -375,7 +390,7 @@ class AIDiscoveryTab:
         Start your response with [ and end with ]
         
         Documents:
-        """ + combined_text[:90000]
+        """ + combined_text[:100000]  # Match the new limit
         
         try:
             response = self.client.messages.create(
@@ -410,6 +425,9 @@ class AIDiscoveryTab:
                     st.text("Response received (first 500 chars):")
                     st.code(response_text[:500])
             
+        except anthropic.RateLimitError as e:
+            st.error("⏱️ Rate limit reached. Please wait a moment and try again.")
+            st.info("Tip: Process fewer documents at once or wait 1 minute between analyses.")
         except Exception as e:
             st.error(f"Error extracting projects: {str(e)}")
         
