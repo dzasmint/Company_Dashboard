@@ -131,20 +131,25 @@ class RevenueForecastTab:
     
     def _process_project_data_vectorized(self, years):
         """Process project data using vectorized operations"""
+        # Initialize with default structure including breakdown
         project_data = {
             'revenue_by_year': {year: 0 for year in years},
             'cogs_by_year': {year: 0 for year in years},
-            'breakdown': {}
+            'breakdown': {
+                'revenue': {},
+                'cogs': {},
+                'land': {},
+                'sga': {},
+                'interest': {}
+            }
         }
         
         df_projects = st.session_state.project_data
         if df_projects is None or df_projects.empty:
             return project_data
         
-        # Initialize breakdown structures
+        # Breakdown keys for reference
         breakdown_keys = ['revenue', 'cogs', 'land', 'sga', 'interest']
-        for key in breakdown_keys:
-            project_data['breakdown'][key] = {}
         
         # Vectorized processing of all projects
         for _, project in df_projects.iterrows():
@@ -303,12 +308,13 @@ class RevenueForecastTab:
         # Build revenue rows using vectorized operations
         revenue_rows = []
         
-        # Individual project revenues
-        for project_name, year_revenues in project_data['breakdown']['revenue'].items():
-            row_data = {'Revenue Source': project_name, hist_col: 0}
-            for year in years:
-                row_data[str(year)] = year_revenues.get(year, 0)
-            revenue_rows.append(row_data)
+        # Individual project revenues - check if breakdown exists
+        if 'breakdown' in project_data and 'revenue' in project_data['breakdown']:
+            for project_name, year_revenues in project_data['breakdown']['revenue'].items():
+                row_data = {'Revenue Source': project_name, hist_col: 0}
+                for year in years:
+                    row_data[str(year)] = year_revenues.get(year, 0)
+                revenue_rows.append(row_data)
         
         # Projects subtotal
         if revenue_rows:
@@ -346,12 +352,13 @@ class RevenueForecastTab:
         hist_col = f'{base_year}H'
         cogs_rows = []
         
-        # Individual project COGS
-        for project_name, year_cogs in project_data['breakdown']['cogs'].items():
-            row_data = {'COGS Source': project_name, hist_col: 0}
-            for year in years:
-                row_data[str(year)] = year_cogs.get(year, 0)
-            cogs_rows.append(row_data)
+        # Individual project COGS - check if breakdown exists
+        if 'breakdown' in project_data and 'cogs' in project_data['breakdown']:
+            for project_name, year_cogs in project_data['breakdown']['cogs'].items():
+                row_data = {'COGS Source': project_name, hist_col: 0}
+                for year in years:
+                    row_data[str(year)] = year_cogs.get(year, 0)
+                cogs_rows.append(row_data)
         
         # Projects subtotal
         if cogs_rows:
