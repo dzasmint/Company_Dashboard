@@ -120,3 +120,5 @@ Thumbs.db
 # Data and Reports
 data/Reports/
 data/Reports/*
+data/Report/TCH/BCTN_TCH_V_final.pdf
+*.pdf
