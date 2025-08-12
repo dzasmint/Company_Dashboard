@@ -93,7 +93,7 @@ class AIDiscoveryTab:
         status_text = st.empty()
         
         for i, file in enumerate(uploaded_files):
-            progress = (i + 1) / len(uploaded_files) * 0.3  # 30% for reading
+            progress = min((i + 1) / len(uploaded_files) * 0.3, 0.3)  # 30% for reading, capped at 0.3
             progress_bar.progress(progress)
             status_text.text(f"Reading {file.name}...")
             
@@ -113,8 +113,8 @@ class AIDiscoveryTab:
         # Extract real estate projects from EACH document separately
         all_projects = []
         for i, doc in enumerate(documents):
-            progress = 0.3 + (i + 1) / len(documents) * 0.5  # Progress from 30% to 80%
-            progress_bar.progress(progress)
+            progress = 0.3 + (i / len(documents)) * 0.5  # Progress from 30% to 80%
+            progress_bar.progress(min(progress, 0.8))  # Ensure it doesn't exceed 0.8
             status_text.text(f"Extracting projects from {doc['name']}...")
             
             # Process single document
@@ -577,10 +577,10 @@ Return JSON array with merged projects. Start [ end ]
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        for i, row in edited_df.iterrows():
-            progress = (i + 1) / len(edited_df)
+        for idx, (i, row) in enumerate(edited_df.iterrows()):
+            progress = min((idx + 1) / len(edited_df), 1.0)
             progress_bar.progress(progress)
-            status_text.text(f"Saving project {i+1}/{len(edited_df)}: {row.get('project_name', 'Unknown')}")
+            status_text.text(f"Saving project {idx+1}/{len(edited_df)}: {row.get('project_name', 'Unknown')}")
             
             try:
                 # Parse values from edited dataframe - default to 0 for numerical fields
@@ -687,7 +687,7 @@ Return JSON array with merged projects. Start [ end ]
         status_text = st.empty()
         
         for i, project in enumerate(projects):
-            progress = (i + 1) / len(projects)
+            progress = min((i + 1) / len(projects), 1.0)
             progress_bar.progress(progress)
             status_text.text(f"Saving project {i+1}/{len(projects)}: {project.get('project_name', 'Unknown')}")
             
@@ -975,6 +975,31 @@ Return JSON array with merged projects. Start [ end ]
                 st.markdown("---")
                 st.subheader("📋 Projects to be Added to Database")
                 
+                # Define column order for consistency
+                column_order = [
+                    'Source',
+                    'project_name',
+                    'company_ticker', 
+                    'location',
+                    'project_ownership',
+                    'total_units',
+                    'net_sellable_area',
+                    'average_unit_size',
+                    'average_selling_price',
+                    'price_increment_factor',
+                    'gross_floor_area',
+                    'land_area',
+                    'construction_cost_per_sqm',
+                    'land_cost_per_sqm',
+                    'construction_start_year',
+                    'construction_years',
+                    'sale_start_year',
+                    'sales_years',
+                    'revenue_booking_start_year',
+                    'project_completion_year',
+                    'rnav_value'
+                ]
+                
                 # Load existing projects from MongoDB for comparison - ONLY for selected ticker
                 existing_pipeline_data = []
                 selected_ticker = st.session_state.get('selected_company', '')
@@ -985,35 +1010,19 @@ Return JSON array with merged projects. Start [ end ]
                         # Filter by selected company ticker
                         filtered_df = existing_projects_df[existing_projects_df['company_ticker'] == selected_ticker]
                         
-                        # Convert existing projects to pipeline format - ONLY specified columns
+                        # Convert existing projects to pipeline format with consistent column order
                         for _, row in filtered_df.iterrows():
-                            existing_pipeline_data.append({
-                                'Source': '📂 Existing in DB',
-                                'project_name': row.get('project_name', 'N/A'),
-                                'company_ticker': row.get('company_ticker', 'N/A'),
-                                'location': row.get('location', 'N/A'),
-                                'project_ownership': row.get('project_ownership', 'N/A'),
-                                'total_units': row.get('total_units', 'N/A'),
-                                'net_sellable_area': row.get('net_sellable_area', 'N/A'),
-                                'average_unit_size': row.get('average_unit_size', 'N/A'),
-                                'average_selling_price': row.get('average_selling_price', 'N/A'),
-                                'price_increment_factor': row.get('price_increment_factor', 'N/A'),
-                                'gross_floor_area': row.get('gross_floor_area', 'N/A'),
-                                'land_area': row.get('land_area', 'N/A'),
-                                'construction_cost_per_sqm': row.get('construction_cost_per_sqm', 'N/A'),
-                                'land_cost_per_sqm': row.get('land_cost_per_sqm', 'N/A'),
-                                'construction_start_year': row.get('construction_start_year', 'N/A'),
-                                'construction_years': row.get('construction_years', 'N/A'),
-                                'sale_start_year': row.get('sale_start_year', 'N/A'),
-                                'sales_years': row.get('sales_years', 'N/A'),
-                                'revenue_booking_start_year': row.get('revenue_booking_start_year', 'N/A'),
-                                'project_completion_year': row.get('project_completion_year', 'N/A'),
-                                'rnav_value': row.get('rnav_value', 'N/A')
-                            })
+                            project_dict = {}
+                            for col in column_order:
+                                if col == 'Source':
+                                    project_dict[col] = '📂 Existing in DB'
+                                else:
+                                    project_dict[col] = row.get(col, 'N/A')
+                            existing_pipeline_data.append(project_dict)
                 except:
                     pass
                 
-                # Create pipeline-compatible table for NEW projects - matching existing columns
+                # Create pipeline-compatible table for NEW projects with same column order
                 new_pipeline_data = []
                 for proj in st.session_state.selected_projects_for_db:
                     # Parse NSA and calculate average unit size
@@ -1021,35 +1030,59 @@ Return JSON array with merged projects. Start [ end ]
                     total_units = self._parse_number(proj.get('total_units', 0))
                     avg_unit_size = nsa / total_units if total_units > 0 and nsa > 0 else 'N/A'
                     
-                    new_pipeline_data.append({
-                        'Source': '✨ New Project',
-                        'project_name': proj.get('project_name', 'N/A'),
-                        'company_ticker': st.session_state.get('selected_company', 'N/A'),
-                        'location': proj.get('location', 'N/A'),
-                        'project_ownership': 'N/A',  # Will be set by user
-                        'total_units': proj.get('total_units', 'N/A'),
-                        'net_sellable_area': proj.get('nsa_sqm', 'N/A'),
-                        'average_unit_size': avg_unit_size if avg_unit_size != 'N/A' else 'N/A',
-                        'average_selling_price': proj.get('avg_selling_price', 'N/A'),
-                        'price_increment_factor': 'N/A',  # Will be set by user
-                        'gross_floor_area': proj.get('gfa_sqm', 'N/A'),
-                        'land_area': proj.get('land_area_sqm', 'N/A'),
-                        'construction_cost_per_sqm': 'N/A',  # Will be set by user
-                        'land_cost_per_sqm': 'N/A',  # Will be calculated or set
-                        'construction_start_year': proj.get('construction_start', 'N/A'),
-                        'construction_years': 'N/A',  # Will be set by user
-                        'sale_start_year': proj.get('launch_date', 'N/A'),
-                        'sales_years': 'N/A',  # Will be set by user
-                        'revenue_booking_start_year': proj.get('launch_date', 'N/A'),
-                        'project_completion_year': proj.get('handover_date', 'N/A'),
-                        'rnav_value': 'N/A'  # Will be calculated
-                    })
+                    project_dict = {}
+                    for col in column_order:
+                        if col == 'Source':
+                            project_dict[col] = '✨ New Project'
+                        elif col == 'project_name':
+                            project_dict[col] = proj.get('project_name', 'N/A')
+                        elif col == 'company_ticker':
+                            project_dict[col] = st.session_state.get('selected_company', 'N/A')
+                        elif col == 'location':
+                            project_dict[col] = proj.get('location', 'N/A')
+                        elif col == 'project_ownership':
+                            project_dict[col] = 'N/A'
+                        elif col == 'total_units':
+                            project_dict[col] = proj.get('total_units', 'N/A')
+                        elif col == 'net_sellable_area':
+                            project_dict[col] = proj.get('nsa_sqm', 'N/A')
+                        elif col == 'average_unit_size':
+                            project_dict[col] = avg_unit_size if avg_unit_size != 'N/A' else 'N/A'
+                        elif col == 'average_selling_price':
+                            project_dict[col] = proj.get('avg_selling_price', 'N/A')
+                        elif col == 'price_increment_factor':
+                            project_dict[col] = 'N/A'
+                        elif col == 'gross_floor_area':
+                            project_dict[col] = proj.get('gfa_sqm', 'N/A')
+                        elif col == 'land_area':
+                            project_dict[col] = proj.get('land_area_sqm', 'N/A')
+                        elif col == 'construction_cost_per_sqm':
+                            project_dict[col] = 'N/A'
+                        elif col == 'land_cost_per_sqm':
+                            project_dict[col] = 'N/A'
+                        elif col == 'construction_start_year':
+                            project_dict[col] = proj.get('construction_start', 'N/A')
+                        elif col == 'construction_years':
+                            project_dict[col] = 'N/A'
+                        elif col == 'sale_start_year':
+                            project_dict[col] = proj.get('launch_date', 'N/A')
+                        elif col == 'sales_years':
+                            project_dict[col] = 'N/A'
+                        elif col == 'revenue_booking_start_year':
+                            project_dict[col] = proj.get('launch_date', 'N/A')
+                        elif col == 'project_completion_year':
+                            project_dict[col] = proj.get('handover_date', 'N/A')
+                        elif col == 'rnav_value':
+                            project_dict[col] = 'N/A'
+                    new_pipeline_data.append(project_dict)
                 
                 # Combine existing and new projects
                 all_pipeline_data = existing_pipeline_data + new_pipeline_data
                 
                 if all_pipeline_data:
                     pipeline_df = pd.DataFrame(all_pipeline_data)
+                    # Ensure column order is consistent
+                    pipeline_df = pipeline_df[column_order]
                     
                     # Display metrics
                     col1, col2, col3 = st.columns(3)
@@ -1074,7 +1107,98 @@ Return JSON array with merged projects. Start [ end ]
                     if not existing_df.empty:
                         st.markdown("**📂 Existing Projects in Database (Reference Only)**")
                         # Remove Source column for display
-                        existing_df_display = existing_df.drop(columns=['Source'])
+                        existing_df_display = existing_df.drop(columns=['Source']).copy()
+                        
+                        # Format numerical columns for display
+                        for idx in existing_df_display.index:
+                            # project_ownership - float with 1 decimal
+                            val = existing_df_display.loc[idx, 'project_ownership']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'project_ownership'] = f"{float(val):.1f}"
+                                except:
+                                    pass
+                            
+                            # total_units - integer
+                            val = existing_df_display.loc[idx, 'total_units']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'total_units'] = f"{int(float(val))}"
+                                except:
+                                    pass
+                            
+                            # net_sellable_area - integer
+                            val = existing_df_display.loc[idx, 'net_sellable_area']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'net_sellable_area'] = f"{int(float(val))}"
+                                except:
+                                    pass
+                            
+                            # average_unit_size - integer
+                            val = existing_df_display.loc[idx, 'average_unit_size']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'average_unit_size'] = f"{int(float(val))}"
+                                except:
+                                    pass
+                            
+                            # average_selling_price - integer with comma
+                            val = existing_df_display.loc[idx, 'average_selling_price']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'average_selling_price'] = f"{int(float(val)):,}"
+                                except:
+                                    pass
+                            
+                            # price_increment_factor - float with 1 decimal
+                            val = existing_df_display.loc[idx, 'price_increment_factor']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'price_increment_factor'] = f"{float(val):.1f}"
+                                except:
+                                    pass
+                            
+                            # gross_floor_area - integer with comma
+                            val = existing_df_display.loc[idx, 'gross_floor_area']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'gross_floor_area'] = f"{int(float(val)):,}"
+                                except:
+                                    pass
+                            
+                            # land_area - integer with comma
+                            val = existing_df_display.loc[idx, 'land_area']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'land_area'] = f"{int(float(val)):,}"
+                                except:
+                                    pass
+                            
+                            # construction_cost_per_sqm - integer with comma
+                            val = existing_df_display.loc[idx, 'construction_cost_per_sqm']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'construction_cost_per_sqm'] = f"{int(float(val)):,}"
+                                except:
+                                    pass
+                            
+                            # land_cost_per_sqm - integer with comma
+                            val = existing_df_display.loc[idx, 'land_cost_per_sqm']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'land_cost_per_sqm'] = f"{int(float(val)):,}"
+                                except:
+                                    pass
+                            
+                            # rnav_value - integer with comma
+                            val = existing_df_display.loc[idx, 'rnav_value']
+                            if val != 'N/A' and pd.notna(val):
+                                try:
+                                    existing_df_display.loc[idx, 'rnav_value'] = f"{int(float(val)):,}"
+                                except:
+                                    pass
+                        
                         st.dataframe(
                             existing_df_display,
                             use_container_width=True,
@@ -1104,29 +1228,51 @@ Return JSON array with merged projects. Start [ end ]
                                 new_df_display[col] = new_df_display[col].replace('N/A', 0)
                                 new_df_display[col] = pd.to_numeric(new_df_display[col], errors='coerce').fillna(0)
                         
-                        # Configure column types
-                        column_config = {
-                            "project_name": st.column_config.TextColumn("project_name", help="Project name (text)"),
-                            "company_ticker": st.column_config.TextColumn("company_ticker", help="Company ticker (text)"),
-                            "location": st.column_config.TextColumn("location", help="Location (text)"),
-                            "project_ownership": st.column_config.NumberColumn("project_ownership", help="Ownership percentage", step=0.01, format="%.2f"),
-                            "total_units": st.column_config.NumberColumn("total_units", help="Total units", step=1, format="%.0f"),
-                            "net_sellable_area": st.column_config.NumberColumn("net_sellable_area", help="Net sellable area (sqm)", format="%.0f"),
-                            "average_unit_size": st.column_config.NumberColumn("average_unit_size", help="Average unit size (sqm)", format="%.1f"),
-                            "average_selling_price": st.column_config.NumberColumn("average_selling_price", help="Average selling price (million VND/sqm)", format="%.1f"),
-                            "price_increment_factor": st.column_config.NumberColumn("price_increment_factor", help="Price increment factor", step=0.01, format="%.2f"),
-                            "gross_floor_area": st.column_config.NumberColumn("gross_floor_area", help="Gross floor area (sqm)", format="%.0f"),
-                            "land_area": st.column_config.NumberColumn("land_area", help="Land area (sqm)", format="%.0f"),
-                            "construction_cost_per_sqm": st.column_config.NumberColumn("construction_cost_per_sqm", help="Construction cost (million VND/sqm)", format="%.1f"),
-                            "land_cost_per_sqm": st.column_config.NumberColumn("land_cost_per_sqm", help="Land cost (million VND/sqm)", format="%.1f"),
-                            "construction_start_year": st.column_config.NumberColumn("construction_start_year", help="Construction start year", step=1, format="%.0f"),
-                            "construction_years": st.column_config.NumberColumn("construction_years", help="Construction years", step=1, format="%.0f"),
-                            "sale_start_year": st.column_config.NumberColumn("sale_start_year", help="Sale start year", step=1, format="%.0f"),
-                            "sales_years": st.column_config.NumberColumn("sales_years", help="Sales years", step=1, format="%.0f"),
-                            "revenue_booking_start_year": st.column_config.NumberColumn("revenue_booking_start_year", help="Revenue booking start year", step=1, format="%.0f"),
-                            "project_completion_year": st.column_config.NumberColumn("project_completion_year", help="Project completion year", step=1, format="%.0f"),
-                            "rnav_value": st.column_config.NumberColumn("rnav_value", help="RNAV value (million VND)", format="%.0f")
-                        }
+                        # Configure column types - ordered to match column_order (minus Source)
+                        column_config = {}
+                        for col in column_order:
+                            if col == 'Source':
+                                continue  # Skip Source column as it's removed
+                            elif col == "project_name":
+                                column_config[col] = st.column_config.TextColumn("project_name", help="Project name (text)")
+                            elif col == "company_ticker":
+                                column_config[col] = st.column_config.TextColumn("company_ticker", help="Company ticker (text)")
+                            elif col == "location":
+                                column_config[col] = st.column_config.TextColumn("location", help="Location (text)")
+                            elif col == "project_ownership":
+                                column_config[col] = st.column_config.NumberColumn("project_ownership", help="Ownership percentage", step=0.01, format="%.2f")
+                            elif col == "total_units":
+                                column_config[col] = st.column_config.NumberColumn("total_units", help="Total units", step=1, format="%.0f")
+                            elif col == "net_sellable_area":
+                                column_config[col] = st.column_config.NumberColumn("net_sellable_area", help="Net sellable area (sqm)", format="%.0f")
+                            elif col == "average_unit_size":
+                                column_config[col] = st.column_config.NumberColumn("average_unit_size", help="Average unit size (sqm)", format="%.1f")
+                            elif col == "average_selling_price":
+                                column_config[col] = st.column_config.NumberColumn("average_selling_price", help="Average selling price (million VND/sqm)", format="%.1f")
+                            elif col == "price_increment_factor":
+                                column_config[col] = st.column_config.NumberColumn("price_increment_factor", help="Price increment factor", step=0.01, format="%.2f")
+                            elif col == "gross_floor_area":
+                                column_config[col] = st.column_config.NumberColumn("gross_floor_area", help="Gross floor area (sqm)", format="%.0f")
+                            elif col == "land_area":
+                                column_config[col] = st.column_config.NumberColumn("land_area", help="Land area (sqm)", format="%.0f")
+                            elif col == "construction_cost_per_sqm":
+                                column_config[col] = st.column_config.NumberColumn("construction_cost_per_sqm", help="Construction cost (million VND/sqm)", format="%.1f")
+                            elif col == "land_cost_per_sqm":
+                                column_config[col] = st.column_config.NumberColumn("land_cost_per_sqm", help="Land cost (million VND/sqm)", format="%.1f")
+                            elif col == "construction_start_year":
+                                column_config[col] = st.column_config.NumberColumn("construction_start_year", help="Construction start year", step=1, format="%.0f")
+                            elif col == "construction_years":
+                                column_config[col] = st.column_config.NumberColumn("construction_years", help="Construction years", step=1, format="%.0f")
+                            elif col == "sale_start_year":
+                                column_config[col] = st.column_config.NumberColumn("sale_start_year", help="Sale start year", step=1, format="%.0f")
+                            elif col == "sales_years":
+                                column_config[col] = st.column_config.NumberColumn("sales_years", help="Sales years", step=1, format="%.0f")
+                            elif col == "revenue_booking_start_year":
+                                column_config[col] = st.column_config.NumberColumn("revenue_booking_start_year", help="Revenue booking start year", step=1, format="%.0f")
+                            elif col == "project_completion_year":
+                                column_config[col] = st.column_config.NumberColumn("project_completion_year", help="Project completion year", step=1, format="%.0f")
+                            elif col == "rnav_value":
+                                column_config[col] = st.column_config.NumberColumn("rnav_value", help="RNAV value (million VND)", format="%.0f")
                         
                         # Make new projects editable
                         edited_new_df = st.data_editor(
