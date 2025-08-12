@@ -9,6 +9,7 @@ import anthropic
 import os
 import json
 import re
+import time
 from datetime import datetime
 from typing import List, Dict
 from dotenv import load_dotenv
@@ -88,12 +89,23 @@ class SimplifiedAIDiscovery:
         Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:40000]
         
         try:
+            # Add delay if this is not the first API call
+            if hasattr(self, '_last_api_call_time'):
+                time_since_last_call = time.time() - self._last_api_call_time
+                if time_since_last_call < 60:  # Wait 1 minute between calls
+                    wait_time = 60 - time_since_last_call
+                    st.info(f"⏳ Waiting {wait_time:.0f} seconds to avoid rate limits...")
+                    time.sleep(wait_time)
+            
             response = self.client.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=4000,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}]
             )
+            
+            # Record the time of this API call
+            self._last_api_call_time = time.time()
             
             response_text = response.content[0].text.strip()
             
@@ -282,12 +294,23 @@ class SimplifiedAIDiscovery:
         Docs: """ + ", ".join(doc_list) + "\n\n" + combined_text[:40000]
         
         try:
+            # Add delay if this is not the first API call
+            if hasattr(self, '_last_api_call_time'):
+                time_since_last_call = time.time() - self._last_api_call_time
+                if time_since_last_call < 60:  # Wait 1 minute between calls
+                    wait_time = 60 - time_since_last_call
+                    st.info(f"⏳ Waiting {wait_time:.0f} seconds to avoid rate limits...")
+                    time.sleep(wait_time)
+            
             response = self.client.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=4000,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}]
             )
+            
+            # Record the time of this API call
+            self._last_api_call_time = time.time()
             
             response_text = response.content[0].text.strip()
             
@@ -326,12 +349,23 @@ class SimplifiedAIDiscovery:
         """
         
         try:
+            # Add delay if this is not the first API call
+            if hasattr(self, '_last_api_call_time'):
+                time_since_last_call = time.time() - self._last_api_call_time
+                if time_since_last_call < 60:  # Wait 1 minute between calls
+                    wait_time = 60 - time_since_last_call
+                    st.info(f"⏳ Waiting {wait_time:.0f} seconds to avoid rate limits...")
+                    time.sleep(wait_time)
+            
             response = self.client.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=4000,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}]
             )
+            
+            # Record the time of this API call
+            self._last_api_call_time = time.time()
             
             response_text = response.content[0].text.strip()
             
