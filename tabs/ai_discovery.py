@@ -133,6 +133,9 @@ class AIDiscoveryTab:
             status_text.text(f"Merging {len(all_projects)} total projects from all documents...")
             merged_projects = self.merge_projects_from_multiple_docs(all_projects)
             st.session_state.real_estate_projects = merged_projects
+        else:
+            merged_projects = []
+            st.session_state.real_estate_projects = []
         
         progress_bar.progress(1.0)
         status_text.text("✅ Analysis complete!")
@@ -141,8 +144,8 @@ class AIDiscoveryTab:
         
         # Show success message
         st.success(f"✅ Successfully analyzed {len(documents)} document(s)")
-        if projects:
-            st.info(f"🏢 Found {len(merged_projects)} unique real estate projects")
+        if all_projects:
+            st.info(f"🏢 Found {len(merged_projects)} unique real estate projects from {len(all_projects)} total extractions")
         else:
             st.warning("⚠️ No projects found. Please check if the documents contain real estate project information.")
     
@@ -289,100 +292,38 @@ class AIDiscoveryTab:
     def extract_real_estate_projects_single(self, document: Dict[str, str]) -> List[Dict]:
         """Extract real estate projects from a SINGLE document"""
         
-        # Use full document text without truncation from combining multiple docs
-        doc_text = document['text'][:100000]  # Generous limit for single document
+        # Reduce document text to save tokens
+        doc_text = document['text'][:40000]  # Reduced from 100,000
         doc_name = document['name']
         
-        prompt = """You are analyzing a real estate document. Extract ABSOLUTELY EVERY real estate project mentioned, no matter how briefly.
-        
-        CRITICAL: Look for ALL project names including:
-        - Projects with phases/towers (e.g., Hoang Huy Commerce H1, H2)
-        - Projects with zones (e.g., Prince Park, Queen Park)
-        - Projects mentioned in tables, lists, or narrative text
-        - Projects in development pipeline
-        - Completed projects still being sold
-        - Future/planned projects
-        
-        For EACH project found, extract AS MUCH information as possible:
-        
-        BASIC INFORMATION:
-        - project_name: Full project name (include phase/tower if mentioned)
-        - location: District, city, address
-        - developer: Developer name
-        - project_type: apartment/townhouse/villa/shophouse/mixed-use/commercial
-        
-        AREA & SIZE:
-        - land_area_sqm: Land area (convert ha to sqm: 1ha = 10,000sqm)
-        - gfa_sqm: Gross Floor Area
-        - nsa_sqm: Net Sellable Area
-        - site_area: Site/plot area
-        - construction_area: Construction area
-        
-        UNITS & COMPOSITION:
-        - total_units: Total number of units
-        - apartments: Number of apartments
-        - townhouses: Number of townhouses
-        - villas: Number of villas
-        - shophouses: Number of shophouses
-        - commercial_units: Commercial units
-        - unit_mix: Description of unit types and sizes
-        
-        FINANCIAL:
-        - avg_selling_price: Average price per sqm (million VND)
-        - price_range: Price range if mentioned
-        - total_revenue_bn_vnd: Total revenue (billion VND)
-        - construction_cost_bn_vnd: Construction cost
-        - land_cost_bn_vnd: Land acquisition cost
-        - total_investment: Total investment amount
-        - revenue_recognition: Revenue recognition schedule
-        
-        TIMELINE:
-        - launch_date: Launch date/quarter/year
-        - construction_start: Construction start date
-        - construction_end: Construction completion date
-        - handover_date: Handover/delivery date
-        - sales_start: Sales launch date
-        - presales_date: Presales date
-        
-        STATUS:
-        - development_status: planning/approved/under construction/completed
-        - construction_progress: Construction progress %
-        - sales_status: Sales progress (e.g., "70% sold", "500 units sold")
-        - units_sold: Number of units sold
-        - remaining_units: Remaining units
-        - inventory_value: Value of remaining inventory
-        
-        LEGAL & PERMITS:
-        - legal_status: Legal status/permits obtained
-        - ownership_structure: Ownership type (freehold/leasehold)
-        - ownership_duration: Ownership duration (e.g., 50 years)
-        - permits: List of permits obtained
-        
-        OTHER:
-        - floors: Number of floors
-        - blocks: Number of blocks/towers
-        - facilities: Amenities and facilities
-        - contractor: Main contractor
-        - architect: Architect/designer
-        - notes: Any other important information
-        
-        IMPORTANT INSTRUCTIONS:
-        1. Extract EVERY project, even if only the name is mentioned
-        2. Include ALL phases/towers as separate entries
-        3. Use "N/A" for missing information
-        4. Include projects at ANY stage (planning to completed)
-        5. If numbers appear near project names, associate them
-        6. Check tables, footnotes, and management discussion sections
-        7. Look for Vietnamese terms: dự án, khu đô thị, chung cư, căn hộ
-        
-        Return a JSON array with ALL projects found. Start with [ and end with ]
-        
-        Document being analyzed: """ + doc_name + "\n\n" + doc_text
+        prompt = """Extract ALL real estate projects from this document.
+
+Look for: project names, phases/towers (H1, H2), zones, Vietnamese terms (dự án, khu đô thị, chung cư).
+
+For each project extract:
+- project_name (include phase/tower)
+- location
+- land_area_sqm (convert ha to sqm: 1ha=10,000sqm) 
+- total_units
+- project_type (apartment/townhouse/villa/shophouse/mixed)
+- avg_selling_price (million VND/sqm)
+- total_revenue_bn_vnd
+- development_status
+- sales_status (% sold)
+- launch_date
+- handover_date
+- construction_progress
+- remaining_units
+
+Include ALL projects even with partial data. Use "N/A" for missing info.
+Return JSON array. Start [ end ]
+
+Doc: """ + doc_name + "\n\n" + doc_text
         
         try:
             response = self.client.messages.create(
                 model="claude-3-5-sonnet-20241022",
-                max_tokens=6000,  # Increased for more projects
+                max_tokens=3000,  # Reduced to save costs
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -547,45 +488,30 @@ class AIDiscoveryTab:
     def _merge_project_batch(self, projects: List[Dict]) -> List[Dict]:
         """Merge a batch of projects"""
         
-        prompt = f"""You have extracted real estate projects from multiple documents. Now intelligently merge duplicate projects.
+        # Simplify project data to reduce tokens
+        simplified_projects = []
+        for p in projects:
+            simplified = {k: v for k, v in p.items() if v and v != 'N/A'}
+            simplified_projects.append(simplified)
         
-        Projects to analyze:
-        {json.dumps(projects, indent=2)}
-        
-        MERGING RULES:
-        1. Projects are the SAME if they have:
-           - Similar names (e.g., "Hoang Huy Commerce H1" = "HH Commerce H1" = "Hoàng Huy Commerce H1")
-           - Same location and developer
-           - Similar characteristics (units, area, etc.)
-        
-        2. When merging duplicates:
-           - Keep the most complete information
-           - Prefer specific values over "N/A"
-           - If different documents have different values for the same field:
-             * For numbers: use the most recent or most detailed
-             * For text: combine if complementary, otherwise use most detailed
-           - Add "merged_from_documents" field listing all source documents
-        
-        3. DO NOT merge if:
-           - Different phases/towers (H1 vs H2, Phase 1 vs Phase 2)
-           - Different locations
-           - Significantly different characteristics
-        
-        4. For each merged project:
-           - Combine all available information
-           - Note which documents provided the information
-           - Keep the most commonly used project name
-        
-        Return a JSON array of merged projects. Each project should have all available information combined.
-        Projects that don't have duplicates should be included as-is.
-        
-        Start with [ and end with ]
-        """
+        prompt = f"""Merge duplicate real estate projects from different documents.
+
+Projects:
+{json.dumps(simplified_projects, indent=1)}
+
+MERGE RULES:
+- Same project = similar name + location (ignore H1/H2 differences)
+- Keep most complete data, prefer non-N/A values
+- Don't merge different phases (H1 vs H2, Phase 1 vs 2)
+- Add "sources" field with document names
+
+Return JSON array with merged projects. Start [ end ]
+"""
         
         try:
             response = self.client.messages.create(
                 model="claude-3-5-sonnet-20241022",
-                max_tokens=8000,
+                max_tokens=4000,  # Reduced from 8000
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}]
             )
