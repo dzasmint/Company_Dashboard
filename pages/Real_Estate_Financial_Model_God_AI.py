@@ -3373,6 +3373,66 @@ class RealEstateFinancialModel:
                     del st.session_state.current_editing_project
                 st.rerun()
     
+    def _convert_assumptions_to_dict(self, assumptions_list):
+        """Convert assumptions list format to dictionary format"""
+        if not assumptions_list:
+            return {}
+            
+        result = {
+            'revenue_streams': [],
+            'wacc': 0.12,
+            'debt_financing_pct': 0.30,
+            'tax_rate': 0.20,
+            'custom_assumptions': []
+        }
+        
+        # Group business segments by name
+        business_segments = {}
+        
+        for assumption in assumptions_list:
+            category = assumption.get('Category', '')
+            item = assumption.get('Item', '')
+            value = assumption.get('Value', 0)
+            type_field = assumption.get('Type', '')
+            
+            if category == 'Business Segment':
+                # Group by segment name
+                if item not in business_segments:
+                    business_segments[item] = {
+                        'segment_name': item,
+                        'revenue_growth': 0.1,
+                        'gross_margin': 0.3,
+                        'sga_percentage': 0.2,
+                        'base_year_revenue': 0
+                    }
+                
+                # Map Type to the appropriate field
+                if type_field == 'Revenue Growth':
+                    business_segments[item]['revenue_growth'] = value / 100  # Convert from percentage
+                elif type_field == 'Gross Margin':
+                    business_segments[item]['gross_margin'] = value / 100
+                elif type_field == 'SG&A % of Revenue':
+                    business_segments[item]['sga_percentage'] = value / 100
+                elif type_field == 'Base Year Revenue':
+                    business_segments[item]['base_year_revenue'] = value
+            
+            elif category == 'Financial':
+                # Map financial assumptions
+                if item == 'WACC':
+                    result['wacc'] = value / 100
+                elif item == 'Debt Financing %':
+                    result['debt_financing_pct'] = value / 100
+                elif item == 'Tax Rate':
+                    result['tax_rate'] = value / 100
+            else:
+                # Store other assumptions
+                result['custom_assumptions'].append(assumption)
+        
+        # Convert business segments dictionary to list
+        result['revenue_streams'] = list(business_segments.values())
+        
+        return result
+    
     def render_revenue_forecast(self):
         """Render comprehensive revenue forecast including projects and other revenue streams"""
         st.header("Revenue & COGS Forecast")
@@ -3384,10 +3444,13 @@ class RealEstateFinancialModel:
             return
         
         # Import MongoDB utilities
-        from utils.mongodb_utils import get_company_assumptions
+        from utils.mongodb_utils import load_assumptions_from_mongodb
         
-        # Load assumptions from MongoDB
-        company_assumptions = get_company_assumptions(selected_ticker)
+        # Load assumptions from MongoDB - use the same method as Assumptions tab
+        assumptions_list = load_assumptions_from_mongodb(selected_ticker)
+        
+        # Convert assumptions list to the expected format for revenue forecast
+        company_assumptions = self._convert_assumptions_to_dict(assumptions_list) if assumptions_list else {}
         custom_assumptions = company_assumptions.get('custom_assumptions', [])
         
         # Initialize session state for base year revenues (ticker-specific)
@@ -3398,52 +3461,43 @@ class RealEstateFinancialModel:
         # For backward compatibility, sync with general base_year_revenues
         st.session_state.base_year_revenues = st.session_state[revenue_key]
         
-        # Section 1: Other Revenue Streams Setup
-        st.subheader("Business Segments Revenue")
-        # Get base_year from session state or from the analysis above
-        display_base_year = st.session_state.get('base_year', base_year if 'base_year' in locals() else 2024)
-        st.info(f"Enter base year ({display_base_year} - latest historical) revenue for business segments defined in Assumptions")
-        
-        # Extract business segments from revenue_streams
+        # Extract business segments from revenue_streams and load base year revenue from assumptions
         revenue_streams = company_assumptions.get('revenue_streams', [])
         business_segments = []
         segment_metrics = {}
         
+        # Load base year revenues directly from assumptions (silently in background)
         for stream in revenue_streams:
             segment_name = stream.get('segment_name', '')
             if segment_name and 'real estate' not in segment_name.lower():
                 business_segments.append(segment_name)
+                
+                # Get base year revenue from assumptions (if stored there)
+                base_year_revenue = stream.get('base_year_revenue', 0)
+                
+                # If base year revenue is 0, check if it was saved in assumptions
+                if base_year_revenue == 0:
+                    # Look for Base Year Revenue in the assumptions list
+                    for assumption in assumptions_list or []:
+                        if (assumption.get('Category') == 'Business Segment' and 
+                            assumption.get('Item') == segment_name and 
+                            assumption.get('Type') == 'Base Year Revenue'):
+                            base_year_revenue = assumption.get('Value', 0)
+                            break
+                
+                # Store in session state for use in tables
+                st.session_state.base_year_revenues[segment_name] = base_year_revenue
+                
                 segment_metrics[segment_name] = {
                     'revenue_growth': stream.get('revenue_growth', 0.1),
                     'gross_margin': stream.get('gross_margin', 0.3),
-                    'sga_percentage': stream.get('sga_percentage', 0.2)
+                    'sga_percentage': stream.get('sga_percentage', 0.2),
+                    'base_year_revenue': base_year_revenue
                 }
         
-        # Create input fields for base year revenues
-        if business_segments:
-            cols = st.columns(min(len(business_segments), 3))
-            for idx, segment in enumerate(business_segments):
-                with cols[idx % 3]:
-                    metrics = segment_metrics[segment]
-                    st.markdown(f"**{segment}**")
-                    st.caption(f"Growth: {metrics['revenue_growth']*100:.1f}% | Margin: {metrics['gross_margin']*100:.1f}% | SG&A: {metrics['sga_percentage']*100:.1f}%")
-                    # Use ticker-specific key for base revenue input
-                    input_key = f"base_revenue_{selected_ticker}_{segment}"
-                    base_revenue = st.number_input(
-                        f"{display_base_year} Revenue (B VND)",
-                        min_value=0.0,
-                        value=st.session_state.base_year_revenues.get(segment, 100.0),
-                        step=10.0,
-                        key=input_key
-                    )
-                    st.session_state.base_year_revenues[segment] = base_revenue
-                    # Also update ticker-specific storage
-                    revenue_key = f'base_year_revenues_{selected_ticker}'
-                    st.session_state[revenue_key][segment] = base_revenue
-        else:
+        # If no business segments, show a simple message
+        if not business_segments:
             st.info("No business segments defined. Add business segment assumptions in the Assumptions tab.")
-        
-        st.markdown("---")
             
         # Revenue Forecast from Projects (data preparation)
         revenue_forecast = self.generate_revenue_forecast()

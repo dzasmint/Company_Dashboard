@@ -56,9 +56,70 @@ class RevenueForecastTab:
         )
     
     def _load_company_assumptions(self, selected_ticker):
-        """Load company assumptions from MongoDB"""
-        from utils.mongodb_utils import get_company_assumptions
-        return get_company_assumptions(selected_ticker)
+        """Load company assumptions directly from MongoDB"""
+        # Always load fresh from MongoDB to ensure latest data
+        from utils.mongodb_utils import load_assumptions_from_mongodb
+        assumptions_list = load_assumptions_from_mongodb(selected_ticker)
+        
+        if assumptions_list:
+            # Convert list format to the expected dictionary format
+            return self._convert_assumptions_to_dict(assumptions_list)
+        
+        # Return empty assumptions
+        return {}
+    
+    def _convert_assumptions_to_dict(self, assumptions_list):
+        """Convert assumptions list format to dictionary format"""
+        result = {
+            'revenue_streams': [],
+            'wacc': 0.12,
+            'debt_financing_pct': 0.30,
+            'tax_rate': 0.20
+        }
+        
+        # Group business segments by name
+        business_segments = {}
+        
+        for assumption in assumptions_list:
+            category = assumption.get('Category', '')
+            item = assumption.get('Item', '')
+            value = assumption.get('Value', 0)
+            type_field = assumption.get('Type', '')
+            
+            if category == 'Business Segment':
+                # Group by segment name
+                if item not in business_segments:
+                    business_segments[item] = {
+                        'segment_name': item,
+                        'revenue_growth': 0.1,
+                        'gross_margin': 0.3,
+                        'sga_percentage': 0.2,
+                        'base_year_revenue': 0
+                    }
+                
+                # Map Type to the appropriate field
+                if type_field == 'Revenue Growth':
+                    business_segments[item]['revenue_growth'] = value / 100  # Convert from percentage
+                elif type_field == 'Gross Margin':
+                    business_segments[item]['gross_margin'] = value / 100
+                elif type_field == 'SG&A % of Revenue':
+                    business_segments[item]['sga_percentage'] = value / 100
+                elif type_field == 'Base Year Revenue':
+                    business_segments[item]['base_year_revenue'] = value
+            
+            elif category == 'Financial':
+                # Map financial assumptions
+                if item == 'WACC':
+                    result['wacc'] = value / 100
+                elif item == 'Debt Financing %':
+                    result['debt_financing_pct'] = value / 100
+                elif item == 'Tax Rate':
+                    result['tax_rate'] = value / 100
+        
+        # Convert business segments dictionary to list
+        result['revenue_streams'] = list(business_segments.values())
+        
+        return result
     
     def _initialize_revenue_streams(self, selected_ticker, company_assumptions):
         """Initialize session state for revenue streams"""
@@ -254,6 +315,18 @@ class RevenueForecastTab:
         st.subheader("📊 Business Segments Revenue")
         st.info(f"Enter base year ({base_year} - latest historical) revenue for business segments defined in Assumptions")
         
+        # Debug: Show what assumptions we have
+        selected_ticker = st.session_state.get('selected_company')
+        
+        # Debug information (can be removed later)
+        with st.expander("Debug: Assumptions Data", expanded=False):
+            st.write("Company Assumptions from DB (converted):", company_assumptions)
+            st.write("Revenue Streams:", company_assumptions.get('revenue_streams', []))
+            # Also show raw data from MongoDB
+            from utils.mongodb_utils import load_assumptions_from_mongodb
+            raw_assumptions = load_assumptions_from_mongodb(selected_ticker)
+            st.write("Raw assumptions from MongoDB:", raw_assumptions)
+        
         # Extract business segments
         revenue_streams = company_assumptions.get('revenue_streams', [])
         business_segments = []
@@ -280,11 +353,24 @@ class RevenueForecastTab:
                     st.markdown(f"**{segment}**")
                     st.caption(f"Growth: {metrics['revenue_growth']*100:.1f}% | Margin: {metrics['gross_margin']*100:.1f}% | SG&A: {metrics['sga_percentage']*100:.1f}%")
                     
+                    # Get default value from assumptions if available
+                    default_value = st.session_state.base_year_revenues.get(segment, 100.0)
+                    
+                    # Check if there's a base year revenue in the assumptions
+                    for stream in revenue_streams:
+                        if stream.get('segment_name') == segment:
+                            base_rev_from_assumptions = stream.get('base_year_revenue', 0)
+                            if base_rev_from_assumptions > 0:
+                                default_value = base_rev_from_assumptions
+                                # Initialize in session state if not already set
+                                if segment not in st.session_state.base_year_revenues:
+                                    st.session_state.base_year_revenues[segment] = base_rev_from_assumptions
+                    
                     input_key = f"base_revenue_{selected_ticker}_{segment}"
                     base_revenue = st.number_input(
                         f"{base_year} Revenue (B VND)",
                         min_value=0.0,
-                        value=st.session_state.base_year_revenues.get(segment, 100.0),
+                        value=default_value,
                         step=10.0,
                         key=input_key
                     )

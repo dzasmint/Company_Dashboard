@@ -1,0 +1,1550 @@
+    def render_revenue_forecast(self):
+        """Render comprehensive revenue forecast including projects and other revenue streams"""
+        st.header("Revenue & COGS Forecast")
+        
+        # Get selected ticker
+        selected_ticker = st.session_state.get('selected_company', None)
+        if not selected_ticker:
+            st.info("Please select a company from the sidebar")
+            return
+        
+        # Import MongoDB utilities
+        from utils.mongodb_utils import get_company_assumptions
+        
+        # Load assumptions from MongoDB
+        company_assumptions = get_company_assumptions(selected_ticker)
+        custom_assumptions = company_assumptions.get('custom_assumptions', [])
+        
+        # Initialize session state for base year revenues (ticker-specific)
+        revenue_key = f'base_year_revenues_{selected_ticker}'
+        if revenue_key not in st.session_state:
+            st.session_state[revenue_key] = {}
+        
+        # For backward compatibility, sync with general base_year_revenues
+        st.session_state.base_year_revenues = st.session_state[revenue_key]
+        
+        # Section 1: Other Revenue Streams Setup
+        st.subheader("📊 Business Segments Revenue")
+        # Get base_year from session state or from the analysis above
+        display_base_year = st.session_state.get('base_year', base_year if 'base_year' in locals() else 2024)
+        st.info(f"Enter base year ({display_base_year} - latest historical) revenue for business segments defined in Assumptions")
+        
+        # Extract business segments from revenue_streams
+        revenue_streams = company_assumptions.get('revenue_streams', [])
+        business_segments = []
+        segment_metrics = {}
+        
+        for stream in revenue_streams:
+            segment_name = stream.get('segment_name', '')
+            if segment_name and 'real estate' not in segment_name.lower():
+                business_segments.append(segment_name)
+                segment_metrics[segment_name] = {
+                    'revenue_growth': stream.get('revenue_growth', 0.1),
+                    'gross_margin': stream.get('gross_margin', 0.3),
+                    'sga_percentage': stream.get('sga_percentage', 0.2)
+                }
+        
+        # Create input fields for base year revenues
+        if business_segments:
+            cols = st.columns(min(len(business_segments), 3))
+            for idx, segment in enumerate(business_segments):
+                with cols[idx % 3]:
+                    metrics = segment_metrics[segment]
+                    st.markdown(f"**{segment}**")
+                    st.caption(f"Growth: {metrics['revenue_growth']*100:.1f}% | Margin: {metrics['gross_margin']*100:.1f}% | SG&A: {metrics['sga_percentage']*100:.1f}%")
+                    # Use ticker-specific key for base revenue input
+                    input_key = f"base_revenue_{selected_ticker}_{segment}"
+                    base_revenue = st.number_input(
+                        f"{display_base_year} Revenue (B VND)",
+                        min_value=0.0,
+                        value=st.session_state.base_year_revenues.get(segment, 100.0),
+                        step=10.0,
+                        key=input_key
+                    )
+                    st.session_state.base_year_revenues[segment] = base_revenue
+                    # Also update ticker-specific storage
+                    revenue_key = f'base_year_revenues_{selected_ticker}'
+                    st.session_state[revenue_key][segment] = base_revenue
+        else:
+            st.info("No business segments defined. Add business segment assumptions in the Assumptions tab.")
+        
+        st.markdown("---")
+            
+        # Revenue Forecast from Projects (data preparation)
+        revenue_forecast = self.generate_revenue_forecast()
+        
+        # Get historical data for 2024
+        # First ensure historical data is loaded
+        if st.session_state.get('historical_data') is None and selected_ticker:
+            with st.spinner(f"Loading historical data for {selected_ticker}..."):
+                historical_data = self.load_historical_data_from_csv(selected_ticker)
+                if not historical_data.empty:
+                    st.session_state.historical_data = historical_data
+                    st.success(f"Loaded historical data with {len(historical_data)} records")
+                else:
+                    st.warning(f"No historical data found for {selected_ticker}")
+        
+        historical_data = st.session_state.get('historical_data')
+        
+        # Dynamically determine the latest historical year
+        base_year = st.session_state.get('base_year', 2024)  # Default to 2024 if not set
+        hist_values = {}
+        
+        if historical_data is not None and not historical_data.empty:
+            # Find the latest year in the historical data
+            # Convert index to integers and find the maximum
+            try:
+                years_in_data = [int(idx) for idx in historical_data.index if str(idx).isdigit()]
+                if years_in_data:
+                    base_year = max(years_in_data)
+                else:
+                    # Fallback: try to convert directly
+                    base_year = int(max(historical_data.index))
+            except:
+                # If all else fails, default to 2024
+                base_year = 2024
+            
+            # Store base_year in session state for use throughout the app
+            st.session_state.base_year = base_year
+            
+            # Find data for the base year
+            hist_date_idx = None
+            
+            # Check if base_year exists in the index
+            if base_year in historical_data.index:
+                hist_date_idx = base_year
+            else:
+                # Try to find it with different types
+                for idx in historical_data.index:
+                    if str(idx) == str(base_year) or (isinstance(idx, (int, float)) and int(idx) == base_year):
+                        hist_date_idx = idx
+                        break
+            
+            if hist_date_idx is not None:
+                # Extract key financial metrics for 2024 - using underscored column names
+                
+                # Net Revenue
+                if 'Net_Revenue' in historical_data.columns:
+                    try:
+                        raw_value = historical_data.loc[hist_date_idx, 'Net_Revenue']
+                        hist_values['Net Revenue'] = raw_value / 1e9 if not pd.isna(raw_value) else 0
+                    except:
+                        hist_values['Net Revenue'] = 0
+                else:
+                    hist_values['Net Revenue'] = 0
+                
+                # Gross Profit
+                if 'Gross_Profit' in historical_data.columns:
+                    try:
+                        raw_value = historical_data.loc[hist_date_idx, 'Gross_Profit']
+                        hist_values['Gross profit'] = raw_value / 1e9 if not pd.isna(raw_value) else 0
+                    except:
+                        hist_values['Gross profit'] = 0
+                else:
+                    hist_values['Gross profit'] = 0
+                
+                # COGS - Calculate from Revenue - Gross Profit
+                if hist_values['Net Revenue'] > 0 and hist_values['Gross profit'] >= 0:
+                    hist_values['COGS'] = hist_values['Net Revenue'] - hist_values['Gross profit']
+                else:
+                    hist_values['COGS'] = 0
+                
+                # EBIT
+                if 'EBIT' in historical_data.columns:
+                    try:
+                        raw_value = historical_data.loc[hist_date_idx, 'EBIT']
+                        hist_values['EBIT'] = raw_value / 1e9 if not pd.isna(raw_value) else 0
+                    except:
+                        hist_values['EBIT'] = 0
+                else:
+                    hist_values['EBIT'] = 0
+                
+                # NPATMI
+                if 'NPATMI' in historical_data.columns:
+                    try:
+                        raw_value = historical_data.loc[hist_date_idx, 'NPATMI']
+                        hist_values['NPATMI'] = raw_value / 1e9 if not pd.isna(raw_value) else 0
+                    except:
+                        hist_values['NPATMI'] = 0
+                else:
+                    hist_values['NPATMI'] = 0
+                
+                # Interest expense
+                if 'Interest_Expense' in historical_data.columns:
+                    try:
+                        raw_value = historical_data.loc[hist_date_idx, 'Interest_Expense']
+                        hist_values['Interest expense'] = abs(raw_value) / 1e9 if not pd.isna(raw_value) else 0
+                    except:
+                        hist_values['Interest expense'] = 0
+                else:
+                    hist_values['Interest expense'] = 0
+                
+                # Clean up values
+                for key in hist_values:
+                    if pd.isna(hist_values[key]):
+                        hist_values[key] = 0
+        
+        # Get project revenue data
+        if st.session_state.project_data is not None and not st.session_state.project_data.empty:
+            df_projects = st.session_state.project_data
+            years = revenue_forecast['years']
+            current_year = datetime.now().year
+            
+            # Get base year from session state
+            base_year = st.session_state.get('base_year', 2024)
+            hist_col = f'{base_year}H'  # Historical column name
+            
+            # Add historical year to display columns
+            display_years = [hist_col] + [str(y) for y in years]
+            
+            # Initialize data structures
+            project_revenue_by_year = {}
+            project_cogs_by_year = {}
+            other_revenue_by_year = {}
+            other_cogs_by_year = {}
+            
+            # Store individual project details for breakdown
+            project_revenue_breakdown = {}
+            project_cogs_breakdown = {}
+            project_land_breakdown = {}
+            project_sga_breakdown = {}
+            project_interest_breakdown = {}
+            
+            # Load project schedules from MongoDB P&L schedule
+            for year in years:
+                project_revenue_by_year[year] = 0
+                project_cogs_by_year[year] = 0
+                
+                for _, project in df_projects.iterrows():
+                    project_name = project.get('project_name', 'Unknown')
+                    
+                    # Initialize project breakdown if not exists
+                    if project_name not in project_revenue_breakdown:
+                        project_revenue_breakdown[project_name] = {}
+                        project_cogs_breakdown[project_name] = {}
+                        project_land_breakdown[project_name] = {}
+                        project_sga_breakdown[project_name] = {}
+                        project_interest_breakdown[project_name] = {}
+                    
+                    # Get P&L schedule from MongoDB - contains all financial data
+                    pnl_schedule = project.get('pnl_schedule', {})
+                    
+                    # Ensure schedule is a dictionary
+                    if not isinstance(pnl_schedule, dict):
+                        pnl_schedule = {}
+                    
+                    # Add to yearly totals
+                    year_str = str(year)
+                    
+                    if year_str in pnl_schedule:
+                        year_pnl = pnl_schedule[year_str]
+                        
+                        # Get revenue
+                        revenue_amount = year_pnl.get('revenue', 0)
+                        project_revenue_by_year[year] += revenue_amount
+                        project_revenue_breakdown[project_name][year] = revenue_amount
+                        
+                        # Get COGS (construction + land) - these should be negative values
+                        construction_cost = year_pnl.get('construction_cost', 0)
+                        land_cost = year_pnl.get('land_cost', 0)
+                        project_cogs = construction_cost + land_cost  # Both should be negative
+                        
+                        project_cogs_breakdown[project_name][year] = project_cogs
+                        project_cogs_by_year[year] += project_cogs
+                        project_land_breakdown[project_name][year] = land_cost
+                        
+                        # Get SG&A - should be negative
+                        sga_amount = year_pnl.get('sga', 0)
+                        project_sga_breakdown[project_name][year] = sga_amount
+                        
+                        # Get Interest expense - should be negative/positive based on calculation
+                        interest_amount = year_pnl.get('interest_expense', 0)
+                        project_interest_breakdown[project_name][year] = interest_amount
+                    else:
+                        # No data for this year
+                        project_revenue_breakdown[project_name][year] = 0
+                        project_cogs_breakdown[project_name][year] = 0
+                        project_land_breakdown[project_name][year] = 0
+                        project_sga_breakdown[project_name][year] = 0
+                        project_interest_breakdown[project_name][year] = 0
+            
+            # Calculate other revenue streams and COGS
+            for year_idx, year in enumerate(years):
+                other_revenue_by_year[year] = 0
+                other_cogs_by_year[year] = 0
+                
+                for segment_name, base_revenue in st.session_state.base_year_revenues.items():
+                    # Get metrics from segment_metrics if available
+                    if segment_name in segment_metrics:
+                        growth_rate = segment_metrics[segment_name]['revenue_growth']
+                        gross_margin = segment_metrics[segment_name]['gross_margin']
+                    else:
+                        # Fallback to defaults
+                        growth_rate = 0.1  # Default 10%
+                        gross_margin = 0.3  # Default 30%
+                    
+                    # Calculate revenue with growth
+                    # Base year is the latest historical year, apply growth from there
+                    years_from_base = year - base_year
+                    year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+                    
+                    other_revenue_by_year[year] += year_revenue
+                    
+                    # Calculate COGS from gross margin
+                    year_cogs = year_revenue * (1 - gross_margin)
+                    other_cogs_by_year[year] += year_cogs
+            
+            # Project breakdown data is now incorporated into Total Revenue Forecast table
+            
+            # Section 2: Total Revenue Forecast
+            st.subheader("📊 Total Revenue Forecast")
+            
+            # Create revenue table with rows as revenue sources and columns as years
+            revenue_rows = []
+            
+            # Add individual project revenues
+            for project_name in project_revenue_breakdown.keys():
+                row_data = {'Revenue Source': f"{project_name}"}
+                row_data[hist_col] = 0  # No historical breakdown by project
+                for year in years:
+                    row_data[str(year)] = project_revenue_breakdown[project_name].get(year, 0)
+                revenue_rows.append(row_data)
+            
+            # Add separator row for projects total
+            if revenue_rows:
+                total_projects_row = {'Revenue Source': 'Subtotal: Projects'}
+                total_projects_row[hist_col] = 0  # No historical breakdown
+                for year in years:
+                    total_projects_row[str(year)] = project_revenue_by_year[year]
+                revenue_rows.append(total_projects_row)
+            
+            # Add other revenue streams
+            for segment_name in st.session_state.base_year_revenues.keys():
+                row_data = {'Revenue Source': f"{segment_name}"}
+                # Base year revenue goes in the historical column
+                row_data[hist_col] = st.session_state.base_year_revenues[segment_name]
+                base_revenue = st.session_state.base_year_revenues[segment_name]
+                
+                # Get growth rate from segment_metrics
+                if segment_name in segment_metrics:
+                    growth_rate = segment_metrics[segment_name]['revenue_growth']
+                else:
+                    growth_rate = 0.1  # Default 10%
+                
+                # Apply growth for forecast years
+                for year in years:
+                    # Base year is the latest historical year, apply growth from there
+                    years_from_base = year - base_year
+                    row_data[str(year)] = base_revenue * ((1 + growth_rate) ** years_from_base)
+                revenue_rows.append(row_data)
+            
+            # Add total row
+            total_row = {'Revenue Source': 'TOTAL REVENUE'}
+            total_row[hist_col] = hist_values.get('Net Revenue', 0)  # Historical Net Revenue
+            for year in years:
+                total_revenue = project_revenue_by_year[year]
+                for segment_name in st.session_state.base_year_revenues.keys():
+                    base_revenue = st.session_state.base_year_revenues[segment_name]
+                    if segment_name in segment_metrics:
+                        growth_rate = segment_metrics[segment_name]['revenue_growth']
+                    else:
+                        growth_rate = 0.1
+                    
+                    # Base year is the latest historical year, apply growth from there
+                    years_from_base = year - base_year
+                    total_revenue += base_revenue * ((1 + growth_rate) ** years_from_base)
+                total_row[str(year)] = total_revenue
+            revenue_rows.append(total_row)
+            
+            # Create DataFrame
+            revenue_df = pd.DataFrame(revenue_rows)
+            
+            # Style the dataframe - highlight subtotal and total rows
+            def highlight_special_rows(row):
+                if 'TOTAL' in str(row['Revenue Source']) or 'Subtotal' in str(row['Revenue Source']):
+                    return ['font-weight: bold'] * len(row)
+                return [''] * len(row)
+            
+            st.write("**Revenue by Source (Billion VND)**")
+            
+            # Define column configuration for consistent width
+            column_config = {
+                'Revenue Source': st.column_config.TextColumn('Revenue Source', width='medium'),
+            }
+            for col in [hist_col] + [str(y) for y in years]:
+                column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+            
+            st.dataframe(
+                revenue_df.style
+                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .apply(highlight_special_rows, axis=1),
+                use_container_width=True,
+                column_config=column_config,
+                hide_index=True
+            )
+            
+            # Section 3: COGS Table
+            st.markdown("---")
+            st.subheader("💰 Cost of Goods Sold (COGS)")
+            
+            # Create COGS table with rows as cost sources and columns as years
+            cogs_rows = []
+            
+            # Add individual project COGS
+            for project_name in project_cogs_breakdown.keys():
+                row_data = {'COGS Source': f"{project_name}"}
+                row_data[hist_col] = 0  # No historical breakdown by project
+                for year in years:
+                    row_data[str(year)] = project_cogs_breakdown[project_name].get(year, 0)
+                cogs_rows.append(row_data)
+            
+            # Add separator row for projects total
+            if cogs_rows:
+                total_projects_row = {'COGS Source': 'Subtotal: Project COGS'}
+                total_projects_row[hist_col] = 0  # No historical breakdown
+                for year in years:
+                    total_projects_row[str(year)] = project_cogs_by_year[year]
+                cogs_rows.append(total_projects_row)
+            
+            # Add COGS for other revenue streams
+            for segment_name in st.session_state.base_year_revenues.keys():
+                row_data = {'COGS Source': f"{segment_name} COGS"}
+                base_revenue = st.session_state.base_year_revenues[segment_name]
+                
+                # Get metrics from segment_metrics
+                if segment_name in segment_metrics:
+                    growth_rate = segment_metrics[segment_name]['revenue_growth']
+                    gross_margin = segment_metrics[segment_name]['gross_margin']
+                else:
+                    growth_rate = 0.1  # Default 10%
+                    gross_margin = 0.3  # Default 30%
+                
+                # Base year COGS in historical column (negative)
+                row_data[hist_col] = -base_revenue * (1 - gross_margin)
+                
+                # Calculate COGS for forecast years (negative)
+                for year in years:
+                    # Base year is the latest historical year, apply growth from there
+                    years_from_base = year - base_year
+                    year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+                    
+                    row_data[str(year)] = -year_revenue * (1 - gross_margin)
+                cogs_rows.append(row_data)
+            
+            # Add total row
+            total_row = {'COGS Source': 'TOTAL COGS'}
+            total_row[hist_col] = -abs(hist_values.get('COGS', 0))  # Historical COGS as negative
+            for year in years:
+                total_cogs = project_cogs_by_year[year]  # Already negative from projects
+                for segment_name in st.session_state.base_year_revenues.keys():
+                    base_revenue = st.session_state.base_year_revenues[segment_name]
+                    
+                    if segment_name in segment_metrics:
+                        growth_rate = segment_metrics[segment_name]['revenue_growth']
+                        gross_margin = segment_metrics[segment_name]['gross_margin']
+                    else:
+                        growth_rate = 0.1
+                        gross_margin = 0.3
+                    
+                    # Base year is the latest historical year, apply growth from there
+                    years_from_base = year - base_year
+                    year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+                    
+                    # Add negative COGS for other segments
+                    total_cogs -= year_revenue * (1 - gross_margin)
+                total_row[str(year)] = total_cogs
+            cogs_rows.append(total_row)
+            
+            # Create DataFrame
+            cogs_df = pd.DataFrame(cogs_rows)
+            
+            # Style the dataframe - highlight subtotal and total rows
+            def highlight_special_rows_cogs(row):
+                if 'TOTAL' in str(row['COGS Source']) or 'Subtotal' in str(row['COGS Source']):
+                    return ['font-weight: bold'] * len(row)
+                return [''] * len(row)
+            
+            st.write("**COGS by Source (Billion VND)**")
+            
+            # Define column configuration for consistent width
+            cogs_column_config = {
+                'COGS Source': st.column_config.TextColumn('COGS Source', width='medium'),
+            }
+            for col in [hist_col] + [str(y) for y in years]:
+                cogs_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+            
+            st.dataframe(
+                cogs_df.style
+                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .apply(highlight_special_rows_cogs, axis=1),
+                use_container_width=True,
+                column_config=cogs_column_config,
+                hide_index=True
+            )
+            
+            # Section 4: Gross Profit
+            st.markdown("---")
+            st.subheader("📈 Gross Profit")
+            
+            # Get total revenue and COGS from the last row of each DataFrame
+            total_revenue_row = revenue_df[revenue_df['Revenue Source'] == 'TOTAL REVENUE'].iloc[0]
+            total_cogs_row = cogs_df[cogs_df['COGS Source'] == 'TOTAL COGS'].iloc[0]
+            
+            # Create gross profit breakdown by segment (rows = segments, columns = years)
+            gross_profit_rows = []
+            
+            # Calculate gross profit for Projects (aggregate all projects)
+            projects_gp_row = {'Gross Profit Source': 'Projects'}
+            projects_gp_row['2024H'] = 0  # No historical breakdown
+            for year in years:
+                year_str = str(year)
+                projects_revenue = project_revenue_by_year[year]
+                projects_cogs = project_cogs_by_year[year]  # This is already negative
+                projects_gp_row[year_str] = projects_revenue + projects_cogs  # Add negative COGS
+            gross_profit_rows.append(projects_gp_row)
+            
+            # Calculate gross profit for each other segment
+            for segment_name in st.session_state.base_year_revenues.keys():
+                gp_row = {'Gross Profit Source': segment_name}
+                gp_row['2024H'] = 0  # No historical breakdown
+                base_revenue = st.session_state.base_year_revenues[segment_name]
+                
+                # Get metrics from segment_metrics
+                if segment_name in segment_metrics:
+                    growth_rate = segment_metrics[segment_name]['revenue_growth']
+                    gross_margin = segment_metrics[segment_name]['gross_margin']
+                else:
+                    growth_rate = 0.1  # Default 10%
+                    gross_margin = 0.3  # Default 30%
+                
+                for year in years:
+                    year_str = str(year)
+                    # Base year is the latest historical year, apply growth from there
+                    years_from_base = year - base_year
+                    year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+                    
+                    year_cogs = year_revenue * (1 - gross_margin)
+                    gp_row[year_str] = year_revenue - year_cogs
+                gross_profit_rows.append(gp_row)
+            
+            # Add total gross profit row
+            total_gp_row = {'Gross Profit Source': 'TOTAL GROSS PROFIT'}
+            total_gp_row['2024H'] = hist_values.get('Gross profit', 0)  # Historical Gross Profit
+            for year in years:
+                year_str = str(year)
+                revenue = total_revenue_row[year_str]
+                cogs = total_cogs_row[year_str]  # Already negative
+                total_gp_row[year_str] = revenue + cogs  # Add negative COGS to revenue
+            gross_profit_rows.append(total_gp_row)
+            
+            # Create DataFrame for gross profit
+            gross_profit_df = pd.DataFrame(gross_profit_rows)
+            
+            # Style function to highlight total row
+            def highlight_total_row(row):
+                if 'TOTAL' in str(row['Gross Profit Source']):
+                    return ['font-weight: bold'] * len(row)
+                return [''] * len(row)
+            
+            st.write("**Gross Profit Summary by Segment (Billion VND)**")
+            
+            # Define column configuration for consistent width
+            gp_column_config = {
+                'Gross Profit Source': st.column_config.TextColumn('Gross Profit Source', width='medium'),
+            }
+            for col in [hist_col] + [str(y) for y in years]:
+                gp_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+            
+            st.dataframe(
+                gross_profit_df.style
+                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .apply(highlight_total_row, axis=1),
+                use_container_width=True,
+                column_config=gp_column_config,
+                hide_index=True
+            )
+            
+            # Create Gross Profit Margin table
+            margin_rows = []
+            
+            # Calculate margin for Projects
+            projects_margin_row = {'Segment': 'Projects'}
+            projects_margin_row['2024H'] = 0  # Will calculate if historical data exists
+            for year in years:
+                year_str = str(year)
+                projects_revenue = project_revenue_by_year[year]
+                if projects_revenue > 0:
+                    projects_gp = gross_profit_df[gross_profit_df['Gross Profit Source'] == 'Projects'].iloc[0][year_str]
+                    projects_margin_row[year_str] = (projects_gp / projects_revenue) * 100
+                else:
+                    projects_margin_row[year_str] = 0
+            margin_rows.append(projects_margin_row)
+            
+            # Calculate margin for each other segment
+            for segment_name in st.session_state.base_year_revenues.keys():
+                margin_row = {'Segment': segment_name}
+                margin_row['2024H'] = 0  # Will calculate if historical data exists
+                
+                # Get gross margin from segment_metrics
+                if segment_name in segment_metrics:
+                    gross_margin = segment_metrics[segment_name]['gross_margin'] * 100
+                else:
+                    gross_margin = 30.0  # Default 30%
+                
+                for year in years:
+                    year_str = str(year)
+                    margin_row[year_str] = gross_margin
+                margin_rows.append(margin_row)
+            
+            # Add overall margin row
+            overall_margin_row = {'Segment': 'OVERALL MARGIN'}
+            # Calculate historical margin if data exists
+            if hist_values.get('Net Revenue', 0) > 0 and hist_values.get('Gross profit', 0) > 0:
+                overall_margin_row['2024H'] = (hist_values['Gross profit'] / hist_values['Net Revenue']) * 100
+            else:
+                overall_margin_row['2024H'] = 0
+            for year in years:
+                year_str = str(year)
+                revenue = total_revenue_row[year_str]
+                if revenue > 0:
+                    gross_profit = total_gp_row[year_str]
+                    overall_margin_row[year_str] = (gross_profit / revenue) * 100
+                else:
+                    overall_margin_row[year_str] = 0
+            margin_rows.append(overall_margin_row)
+            
+            # Create DataFrame for margins
+            margin_df = pd.DataFrame(margin_rows)
+            
+            st.write("**Gross Profit Margin by Segment (%)**")
+            
+            # Define column configuration for consistent width
+            margin_column_config = {
+                'Segment': st.column_config.TextColumn('Segment', width='medium'),
+            }
+            for col in [hist_col] + [str(y) for y in years]:
+                margin_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f%%')
+            
+            st.dataframe(
+                margin_df.style
+                .format("{:.1f}%", subset=[hist_col] + [str(y) for y in years])
+                .apply(lambda row: ['font-weight: bold'] * len(row) if 'OVERALL' in str(row['Segment']) else [''] * len(row), axis=1),
+                use_container_width=True,
+                column_config=margin_column_config,
+                hide_index=True
+            )
+            
+            # Section 4.4: SG&A by Source
+            st.markdown("---")
+            st.subheader("💼 SG&A by Source")
+            
+            # Initialize SG&A rows
+            sga_rows = []
+            
+            # SG&A for individual projects (Real Estate) - Load from MongoDB schedules
+            project_sga_total_by_year = {year: 0 for year in years}
+            
+            # Add individual project SG&A from loaded schedules
+            for project_name in project_sga_breakdown.keys():
+                row_data = {'SG&A Source': f"{project_name}"}
+                row_data[hist_col] = 0  # No historical breakdown
+                
+                for year in years:
+                    # Get SG&A from the loaded schedule
+                    project_sga = project_sga_breakdown[project_name].get(year, 0)
+                    row_data[str(year)] = project_sga
+                    project_sga_total_by_year[year] += project_sga
+                
+                sga_rows.append(row_data)
+            
+            # Add subtotal for all projects
+            if project_revenue_breakdown:
+                projects_total_row = {'SG&A Source': 'Total Projects SG&A'}
+                projects_total_row[hist_col] = 0
+                for year in years:
+                    projects_total_row[str(year)] = project_sga_total_by_year[year]
+                sga_rows.append(projects_total_row)
+            
+            # SG&A for other business segments
+            for segment_name in st.session_state.base_year_revenues.keys():
+                row_data = {'SG&A Source': f"{segment_name} SG&A"}
+                base_revenue = st.session_state.base_year_revenues[segment_name]
+                
+                # Get SG&A percentage from segment_metrics
+                if segment_name in segment_metrics:
+                    sga_pct = segment_metrics[segment_name]['sga_percentage']
+                else:
+                    sga_pct = 0.15  # Default 15%
+                
+                # Historical SG&A (negative)
+                row_data[hist_col] = -base_revenue * sga_pct
+                
+                for year in years:
+                    # Calculate segment revenue for the year
+                    if segment_name in segment_metrics:
+                        growth_rate = segment_metrics[segment_name]['revenue_growth']
+                    else:
+                        growth_rate = 0.1  # Default 10%
+                    
+                    # Base year is the latest historical year, apply growth from there
+                    years_from_base = year - base_year
+                    segment_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+                    row_data[str(year)] = -segment_revenue * sga_pct  # Negative value for expense
+                
+                sga_rows.append(row_data)
+            
+            # Total SG&A row
+            total_sga_row = {'SG&A Source': 'TOTAL SG&A'}
+            # Calculate historical SG&A by summing all segments
+            hist_sga_total = sum(row[hist_col] for row in sga_rows if row['SG&A Source'] != 'TOTAL SG&A')
+            total_sga_row[hist_col] = hist_sga_total
+            for year in years:
+                total_sga = sum(row[str(year)] for row in sga_rows if row['SG&A Source'] != 'TOTAL SG&A')
+                total_sga_row[str(year)] = total_sga
+            sga_rows.append(total_sga_row)
+            
+            # Create DataFrame for SG&A
+            sga_df = pd.DataFrame(sga_rows)
+            
+            st.write("**SG&A Expense by Source (Billion VND)**")
+            
+            # Style function to highlight total and subtotal rows
+            def highlight_sga_rows(row):
+                source = str(row['SG&A Source'])
+                if 'TOTAL SG&A' in source:
+                    return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
+                elif 'Total Projects' in source:
+                    return ['font-weight: bold'] * len(row)
+                else:
+                    return [''] * len(row)
+            
+            # Define column configuration for consistent width
+            sga_column_config = {
+                'SG&A Source': st.column_config.TextColumn('SG&A Source', width='medium'),
+            }
+            for col in [hist_col] + [str(y) for y in years]:
+                sga_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+            
+            st.dataframe(
+                sga_df.style
+                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .apply(highlight_sga_rows, axis=1),
+                use_container_width=True,
+                column_config=sga_column_config,
+                hide_index=True
+            )
+            
+            # Section 4.5: Interest Expense by Source
+            st.markdown("---")
+            st.subheader("💰 Interest Expense by Source")
+            
+            # Initialize Interest Expense rows
+            interest_rows = []
+            
+            # Get debt financing percentage from assumptions
+            debt_financing_pct = 0.30  # Default 30%
+            # Get assumptions from MongoDB or use defaults
+            try:
+                # Try to get from session state or MongoDB
+                assumptions_key = f'assumptions_df_{selected_ticker}'
+                if assumptions_key in st.session_state:
+                    assumptions_data = st.session_state[assumptions_key]
+                    if isinstance(assumptions_data, pd.DataFrame):
+                        assumptions_list = assumptions_data.to_dict('records')
+                    else:
+                        assumptions_list = assumptions_data
+                    
+                    for assumption in assumptions_list:
+                        if assumption.get('Item') == 'Debt Financing %':
+                            debt_financing_pct = assumption.get('Value', 30) / 100
+                            break
+            except:
+                pass  # Use default if any error
+            
+            # Interest rate assumption (could be from assumptions or default)
+            interest_rate = 0.07  # Default 7% annual interest rate
+            
+            # Interest on individual project financing - Load from MongoDB schedules
+            project_interest_total_by_year = {year: 0 for year in years}
+            
+            # Add individual project interest from loaded schedules
+            for project_name in project_interest_breakdown.keys():
+                row_data = {'Interest Source': f"{project_name} Financing"}
+                row_data[hist_col] = 0  # No historical breakdown
+                
+                for year in years:
+                    # Get interest expense from the loaded schedule
+                    project_interest = project_interest_breakdown[project_name].get(year, 0)
+                    row_data[str(year)] = project_interest
+                    project_interest_total_by_year[year] += project_interest
+                
+                interest_rows.append(row_data)
+            
+            # Total Interest Expense row (same as Total Project Financing if no other sources)
+            if project_cogs_breakdown:
+                total_interest_row = {'Interest Source': 'TOTAL INTEREST EXPENSE'}
+                total_interest_row[hist_col] = 0  # No historical breakdown
+                for year in years:
+                    total_interest_row[str(year)] = project_interest_total_by_year[year]
+                interest_rows.append(total_interest_row)
+            
+            # Create DataFrame for Interest Expense
+            interest_df = pd.DataFrame(interest_rows)
+            
+            st.write("**Interest Expense by Source (Billion VND)**")
+            
+            # Style function to highlight total and subtotal rows
+            def highlight_interest_rows(row):
+                source = str(row['Interest Source'])
+                if 'TOTAL INTEREST' in source:
+                    return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
+                elif 'Total Project' in source:
+                    return ['font-weight: bold'] * len(row)
+                else:
+                    return [''] * len(row)
+            
+            # Define column configuration for consistent width
+            interest_column_config = {
+                'Interest Source': st.column_config.TextColumn('Interest Source', width='medium'),
+            }
+            for col in [hist_col] + [str(y) for y in years]:
+                interest_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+            
+            st.dataframe(
+                interest_df.style
+                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .apply(highlight_interest_rows, axis=1),
+                use_container_width=True,
+                column_config=interest_column_config,
+                hide_index=True
+            )
+            
+            # Section 4.6: Debt Management
+            st.markdown("---")
+            st.subheader("💳 Debt Management")
+            
+            # Get historical data if available
+            historical_data = st.session_state.get('historical_data')
+            
+            # Initialize debt management data
+            debt_mgmt_rows = []
+            
+            # Determine the latest historical year
+            latest_hist_year = None
+            hist_values = {}
+            
+            if historical_data is not None and not historical_data.empty:
+                # Get 2024 data from annual dataset
+                latest_date_idx = None
+                
+                # Check if base_year exists in the index
+                if str(base_year) in historical_data.index:
+                    latest_date_idx = str(base_year)
+                    latest_hist_year = base_year
+                elif base_year in historical_data.index:
+                    latest_date_idx = base_year
+                    latest_hist_year = base_year
+                    
+                    if latest_date_idx is not None:
+                        # Extract values from historical data - using correct column names from FA_processed.csv
+                        # Cash and Cash Equivalents
+                        if 'Cash' in historical_data.columns:
+                            hist_values['Cash and cash equivalents'] = historical_data.loc[latest_date_idx, 'Cash']
+                        elif 'Cash_Equivalent' in historical_data.columns:
+                            cash_equiv = historical_data.loc[latest_date_idx, 'Cash_Equivalent']
+                            hist_values['Cash and cash equivalents'] = cash_equiv
+                        else:
+                            hist_values['Cash and cash equivalents'] = 0
+                        
+                        # Short-term investment - might not be directly available
+                        hist_values['Short-term investment'] = 0  # Default as this is often not separated
+                        
+                        # Short-term debt
+                        if 'ST_Debt' in historical_data.columns:
+                            hist_values['Short-term debt'] = historical_data.loc[latest_date_idx, 'ST_Debt']
+                        else:
+                            hist_values['Short-term debt'] = 0
+                        
+                        # Long-term debt
+                        if 'LT_Debt' in historical_data.columns:
+                            hist_values['Long-term debt'] = historical_data.loc[latest_date_idx, 'LT_Debt']
+                        else:
+                            hist_values['Long-term debt'] = 0
+                        
+                        # Interest expense
+                        if 'Interest_Expense' in historical_data.columns:
+                            hist_values['Interest expense'] = abs(historical_data.loc[latest_date_idx, 'Interest_Expense'])
+                        else:
+                            hist_values['Interest expense'] = 0
+                        
+                        # Convert to billions VND
+                        for key in hist_values:
+                            if hist_values[key] and not pd.isna(hist_values[key]):
+                                hist_values[key] = hist_values[key] / 1e9  # Convert to billions
+                            else:
+                                hist_values[key] = 0
+            
+            # Create columns for display (use consistent format with other tables)
+            debt_display_years = ['2024H'] + [str(y) for y in years]
+            
+            # Row 1: Cash and cash equivalents
+            cash_row = {'Item': 'Cash and cash equivalents'}
+            cash_row['2024H'] = hist_values.get('Cash and cash equivalents', 100)
+            for year in years:
+                # For now, keep historical value or use default
+                base_value = hist_values.get('Cash and cash equivalents', 100) if hist_values else 100
+                growth_rate = 1.05  # 5% growth assumption
+                years_ahead = year - (latest_hist_year if latest_hist_year else years[0] - 1)
+                cash_row[str(year)] = base_value * (growth_rate ** years_ahead)
+            debt_mgmt_rows.append(cash_row)
+            
+            # Row 2: Short-term investment
+            st_inv_row = {'Item': 'Short-term investment'}
+            st_inv_row['2024H'] = hist_values.get('Short-term investment', 50)
+            for year in years:
+                base_value = hist_values.get('Short-term investment', 50) if hist_values else 50
+                growth_rate = 1.03  # 3% growth assumption
+                years_ahead = year - (latest_hist_year if latest_hist_year else years[0] - 1)
+                st_inv_row[str(year)] = base_value * (growth_rate ** years_ahead)
+            debt_mgmt_rows.append(st_inv_row)
+            
+            # Row 3: Short-term debt
+            st_debt_row = {'Item': 'Short-term debt'}
+            st_debt_row['2024H'] = hist_values.get('Short-term debt', 200)
+            for year in years:
+                base_value = hist_values.get('Short-term debt', 200) if hist_values else 200
+                # Short-term debt might fluctuate with working capital needs
+                st_debt_row[str(year)] = base_value * (1 + 0.1 * ((year - years[0]) / len(years)))
+            debt_mgmt_rows.append(st_debt_row)
+            
+            # Row 4: Long-term debt
+            lt_debt_row = {'Item': 'Long-term debt'}
+            lt_debt_row['2024H'] = hist_values.get('Long-term debt', 500)
+            for year in years:
+                base_value = hist_values.get('Long-term debt', 500) if hist_values else 500
+                # Long-term debt might increase with project financing
+                lt_debt_row[str(year)] = base_value * (1 + 0.15 * ((year - years[0]) / len(years)))
+            debt_mgmt_rows.append(lt_debt_row)
+            
+            # Row 5: Interest expense
+            int_expense_row = {'Item': 'Interest expense'}
+            int_expense_row['2024H'] = hist_values.get('Interest expense', 40)
+            for year in years:
+                # Calculate based on net debt and interest rate
+                cash = cash_row[str(year)]
+                st_inv = st_inv_row[str(year)]
+                st_debt = st_debt_row[str(year)]
+                lt_debt = lt_debt_row[str(year)]
+                net_debt = st_debt + lt_debt - cash - st_inv
+                
+                # Use historical interest rate or default
+                if latest_hist_year and hist_values.get('Interest expense', 0) > 0:
+                    hist_net_debt = (hist_values.get('Short-term debt', 0) + hist_values.get('Long-term debt', 0) - 
+                                   hist_values.get('Cash and cash equivalents', 0) - hist_values.get('Short-term investment', 0))
+                    if hist_net_debt > 0:
+                        implied_rate = hist_values['Interest expense'] / hist_net_debt
+                    else:
+                        implied_rate = 0.07  # Default 7%
+                else:
+                    implied_rate = 0.07  # Default 7%
+                
+                int_expense_row[str(year)] = max(0, net_debt * implied_rate)
+            debt_mgmt_rows.append(int_expense_row)
+            
+            # Row 6: Net Debt
+            net_debt_row = {'Item': 'Net Debt'}
+            # Calculate for historical year
+            net_debt_row['2024H'] = (st_debt_row['2024H'] + lt_debt_row['2024H'] - 
+                                    cash_row['2024H'] - st_inv_row['2024H'])
+            # Calculate for forecast years
+            for year in years:
+                year_str = str(year)
+                net_debt_row[year_str] = (st_debt_row[year_str] + lt_debt_row[year_str] - 
+                                         cash_row[year_str] - st_inv_row[year_str])
+            debt_mgmt_rows.append(net_debt_row)
+            
+            # Row 7: Interest expense rate
+            int_rate_row = {'Item': 'Interest expense rate (%)'}
+            # Calculate for historical year
+            if net_debt_row['2024H'] > 0:
+                int_rate_row['2024H'] = (int_expense_row['2024H'] / net_debt_row['2024H']) * 100
+            else:
+                int_rate_row['2024H'] = 0
+            # Calculate for forecast years
+            for year in years:
+                year_str = str(year)
+                if net_debt_row[year_str] > 0:
+                    int_rate_row[year_str] = (int_expense_row[year_str] / net_debt_row[year_str]) * 100
+                else:
+                    int_rate_row[year_str] = 0
+            debt_mgmt_rows.append(int_rate_row)
+            
+            # Create DataFrame
+            debt_mgmt_df = pd.DataFrame(debt_mgmt_rows)
+            
+            # Format the dataframe for display
+            st.write("**Debt Management (Billion VND)**")
+            
+            # Simple approach - format the DataFrame values before styling
+            formatted_df = debt_mgmt_df.copy()
+            
+            # Format numeric columns
+            for col in debt_display_years:
+                col_str = col
+                if col_str in formatted_df.columns:
+                    # Format as numbers with 1 decimal, except for Interest expense rate
+                    formatted_df[col_str] = formatted_df.apply(
+                        lambda row: f"{row[col_str]:.1f}%" if row['Item'] == 'Interest expense rate (%)' 
+                        else f"{row[col_str]:.1f}", 
+                        axis=1
+                    )
+            
+            # Apply highlighting for Net Debt and Interest expense rate rows
+            def highlight_important_rows(row):
+                if row['Item'] in ['Net Debt', 'Interest expense rate (%)']:
+                    return ['font-weight: bold'] * len(row)
+                return [''] * len(row)
+            
+            styled_df = formatted_df.style.apply(highlight_important_rows, axis=1)
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            
+            # Add explanation
+            st.caption("Net Debt = Short-term debt + Long-term debt - Cash and cash equivalents - Short-term investment")
+            st.caption("Interest expense rate = Interest expense / Net Debt")
+            
+            # Section 5: Comprehensive P&L with Interest Expense (moved here from below)
+            st.markdown("---")
+            st.subheader("💰 Comprehensive P&L Statement")
+            
+            # Calculate interest expense for all projects
+            project_interest_by_year = {}
+            cumulative_debt = 0
+            debt_financing_pct = company_assumptions.get('debt_financing_pct', 0.30)  # Default 30%
+            
+            for year in years:
+                year_str = str(year)
+                total_interest = 0
+                
+                # Aggregate interest from all projects
+                for _, project in df_projects.iterrows():
+                    # Check if project has saved interest schedule
+                    interest_schedule = project.get('interest_schedule', {})
+                    if isinstance(interest_schedule, dict) and year_str in interest_schedule:
+                        total_interest += interest_schedule[year_str]
+                    else:
+                        # Simple fallback calculation
+                        cost_of_debt = 0.08  # Default 8%
+                        capital_needs = (project_cogs_by_year[year])
+                        new_debt = capital_needs * debt_financing_pct
+                        cumulative_debt += new_debt
+                        revenue_this_year = project_revenue_by_year[year]
+                        debt_repayment = min(cumulative_debt, revenue_this_year * 0.7)
+                        cumulative_debt = max(0, cumulative_debt - debt_repayment)
+                        total_interest += cumulative_debt * cost_of_debt
+                
+                project_interest_by_year[year] = total_interest
+            
+            # Calculate SG&A expenses
+            sga_by_year = {}
+            for year in years:
+                # SG&A for projects (typically 8% of project revenue)
+                project_sga = project_revenue_by_year[year] * 0.08
+                
+                # SG&A for other segments
+                other_sga = 0
+                for segment_name in st.session_state.base_year_revenues.keys():
+                    if segment_name in segment_metrics:
+                        sga_pct = segment_metrics[segment_name]['sga_percentage']
+                    else:
+                        sga_pct = 0.15  # Default 15%
+                    
+                    # Calculate segment revenue for the year
+                    base_revenue = st.session_state.base_year_revenues[segment_name]
+                    if segment_name in segment_metrics:
+                        growth_rate = segment_metrics[segment_name]['revenue_growth']
+                    else:
+                        growth_rate = 0.1
+                    
+                    # Base year is the latest historical year, apply growth from there
+                    years_from_base = year - base_year
+                    segment_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+                    
+                    other_sga += segment_revenue * sga_pct
+                
+                sga_by_year[year] = project_sga + other_sga
+            
+            # Create comprehensive P&L (rows = P&L items, columns = years including historical)
+            # Get totals from the DataFrames
+            total_revenue_row = revenue_df[revenue_df['Revenue Source'] == 'TOTAL REVENUE'].iloc[0]
+            total_cogs_row = cogs_df[cogs_df['COGS Source'] == 'TOTAL COGS'].iloc[0]
+            total_gp_row = gross_profit_df[gross_profit_df['Gross Profit Source'] == 'TOTAL GROSS PROFIT'].iloc[0]
+            total_sga_row = sga_df[sga_df['SG&A Source'] == 'TOTAL SG&A'].iloc[0]
+            total_interest_row = interest_df[interest_df['Interest Source'] == 'TOTAL INTEREST EXPENSE'].iloc[0]
+            
+            # Create P&L rows
+            pnl_rows = []
+            
+            # Store segment data for saving
+            segment_revenue_data = {}
+            segment_cogs_data = {}
+            
+            # Revenue breakdown
+            # Real Estate Revenue (from projects)
+            re_revenue_row = {'P&L Item': '  Real Estate Revenue'}
+            re_revenue_row[hist_col] = 0  # No historical breakdown
+            for year in years:
+                re_revenue_row[str(year)] = project_revenue_by_year[year]
+            pnl_rows.append(re_revenue_row)
+            
+            # Individual Business Segments Revenue
+            for segment_name in st.session_state.base_year_revenues.keys():
+                segment_row = {'P&L Item': f'  {segment_name}'}
+                segment_row[hist_col] = st.session_state.base_year_revenues[segment_name]  # Base year revenue
+                
+                # Initialize segment data storage
+                if segment_name not in segment_revenue_data:
+                    segment_revenue_data[segment_name] = {}
+                
+                for year in years:
+                    year_str = str(year)
+                    base_revenue = st.session_state.base_year_revenues[segment_name]
+                    if segment_name in segment_metrics:
+                        growth_rate = segment_metrics[segment_name]['revenue_growth']
+                    else:
+                        growth_rate = 0.1
+                    years_from_base = year - base_year
+                    segment_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+                    segment_row[year_str] = segment_revenue
+                    segment_revenue_data[segment_name][year_str] = segment_revenue
+                
+                pnl_rows.append(segment_row)
+            
+            # Total Revenue row
+            revenue_row = {'P&L Item': 'Net Revenue'}
+            revenue_row[hist_col] = total_revenue_row[hist_col]  # Add historical
+            for year in years:
+                revenue_row[str(year)] = total_revenue_row[str(year)]
+            pnl_rows.append(revenue_row)
+            
+            # COGS breakdown
+            # Real Estate COGS
+            re_cogs_row = {'P&L Item': '  Real Estate COGS'}
+            re_cogs_row[hist_col] = 0  # No historical breakdown
+            for year in years:
+                re_cogs_row[str(year)] = project_cogs_by_year[year]  # Already negative
+            pnl_rows.append(re_cogs_row)
+            
+            # Individual Business Segments COGS
+            for segment_name in st.session_state.base_year_revenues.keys():
+                cogs_row = {'P&L Item': f'  {segment_name} COGS'}
+                
+                # Initialize segment COGS data storage
+                if segment_name not in segment_cogs_data:
+                    segment_cogs_data[segment_name] = {}
+                
+                # Get metrics
+                if segment_name in segment_metrics:
+                    gross_margin = segment_metrics[segment_name]['gross_margin']
+                else:
+                    gross_margin = 0.3
+                
+                # Historical COGS
+                base_revenue = st.session_state.base_year_revenues[segment_name]
+                cogs_row[hist_col] = -base_revenue * (1 - gross_margin)  # Negative
+                
+                # Forecast COGS
+                for year in years:
+                    year_str = str(year)
+                    # Get revenue for this year (already calculated above)
+                    segment_revenue = segment_revenue_data[segment_name][year_str]
+                    segment_cogs = -segment_revenue * (1 - gross_margin)  # Negative
+                    cogs_row[year_str] = segment_cogs
+                    segment_cogs_data[segment_name][year_str] = segment_cogs
+                
+                pnl_rows.append(cogs_row)
+            
+            # Total COGS row (negative values)
+            total_cogs_pnl_row = {'P&L Item': 'Total COGS'}
+            total_cogs_pnl_row[hist_col] = total_cogs_row[hist_col]  # Add historical
+            for year in years:
+                total_cogs_pnl_row[str(year)] = total_cogs_row[str(year)]
+            pnl_rows.append(total_cogs_pnl_row)
+            
+            # Gross Profit row
+            gp_row = {'P&L Item': 'Gross Profit'}
+            gp_row[hist_col] = total_gp_row[hist_col]  # Add historical
+            for year in years:
+                gp_row[str(year)] = total_gp_row[str(year)]
+            pnl_rows.append(gp_row)
+            
+            # SG&A row (negative values)
+            sga_row = {'P&L Item': 'SG&A'}
+            sga_row[hist_col] = total_sga_row[hist_col]  # Add historical
+            for year in years:
+                sga_row[str(year)] = total_sga_row[str(year)]
+            pnl_rows.append(sga_row)
+            
+            # EBITDA row (GP + SG&A where SG&A is negative)
+            ebitda_row = {'P&L Item': 'EBITDA'}
+            ebitda_row[hist_col] = total_gp_row[hist_col] + total_sga_row[hist_col]  # Add historical
+            for year in years:
+                year_str = str(year)
+                # Since SG&A is negative, we add it (not subtract)
+                ebitda_row[year_str] = total_gp_row[year_str] + total_sga_row[year_str]
+            pnl_rows.append(ebitda_row)
+            
+            # Interest Expense row (negative values)
+            interest_row = {'P&L Item': 'Interest Expense'}
+            interest_row[hist_col] = total_interest_row[hist_col]  # Add historical
+            for year in years:
+                interest_row[str(year)] = total_interest_row[str(year)]
+            pnl_rows.append(interest_row)
+            
+            # PBT row (EBITDA + Interest where Interest is negative)
+            pbt_row = {'P&L Item': 'Profit Before Tax'}
+            pbt_row[hist_col] = ebitda_row[hist_col] + total_interest_row[hist_col]  # Add historical
+            for year in years:
+                year_str = str(year)
+                # Since Interest is negative, we add it (not subtract)
+                pbt_row[year_str] = ebitda_row[year_str] + total_interest_row[year_str]
+            pnl_rows.append(pbt_row)
+            
+            # Tax row
+            tax_row = {'P&L Item': 'Tax (20%)'}
+            tax_row[hist_col] = -max(0, pbt_row[hist_col] * 0.2)  # Add historical as negative
+            for year in years:
+                year_str = str(year)
+                pbt_value = pbt_row[year_str]
+                tax_row[year_str] = -max(0, pbt_value * 0.2)  # Tax as negative (expense)
+            pnl_rows.append(tax_row)
+            
+            # PAT row (PBT + Tax where Tax is negative)
+            pat_row = {'P&L Item': 'Profit After Tax'}
+            pat_row[hist_col] = pbt_row[hist_col] + tax_row[hist_col]  # Add historical
+            for year in years:
+                year_str = str(year)
+                # Since Tax is negative, we add it (not subtract)
+                pat_row[year_str] = pbt_row[year_str] + tax_row[year_str]
+            pnl_rows.append(pat_row)
+            
+            # Create DataFrame
+            pnl_df = pd.DataFrame(pnl_rows)
+            
+            # Load saved forecast for comparison BEFORE displaying table
+            from utils.mongodb_utils import load_company_forecast
+            saved_forecast = load_company_forecast(selected_ticker)
+            
+            # Create a mapping of P&L items to their saved values
+            saved_values_map = {}
+            if saved_forecast:
+                for year_str in saved_forecast.keys():
+                    if year_str not in saved_values_map:
+                        saved_values_map[year_str] = {}
+                    
+                    saved_year = saved_forecast[year_str]
+                    
+                    # Map saved values to P&L row items
+                    saved_values_map[year_str]['  Real Estate Revenue'] = saved_year.get('real_estate_revenue', None)
+                    saved_values_map[year_str]['Net Revenue'] = saved_year.get('net_revenue', None)
+                    saved_values_map[year_str]['  Real Estate COGS'] = saved_year.get('real_estate_cogs', None)
+                    saved_values_map[year_str]['Total COGS'] = saved_year.get('total_cogs', None)
+                    saved_values_map[year_str]['Gross Profit'] = saved_year.get('gross_profit', None)
+                    saved_values_map[year_str]['SG&A'] = saved_year.get('sga', None)
+                    saved_values_map[year_str]['EBITDA'] = saved_year.get('ebitda', None)
+                    saved_values_map[year_str]['Interest Expense'] = saved_year.get('interest_expense', None)
+                    saved_values_map[year_str]['Profit Before Tax'] = saved_year.get('pbt', None)
+                    saved_values_map[year_str]['Tax (20%)'] = saved_year.get('tax', None)
+                    saved_values_map[year_str]['Profit After Tax'] = saved_year.get('pat', None)
+                    
+                    # Map business segments
+                    if 'business_segments' in saved_year:
+                        for segment_name, segment_data in saved_year['business_segments'].items():
+                            saved_values_map[year_str][f'  {segment_name}'] = segment_data.get('revenue', None)
+                            saved_values_map[year_str][f'  {segment_name} COGS'] = segment_data.get('cogs', None)
+            
+            # Create display DataFrame with change indicators
+            display_df = pnl_df.copy()
+            changed_cells = []  # Track cells that have changed for styling
+            
+            # Add change indicators to values
+            for idx, row in pnl_df.iterrows():
+                item = row['P&L Item']
+                for year in years:
+                    year_str = str(year)
+                    if year_str in saved_values_map and item in saved_values_map[year_str]:
+                        current_val = row[year_str]
+                        saved_val = saved_values_map[year_str][item]
+                        
+                        if saved_val is not None and abs(current_val - saved_val) > 0.01:
+                            # Format as "new (old)" for changed values
+                            display_df.at[idx, year_str] = f"{current_val:.1f}\n({saved_val:.1f})"
+                            changed_cells.append((idx, year_str))
+            
+            # Style function to highlight key rows and changed cells
+            def style_pnl_table(df_style):
+                # Create style DataFrame
+                styles = pd.DataFrame('', index=df_style.index, columns=df_style.columns)
+                
+                # Apply row-level styles
+                for idx, row in df_style.iterrows():
+                    item = pnl_df.iloc[idx]['P&L Item']
+                    if item in ['Net Revenue', 'Total COGS', 'Gross Profit', 'EBITDA', 'Profit After Tax']:
+                        styles.iloc[idx] = 'font-weight: bold'
+                    elif item.startswith('  '):
+                        styles.iloc[idx] = 'padding-left: 20px'
+                
+                # Apply cell-level highlighting for changes
+                for idx, col in changed_cells:
+                    current_style = styles.at[idx, col]
+                    styles.at[idx, col] = f"{current_style}; background-color: #90EE90"  # Light green
+                
+                return styles
+            
+            # Format function for proper display
+            def format_pnl_values(val):
+                if isinstance(val, str) and '\n' in val:
+                    return val  # Already formatted with old value
+                else:
+                    return f"{val:.1f}"
+            
+            st.write("**Comprehensive P&L Statement (Billion VND)**")
+            if changed_cells:
+                st.caption("🟢 Green cells indicate changes from saved forecast (showing: current value / saved value)")
+            
+            # Define column configuration for consistent width
+            pnl_column_config = {
+                'P&L Item': st.column_config.TextColumn('P&L Item', width='medium'),
+            }
+            for col in [hist_col] + [str(y) for y in years]:
+                pnl_column_config[col] = st.column_config.TextColumn(col, width='small')
+            
+            # Apply styling
+            styled_df = display_df.style.apply(lambda x: style_pnl_table(display_df), axis=None)
+            
+            # Format numeric columns
+            for col in [hist_col] + [str(y) for y in years]:
+                styled_df = styled_df.format(format_pnl_values, subset=[col])
+            
+            st.dataframe(
+                styled_df,
+                use_container_width=True,
+                column_config=pnl_column_config,
+                hide_index=True
+            )
+            
+            # Check for changes compared to saved data
+            has_changes = False
+            changed_items = {}  # Track which items have changed for the summary
+            
+            if saved_forecast:
+                # Compare current values with saved values
+                for year in years:
+                    year_str = str(year)
+                    if year_str in saved_forecast:
+                        saved_year = saved_forecast[year_str]
+                        
+                        # Check main P&L items
+                        checks = [
+                            ('real_estate_revenue', re_revenue_row[year_str]),
+                            ('net_revenue', revenue_row[year_str]),
+                            ('real_estate_cogs', re_cogs_row[year_str]),
+                            ('total_cogs', total_cogs_pnl_row[year_str]),
+                            ('gross_profit', gp_row[year_str]),
+                            ('sga', sga_row[year_str]),
+                            ('ebitda', ebitda_row[year_str]),
+                            ('interest_expense', interest_row[year_str]),
+                            ('pbt', pbt_row[year_str]),
+                            ('tax', tax_row[year_str]),
+                            ('pat', pat_row[year_str])
+                        ]
+                        
+                        for key, current_val in checks:
+                            if key in saved_year:
+                                if abs(current_val - saved_year[key]) > 0.01:  # Tolerance for float comparison
+                                    has_changes = True
+                                    if year_str not in changed_items:
+                                        changed_items[year_str] = []
+                                    changed_items[year_str].append(key)
+                        
+                        # Check business segments
+                        if 'business_segments' in saved_year:
+                            for segment_name in st.session_state.base_year_revenues.keys():
+                                if segment_name in saved_year['business_segments']:
+                                    saved_segment = saved_year['business_segments'][segment_name]
+                                    current_revenue = segment_revenue_data[segment_name][year_str]
+                                    current_cogs = segment_cogs_data[segment_name][year_str]
+                                    
+                                    if abs(current_revenue - saved_segment.get('revenue', 0)) > 0.01:
+                                        has_changes = True
+                                        if year_str not in changed_items:
+                                            changed_items[year_str] = []
+                                        changed_items[year_str].append(f'{segment_name}_revenue')
+                                    
+                                    if abs(current_cogs - saved_segment.get('cogs', 0)) > 0.01:
+                                        has_changes = True
+                                        if year_str not in changed_items:
+                                            changed_items[year_str] = []
+                                        changed_items[year_str].append(f'{segment_name}_cogs')
+            
+            # Display change indicator
+            if has_changes:
+                st.warning("⚠️ Unsaved changes detected in the P&L forecast compared to the database")
+                with st.expander("View changes summary"):
+                    for year_str, items in changed_items.items():
+                        st.write(f"**Year {year_str}:** {', '.join(items)}")
+            elif saved_forecast:
+                st.success("✅ P&L forecast matches the saved version in database")
+            
+            # Save forecast to MongoDB button
+            col_save1, col_save2, col_save3 = st.columns([1, 2, 1])
+            with col_save2:
+                button_type = "primary" if has_changes else "secondary"
+                button_label = "💾 Save Changes to Database" if has_changes else "💾 Save to Database"
+                
+                if st.button(button_label, type=button_type, use_container_width=True):
+                    # Prepare forecast data for MongoDB
+                    forecast_data = {}
+                    
+                    for year in years:
+                        year_str = str(year)
+                        
+                        # Extract P&L data for this year
+                        year_pnl = {
+                            'real_estate_revenue': re_revenue_row[year_str],
+                            'net_revenue': revenue_row[year_str],
+                            'real_estate_cogs': re_cogs_row[year_str],
+                            'total_cogs': total_cogs_pnl_row[year_str],
+                            'gross_profit': gp_row[year_str],
+                            'sga': sga_row[year_str],
+                            'ebitda': ebitda_row[year_str],
+                            'interest_expense': interest_row[year_str],
+                            'pbt': pbt_row[year_str],
+                            'tax': tax_row[year_str],
+                            'pat': pat_row[year_str],
+                            # Add individual business segments
+                            'business_segments': {}
+                        }
+                        
+                        # Add each business segment's revenue and COGS
+                        for segment_name in st.session_state.base_year_revenues.keys():
+                            year_pnl['business_segments'][segment_name] = {
+                                'revenue': segment_revenue_data[segment_name][year_str],
+                                'cogs': segment_cogs_data[segment_name][year_str]
+                            }
+                        
+                        forecast_data[year_str] = year_pnl
+                    
+                    # Save to MongoDB
+                    from utils.mongodb_utils import save_company_forecast
+                    result = save_company_forecast(selected_ticker, forecast_data)
+                    
+                    if result['success']:
+                        st.success(f"✅ {result['message']}")
+                        # Store in session state for reference
+                        st.session_state[f'saved_forecast_{selected_ticker}'] = forecast_data
+                        st.rerun()  # Rerun to update the change detection
+                    else:
+                        st.error(f"❌ {result['message']}")
+            
+            # Key metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                avg_revenue_growth = ((total_revenue_row[str(years[-1])] / total_revenue_row[str(years[0])]) ** (1/len(years)) - 1) * 100 if len(years) > 1 else 0
+                st.metric("Avg Revenue Growth", f"{avg_revenue_growth:.1f}%")
+            with col2:
+                # Calculate average gross margin from margin_df
+                overall_margins = []
+                for year in years:
+                    year_str = str(year)
+                    revenue = total_revenue_row[year_str]
+                    if revenue > 0:
+                        gross_profit = total_gp_row[year_str]
+                        overall_margins.append((gross_profit / revenue) * 100)
+                avg_gross_margin = sum(overall_margins) / len(overall_margins) if overall_margins else 0
+                st.metric("Avg Gross Margin", f"{avg_gross_margin:.1f}%")
+            with col3:
+                # Calculate EBITDA margin
+                total_ebitda = sum([ebitda_row[str(y)] for y in years])
+                total_revenue = sum([revenue_row[str(y)] for y in years])
+                avg_ebitda_margin = (total_ebitda / total_revenue * 100) if total_revenue > 0 else 0
+                st.metric("Avg EBITDA Margin", f"{avg_ebitda_margin:.1f}%")
+            with col4:
+                # Calculate PAT margin
+                total_pat = sum([pat_row[str(y)] for y in years])
+                avg_pat_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
+                st.metric("Avg PAT Margin", f"{avg_pat_margin:.1f}%")
+            
+            # Section 6: Visualization Chart (moved to bottom)
+            st.markdown("---")
+            st.subheader("📊 Revenue, COGS, and Gross Profit Visualization")
+            
+            # Create visualization
+            fig = go.Figure()
+            
+            # Extract data for visualization
+            revenue_values = [total_revenue_row[str(y)] for y in years]
+            cogs_values = [total_cogs_row[str(y)] for y in years]  # Already negative
+            gross_profit_values = [total_gp_row[str(y)] for y in years]
+            
+            # Add revenue bars
+            fig.add_trace(go.Bar(
+                name='Total Revenue',
+                x=years,
+                y=revenue_values,
+                marker_color='lightblue',
+                text=[f'{v:.0f}B' for v in revenue_values],
+                textposition='outside'
+            ))
+            
+            # Add COGS bars (show absolute values for visualization but keep negative in data)
+            fig.add_trace(go.Bar(
+                name='Total COGS',
+                x=years,
+                y=[abs(v) for v in cogs_values],  # Show as positive bars for visualization
+                marker_color='lightcoral',
+                text=[f'{v:.0f}B' for v in cogs_values],  # Show actual negative values in text
+                textposition='outside'
+            ))
+            
+            # Add gross profit line
+            fig.add_trace(go.Scatter(
+                name='Gross Profit',
+                x=years,
+                y=gross_profit_values,
+                mode='lines+markers',
+                line=dict(color='green', width=3),
+                marker=dict(size=8),
+                yaxis='y2'
+            ))
+            
+            fig.update_layout(
+                title="Revenue, COGS, and Gross Profit Forecast",
+                xaxis_title="Year",
+                yaxis=dict(title="Billion VND", side='left'),
+                yaxis2=dict(title="Gross Profit (B VND)", overlaying='y', side='right'),
+                barmode='group',
+                height=500,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+        else:
+            st.info("No project data available. Please add projects in the Project Pipeline tab.")
+    
+    def render_total_company_forecast(self):
+        """Render total company revenue forecast combining selected segments only"""
+        st.subheader("📊 Total Company Revenue Forecast")
+        
+        # Get only selected revenue streams
+        if 'selected_streams_data' in st.session_state:
+            revenue_streams = st.session_state.selected_streams_data
+        else:
+            revenue_streams = st.session_state.comprehensive_model.get('revenue_streams', [])
+        current_year = datetime.now().year
+        forecast_years = st.session_state.get('forecast_years', 5)
+        years = list(range(current_year, current_year + forecast_years + 1))
+        
+        # Initialize forecast data
+        forecast_data = {year: {} for year in years}

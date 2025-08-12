@@ -82,7 +82,7 @@ class AIDiscoveryTab:
             return ""
     
     def process_documents(self, uploaded_files):
-        """Process all uploaded documents"""
+        """Process all uploaded documents - analyze business segments first, then extract projects"""
         if not self.client:
             st.error("❌ Claude AI not initialized. Please set ANTHROPIC_API_KEY in your .env file")
             return
@@ -93,7 +93,7 @@ class AIDiscoveryTab:
         status_text = st.empty()
         
         for i, file in enumerate(uploaded_files):
-            progress = min((i + 1) / len(uploaded_files) * 0.3, 0.3)  # 30% for reading, capped at 0.3
+            progress = min((i + 1) / len(uploaded_files) * 0.2, 0.2)  # 20% for reading
             progress_bar.progress(progress)
             status_text.text(f"Reading {file.name}...")
             
@@ -110,11 +110,30 @@ class AIDiscoveryTab:
         
         st.session_state.uploaded_documents = documents
         
-        # Extract real estate projects from EACH document separately
+        # Step 1: Analyze business segments (combine all documents for cost efficiency)
+        progress_bar.progress(0.3)
+        status_text.text("Analyzing business segments...")
+        
+        try:
+            segments_df = self.analyze_business_segments(documents)
+            if not segments_df.empty:
+                st.session_state.business_segments_data = segments_df
+                st.success(f"✅ Business segments analysis complete")
+            else:
+                st.session_state.business_segments_data = None
+                st.info("ℹ️ No business segment data found in documents")
+        except Exception as e:
+            st.warning(f"⚠️ Could not analyze business segments: {str(e)}")
+            st.session_state.business_segments_data = None
+        
+        # Step 2: Extract real estate projects from EACH document separately
+        progress_bar.progress(0.4)
+        status_text.text("Extracting real estate projects...")
+        
         all_projects = []
         for i, doc in enumerate(documents):
-            progress = 0.3 + (i / len(documents)) * 0.5  # Progress from 30% to 80%
-            progress_bar.progress(min(progress, 0.8))  # Ensure it doesn't exceed 0.8
+            progress = 0.4 + (i / len(documents)) * 0.4  # Progress from 40% to 80%
+            progress_bar.progress(min(progress, 0.8))
             status_text.text(f"Extracting projects from {doc['name']}...")
             
             # Process single document
@@ -126,7 +145,7 @@ class AIDiscoveryTab:
                 all_projects.extend(doc_projects)
                 st.info(f"📄 Found {len(doc_projects)} projects in {doc['name']}")
         
-        # Merge all projects from all documents
+        # Step 3: Merge all projects from all documents
         if all_projects:
             progress_bar.progress(0.9)
             status_text.text(f"Merging {len(all_projects)} total projects from all documents...")
@@ -141,12 +160,21 @@ class AIDiscoveryTab:
         progress_bar.empty()
         status_text.empty()
         
-        # Show success message
+        # Show summary of results
         st.success(f"✅ Successfully analyzed {len(documents)} document(s)")
-        if all_projects:
-            st.info(f"🏢 Found {len(merged_projects)} unique real estate projects from {len(all_projects)} total extractions")
-        else:
-            st.warning("⚠️ No projects found. Please check if the documents contain real estate project information.")
+        
+        # Summary metrics
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.session_state.business_segments_data is not None:
+                st.metric("Business Segments Found", 
+                         len([col for col in st.session_state.business_segments_data.columns if col != 'Metric']))
+        with col2:
+            if all_projects:
+                st.metric("Real Estate Projects Found", len(merged_projects))
+        
+        if not all_projects and st.session_state.business_segments_data is None:
+            st.warning("⚠️ No business segments or real estate projects found. Please check if the documents contain relevant information.")
     
     def analyze_business_segments(self, documents: List[Dict[str, str]]) -> pd.DataFrame:
         """Analyze business segments using Claude AI"""
@@ -876,8 +904,224 @@ Return JSON array with merged projects. Start [ end ]
         
         return projects
     
+    def display_segment_assumptions_table(self):
+        """Display and edit assumptions table for business segments"""
+        st.subheader("📝 Business Segment Assumptions")
+        
+        # Use only selected segments
+        segment_names = st.session_state.get('segments_to_add', [])
+        
+        if not segment_names:
+            st.warning("No segments selected. Please select segments from the table above.")
+            return
+        
+        # Create assumptions data
+        assumptions_data = []
+        
+        for segment in segment_names:
+            # Add 4 rows for each segment
+            assumptions_data.append({
+                'Category': 'Business Segment',
+                'Type': 'Base Year Revenue',
+                'Item': segment,
+                'Value': 0,
+                'Unit': 'bn VND'
+            })
+            assumptions_data.append({
+                'Category': 'Business Segment',
+                'Type': 'Revenue Growth',
+                'Item': segment,
+                'Value': 0,
+                'Unit': '%'
+            })
+            assumptions_data.append({
+                'Category': 'Business Segment',
+                'Type': 'Gross Margin',
+                'Item': segment,
+                'Value': 0,
+                'Unit': '%'
+            })
+            assumptions_data.append({
+                'Category': 'Business Segment',
+                'Type': 'SG&A % of Revenue',
+                'Item': segment,
+                'Value': 0,
+                'Unit': '%'
+            })
+        
+        # Create editable dataframe
+        assumptions_df = pd.DataFrame(assumptions_data)
+        
+        # Configure column types for data editor
+        column_config = {
+            "Category": st.column_config.TextColumn("Category", disabled=True),
+            "Type": st.column_config.TextColumn("Type", disabled=True),
+            "Item": st.column_config.TextColumn("Item", disabled=True),
+            "Value": st.column_config.NumberColumn("Value", min_value=0, step=0.1, format="%.1f"),
+            "Unit": st.column_config.TextColumn("Unit", disabled=True)
+        }
+        
+        # Display editable table
+        edited_df = st.data_editor(
+            assumptions_df,
+            column_config=column_config,
+            use_container_width=True,
+            hide_index=True,
+            key="segment_assumptions_editor"
+        )
+        
+        # Save button
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("💾 Save Assumptions to Database", type="primary", use_container_width=True):
+                # Save to session state
+                st.session_state.segment_assumptions = edited_df
+                
+                # Save to MongoDB - MERGE with existing assumptions
+                try:
+                    from utils.mongodb_utils import load_assumptions_from_mongodb, save_assumptions_to_mongodb
+                    
+                    # Get company ticker from session state
+                    company_ticker = st.session_state.get('selected_company', '')
+                    
+                    if company_ticker:
+                        # Load existing assumptions from MongoDB
+                        existing_assumptions = load_assumptions_from_mongodb(company_ticker)
+                        if not existing_assumptions:
+                            existing_assumptions = []
+                        
+                        # Convert new segments dataframe to list of dictionaries
+                        new_segment_assumptions = edited_df.to_dict('records')
+                        
+                        # Extract segment names from new assumptions
+                        new_segments = set()
+                        for assumption in new_segment_assumptions:
+                            if assumption.get('Item'):
+                                new_segments.add(assumption['Item'])
+                        
+                        # Check for existing business segments
+                        existing_business_segments = set()
+                        for existing in existing_assumptions:
+                            if existing.get('Category') == 'Business Segment' and existing.get('Item'):
+                                existing_business_segments.add(existing['Item'])
+                        
+                        # Find conflicts (segments that already exist)
+                        conflicting_segments = new_segments.intersection(existing_business_segments)
+                        
+                        if conflicting_segments:
+                            # Show warning that existing segments will be overwritten
+                            st.warning(f"⚠️ The following business segments already exist and will be overwritten: {', '.join(sorted(conflicting_segments))}")
+                        
+                        # Filter out existing assumptions for the same segments
+                        # Keep only assumptions for segments that are NOT being replaced
+                        merged_assumptions = []
+                        for existing in existing_assumptions:
+                            if existing.get('Category') != 'Business Segment' or existing.get('Item') not in new_segments:
+                                merged_assumptions.append(existing)
+                        
+                        # Add the new segment assumptions
+                        merged_assumptions.extend(new_segment_assumptions)
+                        
+                        # Save merged assumptions to MongoDB
+                        result = save_assumptions_to_mongodb(company_ticker, merged_assumptions)
+                        
+                        if result.get('success', False):
+                            st.success("✅ Business segment assumptions saved to database successfully!")
+                            if conflicting_segments:
+                                st.info(f"Updated {len(conflicting_segments)} existing segment(s) and added {len(new_segments - conflicting_segments)} new segment(s).")
+                            else:
+                                st.info(f"Added {len(new_segments)} new segment(s) to existing assumptions.")
+                        else:
+                            st.error(f"❌ Failed to save to database: {result.get('message', 'Unknown error')}")
+                    else:
+                        st.warning("⚠️ Please select a company first")
+                        
+                except ImportError:
+                    st.warning("⚠️ MongoDB utils not available. Assumptions saved to session only.")
+                    st.info("Navigate to the Assumptions module to view and further edit these assumptions.")
+                except Exception as e:
+                    st.error(f"❌ Error saving to database: {str(e)}")
+                    st.info("Assumptions saved to session. Navigate to the Assumptions module to view them.")
+    
     def display_results(self):
-        """Display extracted real estate projects with selection options"""
+        """Display extracted business segments and real estate projects with selection options"""
+        
+        # Business Segments Table
+        if st.session_state.business_segments_data is not None and not st.session_state.business_segments_data.empty:
+            st.subheader("📊 Business Segments Analysis")
+            
+            # Display the segments dataframe
+            st.dataframe(
+                st.session_state.business_segments_data,
+                use_container_width=True,
+                height=400
+            )
+            
+            # Extract and display detected segments for selection
+            segments_df = st.session_state.business_segments_data
+            
+            # Get unique segment names (exclude Total and other aggregate rows)
+            segment_names = []
+            for metric in segments_df['Metric'].values:
+                if 'Revenue' in metric and 'Total' not in metric:
+                    # Extract segment name from "Segment Name Revenue"
+                    segment_name = metric.replace(' Revenue', '')
+                    if segment_name not in segment_names:
+                        segment_names.append(segment_name)
+            
+            if segment_names:
+                st.subheader("🎯 Select Segments for Assumptions")
+                st.info(f"Found {len(segment_names)} business segment(s). Select which ones to add to assumptions:")
+                
+                # Create selection table
+                segment_selection_data = []
+                for segment in segment_names:
+                    segment_selection_data.append({
+                        'Select': True,  # Default to selected
+                        'Business Segment': segment
+                    })
+                
+                segment_selection_df = pd.DataFrame(segment_selection_data)
+                
+                # Display editable selection table
+                edited_selection = st.data_editor(
+                    segment_selection_df,
+                    column_config={
+                        "Select": st.column_config.CheckboxColumn(
+                            "Select",
+                            help="Check to include this segment in assumptions",
+                            default=True
+                        ),
+                        "Business Segment": st.column_config.TextColumn(
+                            "Business Segment",
+                            disabled=True
+                        )
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                    key="segment_selector"
+                )
+                
+                # Store selected segments
+                st.session_state.selected_segments_df = edited_selection
+            
+            # Add button to convert segments to assumptions
+            if st.button("➕ Add Selected Segments to Assumptions", type="primary", use_container_width=True):
+                if 'selected_segments_df' in st.session_state:
+                    selected = st.session_state.selected_segments_df[st.session_state.selected_segments_df['Select'] == True]
+                    if not selected.empty:
+                        st.session_state.show_segment_assumptions = True
+                        st.session_state.segments_to_add = selected['Business Segment'].tolist()
+                    else:
+                        st.warning("⚠️ Please select at least one segment to add to assumptions")
+                else:
+                    st.warning("⚠️ No segments available to add")
+            
+            # Show assumptions table if button clicked
+            if st.session_state.get('show_segment_assumptions', False):
+                self.display_segment_assumptions_table()
+            
+            st.markdown("---")
         
         # Real Estate Projects Table
         if st.session_state.real_estate_projects:

@@ -326,6 +326,67 @@ def get_project_data(company_ticker, project_name):
     
     return project_data.iloc[0].to_dict()
 
+def save_assumptions_to_mongodb(company_ticker, assumptions_data):
+    """Save business segment assumptions to MongoDB"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return {"success": False, "message": "Failed to connect to MongoDB"}
+        
+        db = client["real_estate_db"]
+        collection = db["business_assumptions"]
+        
+        # Create document
+        document = {
+            "company_ticker": company_ticker,
+            "assumptions": assumptions_data,
+            "last_updated": datetime.datetime.now()
+        }
+        
+        # Check if assumptions exist for this company
+        existing = collection.find_one({"company_ticker": company_ticker})
+        
+        if existing:
+            # Update existing document
+            result = collection.replace_one(
+                {"_id": existing["_id"]}, 
+                document
+            )
+            if result.modified_count > 0:
+                return {"success": True, "message": "Assumptions updated successfully"}
+        else:
+            # Insert new document
+            result = collection.insert_one(document)
+            if result.inserted_id:
+                return {"success": True, "message": "Assumptions saved successfully"}
+        
+        return {"success": False, "message": "No changes made"}
+        
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+def load_assumptions_from_mongodb(company_ticker):
+    """Load business segment assumptions from MongoDB"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return None
+        
+        db = client["real_estate_db"]
+        collection = db["business_assumptions"]
+        
+        # Find assumptions for the company
+        document = collection.find_one({"company_ticker": company_ticker})
+        
+        if document:
+            return document.get("assumptions", [])
+        
+        return None
+        
+    except Exception as e:
+        st.error(f"Error loading assumptions: {str(e)}")
+        return None
+
 def save_project_to_mongodb(project_data, project_name, rnav_value=None):
     """Save project data to MongoDB"""
     try:

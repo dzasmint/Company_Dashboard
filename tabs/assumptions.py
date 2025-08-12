@@ -9,6 +9,9 @@ class AssumptionsTab:
     
     def __init__(self, parent):
         self.parent = parent
+        # Initialize model_assumptions in session state if not exists
+        if 'model_assumptions' not in st.session_state:
+            st.session_state.model_assumptions = {}
     
     def render(self):
         """Render enhanced assumptions interface with business segment support"""
@@ -23,6 +26,17 @@ class AssumptionsTab:
         if not selected_ticker:
             st.info("Please select a company from the sidebar to manage assumptions")
             return
+        
+        # Check if ticker has changed
+        if 'last_assumptions_ticker' not in st.session_state:
+            st.session_state.last_assumptions_ticker = None
+        
+        if st.session_state.last_assumptions_ticker != selected_ticker:
+            # Ticker changed, force reload from MongoDB
+            if 'model_assumptions' in st.session_state and selected_ticker in st.session_state.model_assumptions:
+                del st.session_state.model_assumptions[selected_ticker]
+            st.session_state.refresh_assumptions = True
+            st.session_state.last_assumptions_ticker = selected_ticker
         
         st.markdown(f"Managing assumptions for **{selected_ticker}**")
         
@@ -40,19 +54,23 @@ class AssumptionsTab:
         with st.expander("📚 How to Define Business Segments", expanded=False):
             st.markdown("""
             **Business Segment Structure:**
-            - Each business segment should have 3 key assumptions:
-              1. **Revenue Growth** - Annual growth rate (%)
-              2. **Gross Margin** - Gross profit margin (%)
-              3. **SG&A % of Revenue** - Selling, General & Admin as % of revenue
+            - Each business segment should have 4 key assumptions:
+              1. **Base Year Revenue** - Starting revenue (billion VND)
+              2. **Revenue Growth** - Annual growth rate (%)
+              3. **Gross Margin** - Gross profit margin (%)
+              4. **SG&A % of Revenue** - Selling, General & Admin as % of revenue
             
-            **Example for Brokerage segment:**
+            **Example (if you have a Brokerage segment):**
+            - Category: `Business Segment`, Type: `Base Year Revenue`, Item: `Brokerage`, Value: `100`, Unit: `bn VND`
             - Category: `Business Segment`, Type: `Revenue Growth`, Item: `Brokerage`, Value: `15`, Unit: `%`
             - Category: `Business Segment`, Type: `Gross Margin`, Item: `Brokerage`, Value: `60`, Unit: `%`
             - Category: `Business Segment`, Type: `SG&A % of Revenue`, Item: `Brokerage`, Value: `25`, Unit: `%`
             
+            **Note:** Business segments are optional. Use the AI Discovery tab to extract segments from documents or add them manually.
+            
             **How to use:**
             - **Category**: Select "Business Segment" for revenue stream assumptions
-            - **Type**: Choose the metric type (Revenue Growth, Gross Margin, or SG&A % of Revenue)
+            - **Type**: Choose the metric type (Base Year Revenue, Revenue Growth, Gross Margin, or SG&A % of Revenue)
             - **Item**: Enter the business segment name (e.g., "Brokerage", "Property Management")
             - **Value**: Enter the numeric value
             - **Unit**: Select the appropriate unit (usually "%")
@@ -62,26 +80,35 @@ class AssumptionsTab:
     
     def _load_assumptions(self, selected_ticker):
         """Load assumptions with vectorized operations"""
-        from utils.mongodb_utils import get_company_assumptions
+        from utils.mongodb_utils import load_assumptions_from_mongodb
         
-        assumptions_key = f"editable_assumptions_{selected_ticker}"
+        # Initialize model_assumptions if not exists
+        if 'model_assumptions' not in st.session_state:
+            st.session_state.model_assumptions = {}
         
-        # Initialize or load assumptions data
-        if assumptions_key not in st.session_state or st.session_state.get('refresh_assumptions', False):
-            # Load from MongoDB
-            company_assumptions = get_company_assumptions(selected_ticker)
-            
-            # Build assumptions data using vectorized operations
-            assumptions_data = self._build_assumptions_data(company_assumptions)
-            
-            # Store in session state
-            st.session_state[assumptions_key] = pd.DataFrame(assumptions_data)
-            st.session_state.refresh_assumptions = False
+        # Check if we have assumptions for this ticker
+        if selected_ticker not in st.session_state.model_assumptions or st.session_state.get('refresh_assumptions', False):
+            with st.spinner(f"Loading assumptions for {selected_ticker}..."):
+                # Try to load from MongoDB first
+                mongodb_assumptions = load_assumptions_from_mongodb(selected_ticker)
+                
+                if mongodb_assumptions:
+                    # Use MongoDB data
+                    st.session_state.model_assumptions[selected_ticker] = mongodb_assumptions
+                    st.toast(f"✅ Loaded saved assumptions for {selected_ticker}", icon="✅")
+                else:
+                    # Use default assumptions
+                    st.session_state.model_assumptions[selected_ticker] = self._get_default_assumptions()
+                    st.toast(f"📦 Using default assumptions for {selected_ticker}", icon="📦")
+                
+                st.session_state.refresh_assumptions = False
         
-        # Get current assumptions DataFrame
-        assumptions_df = st.session_state[assumptions_key]
-        if not isinstance(assumptions_df, pd.DataFrame):
-            assumptions_df = pd.DataFrame(assumptions_df)
+        # Get current assumptions as DataFrame
+        assumptions_data = st.session_state.model_assumptions.get(selected_ticker, [])
+        if not isinstance(assumptions_data, list):
+            assumptions_data = []
+        
+        assumptions_df = pd.DataFrame(assumptions_data)
         
         return assumptions_df
     
@@ -154,76 +181,169 @@ class AssumptionsTab:
         return segment_data
     
     def _get_default_assumptions(self):
-        """Get default assumptions if none exist"""
+        """Get default assumptions - only financial items, no business segments"""
         return [
             {"Category": "Financial", "Type": "N/A", "Item": "WACC", "Value": 12.0, "Unit": "%"},
             {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 30.0, "Unit": "%"},
-            {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"},
-            {"Category": "Business Segment", "Type": "Revenue Growth", "Item": "Brokerage", "Value": 15.0, "Unit": "%"},
-            {"Category": "Business Segment", "Type": "Gross Margin", "Item": "Brokerage", "Value": 60.0, "Unit": "%"},
-            {"Category": "Business Segment", "Type": "SG&A % of Revenue", "Item": "Brokerage", "Value": 25.0, "Unit": "%"},
-            {"Category": "Business Segment", "Type": "Revenue Growth", "Item": "Property Management", "Value": 20.0, "Unit": "%"},
-            {"Category": "Business Segment", "Type": "Gross Margin", "Item": "Property Management", "Value": 45.0, "Unit": "%"},
-            {"Category": "Business Segment", "Type": "SG&A % of Revenue", "Item": "Property Management", "Value": 30.0, "Unit": "%"}
+            {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"}
         ]
     
     def _render_assumptions_editor(self, selected_ticker, assumptions_df):
-        """Render the assumptions editor with form wrapper"""
+        """Render the assumptions editor without form wrapper for direct editing"""
         st.subheader("📊 Assumptions Table")
-        st.info("💡 **How to use:** Click any cell to edit | Use '+' button to add rows | Select row(s) and press Delete/Backspace to remove | Click 'Apply Changes' to save edits")
+        st.info("💡 **How to use:** Click any cell to edit | Use '+' button to add rows | Select row(s) and press Delete/Backspace to remove | Changes auto-save")
         
-        editor_key = f"assumptions_editor_{selected_ticker}_v2"
+        editor_key = f"assumptions_editor_{selected_ticker}_direct"
         
-        # Use a form to batch updates and prevent double-entry issues
-        with st.form(key=f"assumptions_form_{selected_ticker}"):
-            # Create DataFrame with proper handling
-            if not assumptions_df.empty:
-                # Ensure all required columns exist
-                if 'Type' not in assumptions_df.columns:
-                    assumptions_df['Type'] = 'N/A'
-                
-                # Use Streamlit's data editor
-                edited_df = st.data_editor(
-                    assumptions_df,
-                    hide_index=True,
-                    use_container_width=True,
-                    num_rows="dynamic",
-                    column_config=self._get_column_config(),
-                    column_order=["Category", "Type", "Item", "Value", "Unit"],
-                    key=editor_key
+        # Prepare data with Type column
+        if assumptions_df.empty:
+            # Create default empty dataframe with only financial items
+            assumptions_df = pd.DataFrame([
+                {"Category": "Financial", "Type": "N/A", "Item": "WACC", "Value": 12.0, "Unit": "%"},
+                {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 30.0, "Unit": "%"},
+                {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"}
+            ])
+        elif 'Type' not in assumptions_df.columns:
+            assumptions_df['Type'] = 'N/A'
+        
+        # Direct data editor without form
+        edited_df = st.data_editor(
+            assumptions_df,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="dynamic",
+            column_config={
+                "Category": st.column_config.SelectboxColumn(
+                    "Category",
+                    options=["Business Segment", "Financial", "Operating", "Other"],
+                    required=True,
+                    width="medium"
+                ),
+                "Type": st.column_config.SelectboxColumn(
+                    "Type",
+                    options=["Base Year Revenue", "Revenue Growth", "Gross Margin", "SG&A % of Revenue", "N/A"],
+                    required=True,
+                    default="N/A",
+                    help="For Business Segments: Select one of the 4 metrics. For others: Use N/A",
+                    width="medium"  
+                ),
+                "Item": st.column_config.TextColumn(
+                    "Item",
+                    required=True,
+                    help="Business segment or assumption name",
+                    width="large"
+                ),
+                "Value": st.column_config.NumberColumn(
+                    "Value",
+                    min_value=0,
+                    max_value=100000,
+                    step=0.1,
+                    format="%.2f",
+                    width="small"
+                ),
+                "Unit": st.column_config.SelectboxColumn(
+                    "Unit",
+                    options=["%", "bn VND", "million VND", "x", "days", "years"],
+                    required=True,
+                    width="small"
                 )
-            else:
-                # Show empty data editor
-                st.info("No assumptions defined. Click 'Load Defaults' below or use the table to add new assumptions.")
-                empty_df = pd.DataFrame(columns=["Category", "Type", "Item", "Value", "Unit"])
-                edited_df = st.data_editor(
-                    empty_df,
-                    hide_index=True,
-                    use_container_width=True,
-                    num_rows="dynamic",
-                    column_config=self._get_column_config(),
-                    key=editor_key
-                )
-            
-            # Form buttons
-            col1, col2, col3 = st.columns([1, 1, 1])
-            
-            with col1:
-                apply_changes = st.form_submit_button("💾 Apply Changes", type="primary")
-            
-            with col2:
-                load_defaults = st.form_submit_button("🔄 Load Defaults")
-            
-            with col3:
-                clear_all = st.form_submit_button("🗑️ Clear All")
-        
-        # Handle form submissions
-        self._handle_form_submissions(
-            selected_ticker, edited_df, apply_changes, load_defaults, clear_all
+            },
+            column_order=["Category", "Type", "Item", "Value", "Unit"],
+            key=editor_key
         )
         
+        # Auto-save to session state
+        if edited_df is not None:
+            if 'model_assumptions' not in st.session_state:
+                st.session_state.model_assumptions = {}
+            st.session_state.model_assumptions[selected_ticker] = edited_df.to_dict('records')
+        
+        # Action buttons
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔄 Load Defaults", use_container_width=True):
+                if 'model_assumptions' not in st.session_state:
+                    st.session_state.model_assumptions = {}
+                st.session_state.model_assumptions[selected_ticker] = self._get_default_assumptions()
+                st.rerun()
+        
+        with col2:
+            if st.button("💾 Save to Database", use_container_width=True):
+                try:
+                    from utils.mongodb_utils import save_assumptions_to_mongodb
+                    result = save_assumptions_to_mongodb(selected_ticker, edited_df.to_dict('records'))
+                    if result.get('success'):
+                        st.success("✅ Saved to database!")
+                    else:
+                        st.error(f"Error: {result.get('message')}")
+                except Exception as e:
+                    st.error(f"Error saving: {str(e)}")
+        
+        with col3:
+            if st.button("🔁 Reload from Database", use_container_width=True):
+                from utils.mongodb_utils import load_assumptions_from_mongodb
+                
+                # Force reload from MongoDB
+                with st.spinner(f"Reloading assumptions for {selected_ticker}..."):
+                    mongodb_assumptions = load_assumptions_from_mongodb(selected_ticker)
+                    
+                    if 'model_assumptions' not in st.session_state:
+                        st.session_state.model_assumptions = {}
+                    
+                    if mongodb_assumptions:
+                        st.session_state.model_assumptions[selected_ticker] = mongodb_assumptions
+                        st.success(f"✅ Reloaded assumptions from database for {selected_ticker}")
+                    else:
+                        # If no data in database, load defaults
+                        st.session_state.model_assumptions[selected_ticker] = self._get_default_assumptions()
+                        st.info(f"📦 No saved assumptions found, loaded defaults for {selected_ticker}")
+                    
+                    st.rerun()
+        
         # Display business segments summary
-        self._display_segments_summary(assumptions_df)
+        self._display_segments_summary(edited_df)
+        
+        # Add new business segment section
+        st.markdown("---")
+        st.subheader("➕ Add New Business Segment")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            new_segment_name = st.text_input(
+                "Business Segment Name",
+                placeholder="Enter segment name (e.g., Brokerage, Property Management)",
+                key=f"new_segment_{selected_ticker}"
+            )
+        
+        with col2:
+            if st.button("Add New Business Segment", type="primary", use_container_width=True):
+                if new_segment_name and new_segment_name.strip():
+                    # Add 4 rows for the new segment
+                    new_segment_assumptions = [
+                        {"Category": "Business Segment", "Type": "Base Year Revenue", "Item": new_segment_name.strip(), "Value": 0.0, "Unit": "bn VND"},
+                        {"Category": "Business Segment", "Type": "Revenue Growth", "Item": new_segment_name.strip(), "Value": 0.0, "Unit": "%"},
+                        {"Category": "Business Segment", "Type": "Gross Margin", "Item": new_segment_name.strip(), "Value": 0.0, "Unit": "%"},
+                        {"Category": "Business Segment", "Type": "SG&A % of Revenue", "Item": new_segment_name.strip(), "Value": 0.0, "Unit": "%"}
+                    ]
+                    
+                    # Get current assumptions
+                    current_assumptions = st.session_state.model_assumptions.get(selected_ticker, [])
+                    if not isinstance(current_assumptions, list):
+                        current_assumptions = edited_df.to_dict('records') if edited_df is not None else []
+                    
+                    # Add new segment assumptions
+                    current_assumptions.extend(new_segment_assumptions)
+                    
+                    # Update session state
+                    if 'model_assumptions' not in st.session_state:
+                        st.session_state.model_assumptions = {}
+                    st.session_state.model_assumptions[selected_ticker] = current_assumptions
+                    
+                    st.success(f"✅ Added business segment: {new_segment_name.strip()}")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Please enter a business segment name")
     
     def _get_column_config(self):
         """Get column configuration for data editor"""
@@ -237,7 +357,7 @@ class AssumptionsTab:
             ),
             "Type": st.column_config.SelectboxColumn(
                 "Type",
-                options=["Revenue Growth", "Gross Margin", "SG&A % of Revenue", "N/A"],
+                options=["Base Year Revenue", "Revenue Growth", "Gross Margin", "SG&A % of Revenue", "N/A"],
                 required=True,
                 default="Revenue Growth",
                 help="Select metric type for business segments",
@@ -261,7 +381,7 @@ class AssumptionsTab:
             ),
             "Unit": st.column_config.SelectboxColumn(
                 "Unit",
-                options=["%", "x", "days", "years", "B VND"],
+                options=["%", "bn VND", "x", "days", "years", "B VND"],
                 required=True,
                 default="%",
                 width="small"
