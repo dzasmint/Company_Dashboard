@@ -621,72 +621,11 @@ Return JSON array with merged projects. Start [ end ]
             # Display table
             st.dataframe(df, use_container_width=True, height=400)
             
-            # Download buttons
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Download summary CSV
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    "📥 Download Summary (CSV)",
-                    data=csv,
-                    file_name=f"projects_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-            
-            with col2:
-                # Download full data with all fields
-                full_df = pd.DataFrame(projects)
-                full_csv = full_df.to_csv(index=False)
-                st.download_button(
-                    "📥 Download Full Data (All Fields)",
-                    data=full_csv,
-                    file_name=f"projects_full_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-            
-            # Show data quality info
-            with st.expander("📊 Data Quality Information"):
-                na_summary = pd.DataFrame({
-                    'Field': df.columns,
-                    'Available': [(df[col] != 'N/A').sum() for col in df.columns],
-                    'Missing': [(df[col] == 'N/A').sum() for col in df.columns],
-                    'Completeness %': [((df[col] != 'N/A').sum() / len(df) * 100) for col in df.columns]
-                })
-                na_summary['Completeness %'] = na_summary['Completeness %'].apply(lambda x: f"{x:.0f}%")
-                st.dataframe(na_summary, use_container_width=True)
-            
-            # Show full project details
-            with st.expander("🔍 View Complete Project Details"):
-                for i, proj in enumerate(projects):
-                    st.markdown(f"### 📍 Project {i+1}: **{proj.get('project_name', 'Unknown Project')}**")
-                    
-                    # Organize fields by category
-                    categories = {
-                        "Basic Info": ['location', 'developer', 'project_type', 'data_source'],
-                        "Area & Size": ['land_area_sqm', 'gfa_sqm', 'nsa_sqm', 'site_area', 'construction_area'],
-                        "Units": ['total_units', 'apartments', 'townhouses', 'villas', 'shophouses', 'commercial_units', 'unit_mix'],
-                        "Financial": ['avg_selling_price', 'price_range', 'total_revenue_bn_vnd', 'construction_cost_bn_vnd', 'land_cost_bn_vnd', 'total_investment', 'revenue_recognition', 'inventory_value'],
-                        "Timeline": ['launch_date', 'construction_start', 'construction_end', 'handover_date', 'sales_start', 'presales_date'],
-                        "Status": ['development_status', 'construction_progress', 'sales_status', 'units_sold', 'remaining_units'],
-                        "Legal": ['legal_status', 'ownership_structure', 'ownership_duration', 'permits'],
-                        "Other": ['floors', 'blocks', 'facilities', 'contractor', 'architect', 'notes']
-                    }
-                    
-                    # Display by category
-                    cols = st.columns(2)
-                    col_idx = 0
-                    
-                    for category, fields in categories.items():
-                        has_data = any(proj.get(field) and proj.get(field) != 'N/A' for field in fields)
-                        if has_data:
-                            with cols[col_idx % 2]:
-                                st.markdown(f"**{category}:**")
-                                for field in fields:
-                                    value = proj.get(field)
-                                    if value and value != 'N/A':
-                                        field_name = field.replace('_', ' ').title()
-                                        st.write(f"• {field_name}: {value}")
-                            col_idx += 1
-                    
-                    st.markdown("---")
+            # Single download button for the displayed data
+            csv = df.to_csv(index=False)
+            st.download_button(
+                "📥 Download Projects (CSV)",
+                data=csv,
+                file_name=f"real_estate_projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
