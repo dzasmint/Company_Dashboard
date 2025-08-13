@@ -7,29 +7,10 @@ from datetime import datetime
 
 
 class ProjectPipelineRealEstateTab:
-    """Project Pipeline tab specifically for Real Estate Financial Model - OPTIMIZED"""
+    """Project Pipeline tab specifically for Real Estate Financial Model"""
     
     def __init__(self, parent):
         self.parent = parent
-        self._current_year = datetime.now().year
-    
-    @staticmethod
-    def _safe_numeric(value, default=0):
-        """Helper to safely convert to numeric with default"""
-        try:
-            return float(value) if pd.notna(value) else default
-        except (ValueError, TypeError):
-            return default
-    
-    @staticmethod
-    def _format_number(value, decimals=0):
-        """Helper to format numbers with thousand separator"""
-        try:
-            if pd.notna(value) and value != 0:
-                return f"{float(value):,.{decimals}f}"
-            return "-"
-        except (ValueError, TypeError):
-            return "-"
         
     def render(self):
         """Render project pipeline and timeline"""
@@ -88,16 +69,19 @@ class ProjectPipelineRealEstateTab:
             avg_price = df_projects['average_selling_price'].mean() if 'average_selling_price' in df_projects.columns else 0
             st.metric("Avg Price/sqm", f"{avg_price:,.0f}M VND")
         
-        # Project timeline visualization - OPTIMIZED with vectorized operations
+        # Project timeline visualization
         st.subheader("Project Timeline")
         
-        # Vectorized timeline data creation - more efficient than loop
-        timeline_df = pd.DataFrame({
-            'Project': df_projects['project_name'],
-            'Start': df_projects.get('construction_start_year', 2025).fillna(2025).astype(int),
-            'End': df_projects.get('project_completion_year', 2028).fillna(2028).astype(int),
-            'Revenue Start': df_projects.get('revenue_booking_start_year', 2026).fillna(2026).astype(int)
-        })
+        timeline_data = []
+        for _, project in df_projects.iterrows():
+            timeline_data.append({
+                'Project': project['project_name'],
+                'Start': project.get('construction_start_year', 2025),
+                'End': project.get('project_completion_year', 2028),
+                'Revenue Start': project.get('revenue_booking_start_year', 2026)
+            })
+        
+        timeline_df = pd.DataFrame(timeline_data)
         
         # Create Gantt chart
         fig = go.Figure()
@@ -149,11 +133,13 @@ class ProjectPipelineRealEstateTab:
         # Create display dataframe
         display_df = df_projects[available_columns].copy()
         
-        # Format numeric columns - OPTIMIZED with helper method
-        format_cols = ['net_sellable_area', 'average_selling_price', 'rnav_value']
-        for col in format_cols:
-            if col in display_df.columns:
-                display_df[col] = display_df[col].apply(lambda x: self._format_number(x, 0))
+        # Format numeric columns
+        if 'net_sellable_area' in display_df.columns:
+            display_df['net_sellable_area'] = display_df['net_sellable_area'].apply(lambda x: f"{x:,.0f}")
+        if 'average_selling_price' in display_df.columns:
+            display_df['average_selling_price'] = display_df['average_selling_price'].apply(lambda x: f"{x:,.0f}")
+        if 'rnav_value' in display_df.columns:
+            display_df['rnav_value'] = display_df['rnav_value'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
         
         st.dataframe(display_df, use_container_width=True)
         
@@ -189,33 +175,18 @@ class ProjectPipelineRealEstateTab:
             st.plotly_chart(fig, use_container_width=True)
     
     def calculate_project_revenues(self, df_projects):
-        """Calculate revenue forecast for all projects - OPTIMIZED"""
+        """Calculate revenue forecast for all projects"""
+        revenue_data = []
         current_year = datetime.now().year
         
-        # Pre-process dataframe with vectorized operations
-        df = df_projects.copy()
-        
-        # Ensure numeric types and fill NaN values efficiently
-        numeric_cols = ['revenue_booking_start_year', 'project_completion_year', 
-                       'net_sellable_area', 'average_selling_price']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(
-                    current_year if 'year' in col else 0
-                )
-        
-        # Calculate total revenue using vectorized operation
-        df['total_revenue'] = df.get('net_sellable_area', 0) * df.get('average_selling_price', 0)
-        
-        revenue_data = []
-        
-        # Process only projects with revenue
-        valid_projects = df[df['total_revenue'] > 0]
-        
-        for _, project in valid_projects.iterrows():
+        for _, project in df_projects.iterrows():
             revenue_start = int(project.get('revenue_booking_start_year', current_year))
             project_end = int(project.get('project_completion_year', current_year + 3))
-            total_revenue = project['total_revenue']
+            
+            # Calculate total revenue
+            nsa = float(project.get('net_sellable_area', 0) or 0)
+            asp = float(project.get('average_selling_price', 0) or 0)
+            total_revenue = nsa * asp
             
             # Get revenue distribution
             revenue_dist = project.get('revenue_distribution', {})
@@ -801,7 +772,7 @@ class ProjectPipelineRealEstateTab:
             # Total Units
             total_units = st.number_input(
                 "Total Units",
-                value=int(self._safe_numeric(project_data.get('total_units'), 0)),
+                value=int(project_data.get('total_units', 0) or 0),
                 min_value=0,
                 step=1,
                 format="%,d",
