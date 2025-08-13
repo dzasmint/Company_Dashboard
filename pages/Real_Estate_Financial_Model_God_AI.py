@@ -238,6 +238,7 @@ class RealEstateFinancialModel:
                 "AI Project Discovery", 
                 "Assumptions",
                 "Project Pipeline",
+                "Balance Sheet Analysis",
                 "Revenue Forecast",
                 "Valuation",
                 "Research Insights",
@@ -564,15 +565,17 @@ class RealEstateFinancialModel:
             self.render_assumptions_interface()
         elif selected_tab == tab_names[3]:  # Project Pipeline
             self.render_project_pipeline()
-        elif selected_tab == tab_names[4]:  # Revenue Forecast
+        elif selected_tab == tab_names[4]:  # Balance Sheet Analysis
+            self.render_balance_sheet_analysis()
+        elif selected_tab == tab_names[5]:  # Revenue Forecast
             self.render_revenue_forecast()
-        elif selected_tab == tab_names[5]:  # Valuation
+        elif selected_tab == tab_names[6]:  # Valuation
             self.render_valuation()
-        elif selected_tab == tab_names[6]:  # Research Insights
+        elif selected_tab == tab_names[7]:  # Research Insights
             self.render_research_insights()
-        elif selected_tab == tab_names[7]:  # Export Model
+        elif selected_tab == tab_names[8]:  # Export Model
             self.render_export_interface()
-        elif selected_tab == tab_names[8]:  # God AI Assistant
+        elif selected_tab == tab_names[9]:  # God AI Assistant
             self.render_god_ai_assistant()
         
     
@@ -3794,6 +3797,14 @@ class RealEstateFinancialModel:
                 })
         
         return pd.DataFrame(project_revenues)
+    
+    def render_balance_sheet_analysis(self):
+        """Render Balance Sheet Analysis interface"""
+        from tabs.balance_sheet_analysis import BalanceSheetAnalysisTab
+        
+        # Initialize and render the balance sheet analysis tab
+        bs_tab = BalanceSheetAnalysisTab()
+        bs_tab.render()
     
     def render_valuation(self):
         """Render simplified valuation analysis based on RNAV and revenue forecasts"""
