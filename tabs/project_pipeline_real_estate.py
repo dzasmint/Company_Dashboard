@@ -76,9 +76,9 @@ class ProjectPipelineRealEstateTab:
         for _, project in df_projects.iterrows():
             timeline_data.append({
                 'Project': project['project_name'],
-                'Start': project.get('construction_start_year', 2025),
-                'End': project.get('project_completion_year', 2028),
-                'Revenue Start': project.get('revenue_booking_start_year', 2026)
+                'Start': project.get('construction_start_year', 9999),
+                'End': project.get('project_completion_year', 9999),
+                'Revenue Start': project.get('revenue_booking_start_year', 9999)
             })
         
         timeline_df = pd.DataFrame(timeline_data)
@@ -262,7 +262,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1,
-                format="%,d",
+                format="%d",
                 key="new_project_units"
             )
             
@@ -280,7 +280,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1,
-                format="%,d",
+                format="%d",
                 key="new_project_land_area"
             )
             
@@ -289,7 +289,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1,
-                format="%,d",
+                format="%d",
                 key="new_project_gfa"
             )
         
@@ -305,7 +305,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1000000,
-                format="%,d",
+                format="%d",
                 key="new_project_asp"
             )
             
@@ -314,7 +314,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1000000,
-                format="%,d",
+                format="%d",
                 key="new_project_construction_cost"
             )
             
@@ -323,7 +323,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1000000,
-                format="%,d",
+                format="%d",
                 key="new_project_land_cost"
             )
         
@@ -331,8 +331,6 @@ class ProjectPipelineRealEstateTab:
             sga_percentage = st.number_input(
                 "SG&A (% of Revenue)",
                 min_value=0.0,
-                max_value=100.0,
-                value=8.0,
                 step=0.1,
                 key="new_project_sga"
             )
@@ -349,8 +347,6 @@ class ProjectPipelineRealEstateTab:
             cost_of_debt = st.number_input(
                 "Cost of Debt (%)",
                 min_value=0.0,
-                max_value=20.0,
-                value=8.0,
                 step=0.1,
                 key="new_project_cost_of_debt"
             )
@@ -365,8 +361,6 @@ class ProjectPipelineRealEstateTab:
         with col5:
             construction_start_year = st.number_input(
                 "Construction Start Year",
-                min_value=2020,
-                max_value=2040,
                 value=current_year,
                 step=1,
                 key="new_project_construction_start"
@@ -375,7 +369,6 @@ class ProjectPipelineRealEstateTab:
             construction_years = st.number_input(
                 "Construction Duration (years)",
                 min_value=1,
-                max_value=10,
                 value=3,
                 step=1,
                 key="new_project_construction_years"
@@ -383,8 +376,6 @@ class ProjectPipelineRealEstateTab:
             
             sale_start_year = st.number_input(
                 "Sales Start Year",
-                min_value=2020,
-                max_value=2040,
                 value=current_year,
                 step=1,
                 key="new_project_sale_start"
@@ -394,7 +385,6 @@ class ProjectPipelineRealEstateTab:
             sales_years = st.number_input(
                 "Sales Duration (years)",
                 min_value=1,
-                max_value=10,
                 value=3,
                 step=1,
                 key="new_project_sales_years"
@@ -402,8 +392,6 @@ class ProjectPipelineRealEstateTab:
             
             revenue_booking_start_year = st.number_input(
                 "Revenue Booking Start Year",
-                min_value=2020,
-                max_value=2040,
                 value=current_year + 1,
                 step=1,
                 key="new_project_revenue_start"
@@ -411,8 +399,6 @@ class ProjectPipelineRealEstateTab:
             
             project_completion_year = st.number_input(
                 "Project Completion Year",
-                min_value=2020,
-                max_value=2040,
                 value=current_year + 3,
                 step=1,
                 key="new_project_completion"
@@ -687,11 +673,11 @@ class ProjectPipelineRealEstateTab:
         defaults = {
             'revenue_distribution': {},
             'presales_distribution': {},
-            'sga_percentage': 0.08,
-            'cost_of_debt': 0.08,
-            'wacc_rate': 0.12,
-            'sales_years': 3,
-            'construction_years': 3
+            'sga_percentage': 0.0,
+            'cost_of_debt': 0.0,
+            'wacc_rate': 0.0,
+            'sales_years': 1,
+            'construction_years': 1
         }
         
         for key, default_value in defaults.items():
@@ -702,7 +688,7 @@ class ProjectPipelineRealEstateTab:
                 if not isinstance(project_data[key], dict):
                     project_data[key] = default_value
         
-        st.subheader(f"🏗️ Project: {project_name}")
+        st.subheader(f"Project: {project_name}")
         
         # Add AI Suggestion button
         col_ai, col_space = st.columns([2, 3])
@@ -775,7 +761,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('total_units', 0) or 0),
                 min_value=0,
                 step=1,
-                format="%,d",
+                format="%d",
                 key="edit_total_units"
             )
             # Show AI suggestion inline if available
@@ -828,7 +814,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('average_selling_price', 0) or 0),
                 min_value=0,
                 step=1000000,
-                format="%,d",
+                format="%d",
                 key="edit_asp"
             )
             # Show AI suggestion inline if available
@@ -846,7 +832,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('land_area', 0) or 0),
                 min_value=0,
                 step=1,
-                format="%,d",
+                format="%d",
                 key="edit_land_area"
             )
             # Show AI suggestion inline if available
@@ -864,7 +850,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('construction_cost_per_sqm', 0) or 0),
                 min_value=0,
                 step=1000000,
-                format="%,d",
+                format="%d",
                 key="edit_const_cost"
             )
             # Show AI suggestion inline if available
@@ -882,7 +868,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('land_cost_per_sqm', 0) or 0),
                 min_value=0,
                 step=1000000,
-                format="%,d",
+                format="%d",
                 key="edit_land_cost"
             )
             # Show AI suggestion inline if available
@@ -900,7 +886,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('gross_floor_area', 0) or 0),
                 min_value=0,
                 step=1,
-                format="%,d",
+                format="%d",
                 key="edit_gfa"
             )
             # Show AI suggestion inline if available
@@ -942,8 +928,6 @@ class ProjectPipelineRealEstateTab:
             sales_start = st.number_input(
                 "Sales Start Year",
                 value=int(project_data.get('sale_start_year', datetime.now().year) or datetime.now().year),
-                min_value=2000,  # Allow historical years
-                max_value=2040,
                 key="edit_sales_start"
             )
             st.session_state.edited_project['sale_start_year'] = sales_start
@@ -951,8 +935,6 @@ class ProjectPipelineRealEstateTab:
             sales_years = st.number_input(
                 "Sales Duration (years)",
                 value=int(project_data.get('sales_years', 3) or 3),
-                min_value=1,
-                max_value=10,
                 key="edit_sales_years"
             )
             st.session_state.edited_project['sales_years'] = sales_years
@@ -962,8 +944,6 @@ class ProjectPipelineRealEstateTab:
             revenue_start = st.number_input(
                 "Revenue Booking Start Year",
                 value=int(project_data.get('revenue_booking_start_year', datetime.now().year + 1) or datetime.now().year + 1),
-                min_value=2000,  # Allow historical years
-                max_value=2040,
                 key="edit_revenue_start"
             )
             st.session_state.edited_project['revenue_booking_start_year'] = revenue_start
@@ -971,8 +951,6 @@ class ProjectPipelineRealEstateTab:
             completion_year = st.number_input(
                 "Project Completion Year (Revenue Booking End Year)",
                 value=int(project_data.get('project_completion_year', datetime.now().year + 3) or datetime.now().year + 3),
-                min_value=2000,  # Allow historical years
-                max_value=2040,
                 key="edit_completion"
             )
             st.session_state.edited_project['project_completion_year'] = completion_year
@@ -981,8 +959,6 @@ class ProjectPipelineRealEstateTab:
             land_payment = st.number_input(
                 "Land Payment Year",
                 value=int(project_data.get('land_payment_year', const_start) or const_start),
-                min_value=2000,  # Allow historical years
-                max_value=2040,
                 key="edit_land_payment"
             )
             st.session_state.edited_project['land_payment_year'] = land_payment
@@ -992,7 +968,6 @@ class ProjectPipelineRealEstateTab:
                 "WACC Rate",
                 value=float(project_data.get('wacc_rate', 0.12) or 0.12),
                 min_value=0.0,
-                max_value=1.0,
                 step=0.01,
                 format="%.2f",
                 key="edit_wacc"
@@ -1004,7 +979,6 @@ class ProjectPipelineRealEstateTab:
                 "SG&A as % of Revenue",
                 value=float(project_data.get('sga_percentage', 0.08) or 0.08),
                 min_value=0.0,
-                max_value=0.5,
                 step=0.01,
                 format="%.2f",
                 key="edit_sga_pct"
@@ -1016,7 +990,6 @@ class ProjectPipelineRealEstateTab:
                 "Cost of Debt (Interest Rate)",
                 value=float(project_data.get('cost_of_debt', 0.08) or 0.08),
                 min_value=0.0,
-                max_value=0.5,
                 step=0.01,
                 format="%.2f",
                 key="edit_cost_of_debt"
@@ -1288,7 +1261,7 @@ class ProjectPipelineRealEstateTab:
         
         
         # Calculate RNAV if requested
-        if st.button("🧮 Calculate RNAV", key="calc_rnav"):
+        if st.button("Calculate RNAV", key="calc_rnav"):
             try:
                 current_year = datetime.now().year
                 project_start = min(
