@@ -1326,25 +1326,28 @@ class RealEstateFinancialModel:
             
             average_unit_size = st.number_input(
                 "Average Unit Size (sqm)",
-                min_value=0.0,
-                value=0.0,
-                step=0.1,
+                min_value=0,
+                value=0,
+                step=1,
+                format="%d",
                 key="new_project_unit_size"
             )
             
             land_area = st.number_input(
                 "Land Area (sqm)",
-                min_value=0.0,
-                value=0.0,
-                step=0.1,
+                min_value=0,
+                value=0,
+                step=1,
+                format="%d",
                 key="new_project_land_area"
             )
             
             gross_floor_area = st.number_input(
                 "Gross Floor Area (sqm)",
-                min_value=0.0,
-                value=0.0,
-                step=0.1,
+                min_value=0,
+                value=0,
+                step=1,
+                format="%d",
                 key="new_project_gfa"
             )
         
@@ -1357,28 +1360,28 @@ class RealEstateFinancialModel:
         with col3:
             average_selling_price = st.number_input(
                 "Average Selling Price (VND/sqm)",
-                min_value=0.0,
-                value=0.0,
-                step=1000000.0,
-                format="%.0f",
+                min_value=0,
+                value=0,
+                step=1000000,
+                format="%d",
                 key="new_project_asp"
             )
             
             construction_cost_per_sqm = st.number_input(
                 "Construction Cost (VND/sqm)",
-                min_value=0.0,
-                value=0.0,
-                step=100000.0,
-                format="%.0f",
+                min_value=0,
+                value=0,
+                step=1000000,
+                format="%d",
                 key="new_project_construction_cost"
             )
             
             land_cost_per_sqm = st.number_input(
                 "Land Cost (VND/sqm)",
-                min_value=0.0,
-                value=0.0,
-                step=100000.0,
-                format="%.0f",
+                min_value=0,
+                value=0,
+                step=1000000,
+                format="%d",
                 key="new_project_land_cost"
             )
         
@@ -1840,11 +1843,13 @@ class RealEstateFinancialModel:
                     st.caption(f"AI Suggestion: {ai_suggestions['total_units']} units")
             st.session_state.edited_project['total_units'] = total_units
             
-            # Average Unit Size
+            # Average Unit Size - Format as integer with increment of 1
             avg_unit_size = st.number_input(
                 "Average Unit Size (m²)",
-                value=float(project_data.get('average_unit_size', 0) or 0),
-                min_value=0.0,
+                value=int(project_data.get('average_unit_size', 0) or 0),
+                min_value=0,
+                step=1,
+                format="%d",
                 key="edit_avg_unit_size"
             )
             # Show AI suggestion inline if available
@@ -1873,12 +1878,13 @@ class RealEstateFinancialModel:
             st.session_state.edited_project['project_ownership'] = ownership
         
         with col2:
-            # Average Selling Price
+            # Average Selling Price - Format as integer with comma, increment 1,000,000
             asp = st.number_input(
                 "Average Selling Price (VND/m²)",
-                value=float(project_data.get('average_selling_price', 0) or 0),
-                min_value=0.0,
-                format="%.0f",
+                value=int(project_data.get('average_selling_price', 0) or 0),
+                min_value=0,
+                step=1000000,
+                format="%d",
                 key="edit_asp"
             )
             # Show AI suggestion inline if available
@@ -1890,11 +1896,13 @@ class RealEstateFinancialModel:
                     st.caption(f"AI Suggestion: {ai_suggestions['avg_selling_price_per_sqm']} VND/m²")
             st.session_state.edited_project['average_selling_price'] = asp
             
-            # Land Area
+            # Land Area - Format as integer with comma, increment 1
             land_area = st.number_input(
                 "Land Area (m²)",
-                value=float(project_data.get('land_area', 0) or 0),
-                min_value=0.0,
+                value=int(project_data.get('land_area', 0) or 0),
+                min_value=0,
+                step=1,
+                format="%d",
                 key="edit_land_area"
             )
             # Show AI suggestion inline if available
@@ -1906,12 +1914,13 @@ class RealEstateFinancialModel:
                     st.caption(f"AI Suggestion: {ai_suggestions['land_area_sqm']} m²")
             st.session_state.edited_project['land_area'] = land_area
             
-            # Construction Cost per sqm
+            # Construction Cost per sqm - Format as integer with comma, increment 1,000,000
             const_cost = st.number_input(
                 "Construction Cost (VND/m²)",
-                value=float(project_data.get('construction_cost_per_sqm', 0) or 0),
-                min_value=0.0,
-                format="%.0f",
+                value=int(project_data.get('construction_cost_per_sqm', 0) or 0),
+                min_value=0,
+                step=1000000,
+                format="%d",
                 key="edit_const_cost"
             )
             # Show AI suggestion inline if available
@@ -1923,12 +1932,13 @@ class RealEstateFinancialModel:
                     st.caption(f"AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
             st.session_state.edited_project['construction_cost_per_sqm'] = const_cost
             
-            # Land Cost per sqm
+            # Land Cost per sqm - Format as integer with comma, increment 1,000,000
             land_cost = st.number_input(
                 "Land Cost (VND/m²)",
-                value=float(project_data.get('land_cost_per_sqm', 0) or 0),
-                min_value=0.0,
-                format="%.0f",
+                value=int(project_data.get('land_cost_per_sqm', 0) or 0),
+                min_value=0,
+                step=1000000,
+                format="%d",
                 key="edit_land_cost"
             )
             # Show AI suggestion inline if available
@@ -1940,11 +1950,13 @@ class RealEstateFinancialModel:
                     st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
             st.session_state.edited_project['land_cost_per_sqm'] = land_cost
             
-            # GFA
+            # GFA - Format as integer with comma, increment 1
             gfa = st.number_input(
                 "Gross Floor Area (m²)",
-                value=float(project_data.get('gross_floor_area', 0) or 0),
-                min_value=0.0,
+                value=int(project_data.get('gross_floor_area', 0) or 0),
+                min_value=0,
+                step=1,
+                format="%d",
                 key="edit_gfa"
             )
             # Show AI suggestion inline if available
