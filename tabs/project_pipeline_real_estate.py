@@ -332,9 +332,11 @@ class ProjectPipelineRealEstateTab:
             sga_percentage = st.number_input(
                 "SG&A (% of Revenue)",
                 min_value=0.0,
+                value=8.0,
                 step=0.1,
                 key="new_project_sga"
             )
+            
             
             wacc_rate = st.number_input(
                 "WACC (%)",
@@ -420,6 +422,14 @@ class ProjectPipelineRealEstateTab:
                     st.error("Company Ticker is required!")
                     return
                 
+                # Calculate total costs and debt
+                total_construction_cost = gross_floor_area * construction_cost_per_sqm if gross_floor_area and construction_cost_per_sqm else 0
+                total_land_cost = land_area * land_cost_per_sqm if land_area and land_cost_per_sqm else 0
+                total_project_cost = total_construction_cost + total_land_cost
+                
+                # Calculate total debt using default 60% of project cost
+                calculated_total_debt = total_project_cost * 0.6
+                
                 # Prepare project data
                 new_project_data = {
                     'project_name': project_name,
@@ -434,6 +444,7 @@ class ProjectPipelineRealEstateTab:
                     'average_selling_price': average_selling_price,
                     'construction_cost_per_sqm': construction_cost_per_sqm,
                     'land_cost_per_sqm': land_cost_per_sqm,
+                    'total_debt': calculated_total_debt,  # Add total debt field
                     'sga_percentage': sga_percentage / 100,  # Store as decimal
                     'wacc_rate': wacc_rate / 100,  # Store as decimal
                     'cost_of_debt': cost_of_debt / 100,  # Store as decimal
@@ -723,6 +734,9 @@ class ProjectPipelineRealEstateTab:
         self.render_revenue_distribution_editor(project_data)
         
         st.markdown("---")
+        self.render_project_balance_sheet_analysis(project_data)
+        
+        st.markdown("---")
         self.render_project_financial_analysis(project_data)
         
         st.markdown("---")
@@ -951,6 +965,62 @@ class ProjectPipelineRealEstateTab:
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
         st.session_state.edited_project['land_cost_per_sqm'] = land_cost
+        
+        # Total Debt field
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Total Debt (VND)**")
+        with col2:
+            # Calculate default total debt if not present in MongoDB
+            gfa = float(st.session_state.edited_project.get('gross_floor_area', 0) or 0)
+            land_area = float(st.session_state.edited_project.get('land_area', 0) or 0)
+            const_cost_per_sqm = float(st.session_state.edited_project.get('construction_cost_per_sqm', 0) or 0)
+            land_cost_per_sqm = float(st.session_state.edited_project.get('land_cost_per_sqm', 0) or 0)
+            
+            total_const_cost = gfa * const_cost_per_sqm
+            total_land_cost_calc = land_area * land_cost_per_sqm
+            total_project_cost = total_const_cost + total_land_cost_calc
+            
+            # Get debt financing percentage from edited project (fallback to 30%)
+            debt_financing_pct = float(st.session_state.edited_project.get('debt_financing_pct', 0.3) or 0.3)
+            
+            # Calculate default total debt
+            default_total_debt = total_project_cost * debt_financing_pct
+            
+            # Get existing total debt from project data or use calculated default
+            existing_total_debt = project_data.get('total_debt', default_total_debt)
+            
+            # Create detailed tooltip with calculation breakdown
+            tooltip_text = (
+                f"Default Calculation:\n"
+                f"─────────────────────\n"
+                f"Construction Cost: {total_const_cost/1e9:,.1f}B VND\n"
+                f"  = GFA ({gfa:,.0f} m²) × Construction Cost ({const_cost_per_sqm/1e6:,.1f}M VND/m²)\n"
+                f"Land Cost: {total_land_cost_calc/1e9:,.1f}B VND\n"
+                f"  = Land Area ({land_area:,.0f} m²) × Land Cost ({land_cost_per_sqm/1e6:,.1f}M VND/m²)\n"
+                f"─────────────────────\n"
+                f"Total Project Cost: {total_project_cost/1e9:,.1f}B VND\n"
+                f"Debt Financing: {debt_financing_pct*100:.0f}%\n"
+                f"─────────────────────\n"
+                f"Default Total Debt: {default_total_debt/1e9:,.1f}B VND\n"
+                f"  = {total_project_cost/1e9:,.1f}B × {debt_financing_pct*100:.0f}%"
+            )
+            
+            total_debt = st.number_input(
+                "Total Debt (VND)",
+                value=float(existing_total_debt),
+                min_value=0.0,
+                step=1000000000.0,  # 1 billion VND steps
+                format="%.0f",
+                key="edit_total_debt",
+                label_visibility="collapsed",
+                help=tooltip_text
+            )
+            
+            # Show the default calculation for reference
+            if abs(total_debt - default_total_debt) > 1:  # If user has modified from default
+                st.caption(f"📝 Default: {default_total_debt/1e9:,.1f}B VND (Construction + Land) × {debt_financing_pct*100:.0f}%")
+        st.session_state.edited_project['total_debt'] = total_debt
     
     def render_project_timeline(self, project_data):
         """Render project timeline editor"""
@@ -1381,6 +1451,181 @@ class ProjectPipelineRealEstateTab:
             )
             st.plotly_chart(fig, use_container_width=True)
     
+    def render_project_balance_sheet_analysis(self, project_data):
+        """Render balance sheet analysis using project data"""
+        st.subheader("📊 Balance Sheet Analysis")
+        
+        # Import balance sheet manager
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from balance_sheet_manager import generate_simplified_balance_sheet_schedules
+        
+        # Get all parameters from edited project
+        edited = st.session_state.edited_project
+        
+        # Extract project parameters with proper defaults
+        nsa = float(edited.get('net_sellable_area', 0) or 0)
+        asp = float(edited.get('average_selling_price', 0) or 0)
+        gfa = float(edited.get('gross_floor_area', 0) or 0)
+        land_area = float(edited.get('land_area', 0) or 0)
+        const_cost = float(edited.get('construction_cost_per_sqm', 0) or 0)
+        land_cost = float(edited.get('land_cost_per_sqm', 0) or 0)
+        
+        # Calculate totals
+        total_revenue = nsa * asp
+        total_const_cost = gfa * const_cost
+        total_land_cost = land_area * land_cost
+        sga_pct = float(edited.get('sga_percentage', 0.08) or 0.08)
+        
+        # Get timeline parameters
+        const_start = int(edited.get('construction_start_year', 2025) or 2025)
+        const_years = int(edited.get('construction_years', 3) or 3)
+        const_end = const_start + const_years - 1  # Calculate end year from duration
+        
+        land_payment_year = int(edited.get('land_payment_year', const_start) or const_start)
+        
+        # Sales/Presales timeline
+        presales_start = int(edited.get('sale_start_year', const_start) or const_start)
+        sales_years = int(edited.get('sales_years', 3) or 3)
+        presales_end = presales_start + sales_years - 1  # Calculate end year from duration
+        
+        # Get debt parameters
+        # Use total_debt field if available, otherwise calculate from debt financing percentage
+        if 'total_debt' in edited and edited['total_debt']:
+            total_debt = float(edited['total_debt'])
+        else:
+            # Fallback to calculation using debt_financing_pct
+            total_project_cost = total_const_cost + total_land_cost
+            
+            # Use debt_financing_pct from assumptions
+            if 'debt_financing_pct' in edited and edited['debt_financing_pct']:
+                debt_financing_pct = float(edited['debt_financing_pct'])
+                total_debt = total_project_cost * debt_financing_pct
+            else:
+                # Default to 30% debt financing
+                total_debt = total_project_cost * 0.3
+        
+        # Use cost_of_debt instead of interest_rate
+        cost_of_debt = float(edited.get('cost_of_debt', 0.08) or 0.08)
+        
+        # Get revenue recognition timeline
+        revenue_booking_start = int(edited.get('revenue_booking_start_year', const_end) or const_end)
+        project_completion = int(edited.get('project_completion_year', const_end + 1) or const_end + 1)
+        revenue_booking_end = project_completion  # Revenue typically recognized by project completion
+        
+        # Set debt repayment to occur only in the final year of revenue recognition
+        debt_repayment_start = revenue_booking_end  # Repay all debt in final year
+        debt_repayment_end = revenue_booking_end    # Single year repayment
+        
+        # Get distributions if available
+        presales_dist = edited.get('presales_distribution', {})  # Fix: use presales_distribution
+        revenue_dist = edited.get('revenue_distribution', {})  # This is for revenue recognition
+        
+        # Display key balance sheet parameters
+        st.info("📈 **Balance Sheet Parameters** (derived from project data)")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Debt", f"{total_debt/1e9:,.1f}B VND")
+            # Calculate actual debt percentage
+            total_project_cost = total_const_cost + total_land_cost
+            if total_project_cost > 0:
+                actual_debt_pct = (total_debt / total_project_cost) * 100
+                st.caption(f"Debt/Project: {actual_debt_pct:.0f}%")
+            else:
+                st.caption("Debt/Project: N/A")
+        with col2:
+            st.metric("Cost of Debt", f"{cost_of_debt*100:.1f}%")
+            st.caption(f"Repayment: Year {debt_repayment_start}")
+        with col3:
+            st.metric("Construction Period", f"{const_start}-{const_end}")
+        with col4:
+            st.metric("Revenue Recognition", f"{revenue_booking_start}-{revenue_booking_end}")
+        
+        # Run balance sheet analysis button
+        if st.button("🔍 Generate Balance Sheet Schedules", type="primary", use_container_width=True):
+            try:
+                # Generate balance sheet schedules
+                df = generate_simplified_balance_sheet_schedules(
+                    total_debt=total_debt,
+                    total_construction_cost=total_const_cost,
+                    total_land_cost=total_land_cost,
+                    land_payment_year=land_payment_year,
+                    total_revenue=total_revenue,
+                    interest_rate=cost_of_debt,  # Use cost_of_debt for interest calculations
+                    sga_percentage=sga_pct,
+                    construction_start_year=const_start,
+                    construction_end_year=const_end,
+                    sales_start_year=presales_start,
+                    sales_end_year=presales_end,
+                    debt_repayment_start_year=debt_repayment_start,
+                    debt_repayment_end_year=debt_repayment_end,
+                    revenue_booking_start_year=revenue_booking_start,
+                    revenue_booking_end_year=revenue_booking_end,
+                    presales_distribution=presales_dist if presales_dist else None,
+                    revenue_distribution=revenue_dist if revenue_dist else None
+                )
+                
+                # Display Results
+                st.success("✅ Balance sheet analysis completed!")
+                
+                # Format the dataframe for display
+                display_df = df[df['Year'] != 'Total'].copy()
+                
+                # Convert to billions VND for better readability
+                value_columns = [col for col in df.columns if col != 'Year']
+                for col in value_columns:
+                    if col in display_df.columns:
+                        display_df[col] = display_df[col] / 1e9
+                
+                # Transpose the dataframe
+                display_df = display_df.set_index('Year')
+                display_df = display_df.T
+                
+                # Rename index with more readable labels
+                index_labels = {
+                    'Debt_Disbursement': 'Debt Disbursement (Inflow)',
+                    'Debt_Repayment': 'Debt Repayment (Outflow)',
+                    'Debt_Balance': 'Debt Balance (Outstanding)',
+                    'Land_Cost': 'Land Cost',
+                    'Construction_Cost': 'Construction Cost',
+                    'Interest_Capitalized': 'Interest Capitalized',
+                    'Interest_Expense_Cash': 'Interest Expense (P&L)',
+                    'SGA_Expense': 'SG&A Expense (P&L)',
+                    'Inventory_Addition': 'Inventory Addition',
+                    'Inventory_Balance': 'Inventory Balance',
+                    'Revenue_Recognition': 'Revenue Recognition',
+                    'COGS': 'Cost of Goods Sold',
+                    'Cash_Inflow_Presales': 'Cash Inflow (Presales)',
+                    'Cash_Outflow_Land': 'Cash Outflow (Land)',
+                    'Cash_Outflow_Construction': 'Cash Outflow (Construction)',
+                    'Cash_Outflow_Interest': 'Cash Outflow (Interest)',
+                    'Cash_Outflow_SGA': 'Cash Outflow (SG&A)',
+                    'Cash_Balance_Change': 'Cash Balance Change',
+                    'Cumulative_Cash_Balance': 'Cumulative Cash Balance'
+                }
+                display_df.index = display_df.index.map(lambda x: index_labels.get(x, x))
+                display_df.index.name = 'Balance Sheet Item'
+                
+                # Create format dictionary for all year columns
+                format_dict = {col: "{:.1f}" for col in display_df.columns}
+                
+                # Display the balance sheet schedules
+                st.dataframe(
+                    display_df.style.format(format_dict),
+                    use_container_width=True,
+                    height=500
+                )
+                
+                # Store results in session state for potential export
+                st.session_state['project_bs_analysis_results'] = df
+                
+            except Exception as e:
+                st.error(f"❌ Error running balance sheet analysis: {str(e)}")
+        
+        st.markdown("---")
+    
     def render_project_financial_analysis(self, project_data):
         """Render financial analysis including RNAV calculation"""
         st.subheader("Financial Analysis & RNAV Calculation")
@@ -1526,12 +1771,23 @@ class ProjectPipelineRealEstateTab:
                     int(current_year)
                 )
                 
-                # Get RNAV value
-                total_row = df_rnav[df_rnav["Year"] == "Total RNAV"]
-                if not total_row.empty:
-                    rnav_value = total_row["Discounted Cash Flow"].iloc[0] * 1e9
-                else:
-                    rnav_value = df_rnav.loc[df_rnav.index[-1], 'Discounted Cash Flow'] * 1e9
+                # Get RNAV value - handle both cases where Total RNAV row exists or not
+                try:
+                    # Try to get from Total RNAV row
+                    total_row = df_rnav[df_rnav["Year"] == "Total RNAV"]
+                    if not total_row.empty:
+                        rnav_value = float(total_row["Discounted Cash Flow"].iloc[0]) * 1e9
+                    else:
+                        # Get from last numeric year row
+                        numeric_rows = df_rnav[df_rnav["Year"].apply(lambda x: str(x).isdigit())]
+                        if not numeric_rows.empty:
+                            rnav_value = float(numeric_rows.iloc[-1]["Discounted Cash Flow"]) * 1e9
+                        else:
+                            # Fallback to last row
+                            rnav_value = float(df_rnav.iloc[-1]["Discounted Cash Flow"]) * 1e9
+                except Exception as e:
+                    st.error(f"Error extracting RNAV value: {e}")
+                    rnav_value = 0
                 
                 # Display RNAV result
                 st.success(f"🎯 RNAV Calculated Successfully!")
@@ -1551,8 +1807,10 @@ class ProjectPipelineRealEstateTab:
                             delta=f"{(rnav_value - old_rnav)/1e9:,.1f}B"
                         )
                 
-                # Store RNAV in edited project
-                st.session_state.edited_project['rnav_value'] = rnav_value
+                # Store RNAV in both places for consistency (ensure it's a float)
+                rnav_value_float = float(rnav_value) if rnav_value else 0
+                st.session_state.edited_project['rnav_value'] = rnav_value_float
+                st.session_state['last_calculated_rnav'] = rnav_value_float
                 
                 # Display P&L Schedule
                 with st.expander("View P&L Schedule"):
@@ -1609,7 +1867,7 @@ class ProjectPipelineRealEstateTab:
                 if len(changes) > 20:
                     st.write(f"... and {len(changes) - 20} more changes")
         else:
-            st.info("✅ No changes detected")
+            st.info("✅ No changes detected. You can still save to update calculated fields.")
         
         # Get project name for use in buttons
         project_name = edited.get('project_name', project_data.get('project_name', 'Unnamed Project'))
@@ -1618,7 +1876,7 @@ class ProjectPipelineRealEstateTab:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 Save Changes to MongoDB", type="primary", disabled=len(changes) == 0):
+            if st.button("💾 Save Changes to MongoDB", type="primary"):
                 try:
                     # Calculate financial metrics before saving
                     nsa = edited.get('net_sellable_area', 0)
@@ -1672,13 +1930,29 @@ class ProjectPipelineRealEstateTab:
                         # Store P&L schedule in project data
                         edited['pnl_schedule'] = pnl_schedule
                     
+                    # Get RNAV value from either session state or edited project
+                    rnav_to_save = st.session_state.get('last_calculated_rnav', 
+                                                        edited.get('rnav_value', None))
+                    
+                    # Ensure RNAV is a proper number or None
+                    if rnav_to_save is not None:
+                        try:
+                            rnav_to_save = float(rnav_to_save)
+                            # Also ensure it's in the edited data for consistency
+                            edited['rnav_value'] = rnav_to_save
+                        except (TypeError, ValueError):
+                            rnav_to_save = None
+                            edited['rnav_value'] = None
+                    else:
+                        edited['rnav_value'] = None
+                    
                     # Save to MongoDB
                     from utils.mongodb_utils import save_project_to_mongodb
                     
                     result = save_project_to_mongodb(
                         edited,
                         project_name,
-                        rnav_value=st.session_state.get('last_calculated_rnav', None)
+                        rnav_value=rnav_to_save
                     )
                     
                     if result['success']:

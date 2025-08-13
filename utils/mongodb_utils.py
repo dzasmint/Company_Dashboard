@@ -145,6 +145,13 @@ def load_projects_data():
         # Load companies data and merge
         df_companies = load_companies_data()
         if not df_companies.empty:
+            # Check for columns that might conflict and rename them
+            if 'company_name' in df_projects.columns:
+                df_projects = df_projects.rename(columns={'company_name': 'project_company_name'})
+            
+            if 'sector' in df_projects.columns:
+                df_projects = df_projects.rename(columns={'sector': 'project_sector'})
+            
             # Merge projects with company information on company_ticker
             df_merged = df_projects.merge(
                 df_companies[['ticker', 'company_name', 'sector']], 
@@ -152,6 +159,17 @@ def load_projects_data():
                 right_on='ticker', 
                 how='left'
             )
+            
+            # If project had a company_name, use it if the merged one is missing
+            if 'project_company_name' in df_merged.columns:
+                df_merged['company_name'] = df_merged['company_name'].fillna(df_merged['project_company_name'])
+                df_merged = df_merged.drop('project_company_name', axis=1)
+            
+            # If project had a sector, use it if the merged one is missing
+            if 'project_sector' in df_merged.columns:
+                df_merged['sector'] = df_merged['sector'].fillna(df_merged['project_sector'])
+                df_merged = df_merged.drop('project_sector', axis=1)
+            
             # Drop the duplicate ticker column
             if 'ticker' in df_merged.columns:
                 df_merged = df_merged.drop('ticker', axis=1)
@@ -401,18 +419,21 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
         db = client.get_database(db_name)
         collection = db.get_collection(collection_name)
         
-        # Prepare document including location and new financial fields
-        document = {
+        # Start with all fields from project_data to ensure nothing is missed
+        document = project_data.copy()
+        
+        # Ensure required fields are present with defaults
+        document.update({
             "project_name": project_name,
             "company_ticker": project_data.get('company_ticker', 'MANUAL'),
             "company_name": project_data.get('company_name', 'Manual Entry'),
-            "location": project_data.get('location', ''),  # Include location field
-            "project_ownership": project_data.get('project_ownership', 1.0),  # New field for project ownership
+            "location": project_data.get('location', ''),
+            "project_ownership": project_data.get('project_ownership', 1.0),
             "total_units": project_data.get('total_units', 0),
-            "net_sellable_area": project_data.get('total_units', 0) * project_data.get('average_unit_size', 0),
+            "net_sellable_area": project_data.get('net_sellable_area', project_data.get('total_units', 0) * project_data.get('average_unit_size', 0)),
             "average_unit_size": project_data.get('average_unit_size', 0),
             "average_selling_price": project_data.get('average_selling_price', 0),
-            "price_increment_factor": project_data.get('price_increment_factor', 0.0),  # New field for price increment factor
+            "price_increment_factor": project_data.get('price_increment_factor', 0.0),
             "gross_floor_area": project_data.get('gross_floor_area', 0),
             "land_area": project_data.get('land_area', 0),
             "construction_cost_per_sqm": project_data.get('construction_cost_per_sqm', 0),
@@ -426,23 +447,26 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             "project_completion_year": project_data.get('project_completion_year', 2028),
             "sga_percentage": project_data.get('sga_percentage', FINANCIAL_CONFIG['default_sga']),
             "wacc_rate": project_data.get('wacc_rate', FINANCIAL_CONFIG['default_wacc']),
-            "cost_of_debt": project_data.get('cost_of_debt', 0.08),  # New field for cost of debt
-            "rnav_value": rnav_value,
-            # Add new financial fields
+            "cost_of_debt": project_data.get('cost_of_debt', 0.08),
+            "rnav_value": float(rnav_value) if rnav_value is not None else None,
+            # Financial fields
             "total_revenue": project_data.get('total_revenue', 0),
             "total_pat": project_data.get('total_pat', 0),
             "total_pbt": project_data.get('total_pbt', 0),
             "total_construction_cost": project_data.get('total_construction_cost', 0),
             "total_land_cost": project_data.get('total_land_cost', 0),
             "total_sga_cost": project_data.get('total_sga_cost', 0),
-            # Revenue and presales distribution percentages
+            "total_debt": project_data.get('total_debt', 0),
+            "debt_financing_pct": project_data.get('debt_financing_pct', 0.3),
+            # Distribution percentages
             "revenue_distribution": project_data.get('revenue_distribution', {}),
             "presales_distribution": project_data.get('presales_distribution', {}),
-            # P&L schedule contains all financial data by year (revenue, costs, interest, etc.)
+            # P&L schedule
             "pnl_schedule": project_data.get('pnl_schedule', {}),
+            # Timestamps
             "last_updated": datetime.datetime.now(),
             "created_date": datetime.datetime.now()
-        }
+        })
         
         # Check if project exists
         existing = collection.find_one({
