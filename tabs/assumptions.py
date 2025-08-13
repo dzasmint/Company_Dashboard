@@ -185,6 +185,7 @@ class AssumptionsTab:
         return [
             {"Category": "Financial", "Type": "N/A", "Item": "WACC", "Value": 12.0, "Unit": "%"},
             {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 30.0, "Unit": "%"},
+            {"Category": "Financial", "Type": "N/A", "Item": "Cost of Debts", "Value": 8.0, "Unit": "%"},
             {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"}
         ]
     

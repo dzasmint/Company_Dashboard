@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime
+import time
 
 
 class ProjectPipelineRealEstateTab:
@@ -741,260 +742,429 @@ class ProjectPipelineRealEstateTab:
         ai_suggestions_key = f"ai_suggestions_{project_name}"
         ai_suggestions = st.session_state.get(ai_suggestions_key, {})
         
-        col1, col2 = st.columns(2)
+        # Each field on its own row with label and input side by side
         
+        # Project Ownership - moved to top and converted to percentage display
+        col1, col2 = st.columns([1, 3])
         with col1:
-            # Location
+            st.markdown("**Project Ownership (%)**")
+        with col2:
+            # Convert from decimal to percentage for display (0.5 -> 50)
+            ownership_decimal = float(project_data.get('project_ownership', 1.0) or 1.0)
+            ownership_percentage = ownership_decimal * 100
+            
+            ownership_input = st.number_input(
+                "Project Ownership (%)",
+                value=ownership_percentage,
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                format="%.1f",
+                key="edit_ownership_pct",
+                label_visibility="collapsed"
+            )
+            # Convert back from percentage to decimal for storage (50 -> 0.5)
+            ownership_decimal_value = ownership_input / 100.0
+        st.session_state.edited_project['project_ownership'] = ownership_decimal_value
+        
+        # Location
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Location**")
+        with col2:
             location = st.text_input(
                 "Location",
                 value=str(project_data.get('location', '') or ''),
-                key="edit_location"
+                key="edit_location",
+                label_visibility="collapsed"
             )
-            # Show AI suggestion inline if available
             if ai_suggestions.get("location"):
                 st.caption(f"AI Suggestion: {ai_suggestions['location']}")
-            st.session_state.edited_project['location'] = location
-            
-            # Total Units
+        st.session_state.edited_project['location'] = location
+        
+        # Total Units
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Total Units**")
+        with col2:
             total_units = st.number_input(
                 "Total Units",
                 value=int(project_data.get('total_units', 0) or 0),
                 min_value=0,
                 step=1,
                 format="%d",
-                key="edit_total_units"
+                key="edit_total_units",
+                label_visibility="collapsed"
             )
-            # Show AI suggestion inline if available
             if ai_suggestions.get("total_units"):
                 try:
                     ai_units = float(ai_suggestions['total_units'])
                     st.caption(f"AI Suggestion: {ai_units:,.0f} units")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['total_units']} units")
-            st.session_state.edited_project['total_units'] = total_units
-            
-            # Average Unit Size - Format as integer with increment of 1
+        st.session_state.edited_project['total_units'] = total_units
+        
+        # Average Unit Size
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Average Unit Size (m²)**")
+        with col2:
             avg_unit_size = st.number_input(
                 "Average Unit Size (m²)",
                 value=int(project_data.get('average_unit_size', 0) or 0),
                 min_value=0,
                 step=1,
                 format="%d",
-                key="edit_avg_unit_size"
+                key="edit_avg_unit_size",
+                label_visibility="collapsed"
             )
-            # Show AI suggestion inline if available
             if ai_suggestions.get("average_unit_size"):
                 try:
                     ai_size = float(ai_suggestions['average_unit_size'])
                     st.caption(f"AI Suggestion: {ai_size:,.0f} m²")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['average_unit_size']} m²")
-            st.session_state.edited_project['average_unit_size'] = avg_unit_size
-            
-            # Calculate NSA
-            nsa = total_units * avg_unit_size
-            st.info(f"Net Sellable Area: {nsa:,.0f} m²")
-            st.session_state.edited_project['net_sellable_area'] = nsa
-            
-            # Project Ownership
-            ownership = st.number_input(
-                "Project Ownership (0-1)",
-                value=float(project_data.get('project_ownership', 1.0) or 1.0),
-                min_value=0.0,
-                max_value=1.0,
-                step=0.01,
-                key="edit_ownership"
-            )
-            st.session_state.edited_project['project_ownership'] = ownership
+        st.session_state.edited_project['average_unit_size'] = avg_unit_size
         
+        # Calculate and display NSA
+        nsa = total_units * avg_unit_size
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Net Sellable Area**")
         with col2:
-            # Average Selling Price - Format as integer with comma, increment 1,000,000
+            # Use a disabled text input for consistent height with other fields
+            st.text_input(
+                "Net Sellable Area",
+                value=f"{nsa:,.0f} m² (calculated)",
+                disabled=True,
+                key="nsa_display",
+                label_visibility="collapsed"
+            )
+        st.session_state.edited_project['net_sellable_area'] = nsa
+        
+        # Average Selling Price
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Average Selling Price (VND/m²)**")
+        with col2:
             asp = st.number_input(
                 "Average Selling Price (VND/m²)",
                 value=int(project_data.get('average_selling_price', 0) or 0),
                 min_value=0,
                 step=1000000,
                 format="%d",
-                key="edit_asp"
+                key="edit_asp",
+                label_visibility="collapsed"
             )
-            # Show AI suggestion inline if available
             if ai_suggestions.get("avg_selling_price_per_sqm"):
                 try:
                     ai_price = float(ai_suggestions['avg_selling_price_per_sqm'])
                     st.caption(f"AI Suggestion: {ai_price:,.0f} VND/m²")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['avg_selling_price_per_sqm']} VND/m²")
-            st.session_state.edited_project['average_selling_price'] = asp
-            
-            # Land Area - Format as integer with comma, increment 1
+        st.session_state.edited_project['average_selling_price'] = asp
+        
+        # Land Area
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Land Area (m²)**")
+        with col2:
             land_area = st.number_input(
                 "Land Area (m²)",
                 value=int(project_data.get('land_area', 0) or 0),
                 min_value=0,
                 step=1,
                 format="%d",
-                key="edit_land_area"
+                key="edit_land_area",
+                label_visibility="collapsed"
             )
-            # Show AI suggestion inline if available
             if ai_suggestions.get("land_area_sqm"):
                 try:
                     ai_land = float(ai_suggestions['land_area_sqm'])
                     st.caption(f"AI Suggestion: {ai_land:,.0f} m²")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['land_area_sqm']} m²")
-            st.session_state.edited_project['land_area'] = land_area
-            
-            # Construction Cost per sqm - Format as integer with comma, increment 1,000,000
-            const_cost = st.number_input(
-                "Construction Cost (VND/m²)",
-                value=int(project_data.get('construction_cost_per_sqm', 0) or 0),
-                min_value=0,
-                step=1000000,
-                format="%d",
-                key="edit_const_cost"
-            )
-            # Show AI suggestion inline if available
-            if ai_suggestions.get("construction_cost_per_sqm"):
-                try:
-                    ai_const = float(ai_suggestions['construction_cost_per_sqm'])
-                    st.caption(f"AI Suggestion: {ai_const:,.0f} VND/m²")
-                except:
-                    st.caption(f"AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
-            st.session_state.edited_project['construction_cost_per_sqm'] = const_cost
-            
-            # Land Cost per sqm - Format as integer with comma, increment 1,000,000
-            land_cost = st.number_input(
-                "Land Cost (VND/m²)",
-                value=int(project_data.get('land_cost_per_sqm', 0) or 0),
-                min_value=0,
-                step=1000000,
-                format="%d",
-                key="edit_land_cost"
-            )
-            # Show AI suggestion inline if available
-            if ai_suggestions.get("land_cost_per_sqm"):
-                try:
-                    ai_land_cost = float(ai_suggestions['land_cost_per_sqm'])
-                    st.caption(f"AI Suggestion: {ai_land_cost:,.0f} VND/m²")
-                except:
-                    st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
-            st.session_state.edited_project['land_cost_per_sqm'] = land_cost
-            
-            # GFA - Format as integer with comma, increment 1
+        st.session_state.edited_project['land_area'] = land_area
+        
+        # Gross Floor Area
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Gross Floor Area (m²)**")
+        with col2:
             gfa = st.number_input(
                 "Gross Floor Area (m²)",
                 value=int(project_data.get('gross_floor_area', 0) or 0),
                 min_value=0,
                 step=1,
                 format="%d",
-                key="edit_gfa"
+                key="edit_gfa",
+                label_visibility="collapsed"
             )
-            # Show AI suggestion inline if available
             if ai_suggestions.get("total_area_sqm"):
                 try:
                     ai_gfa = float(ai_suggestions['total_area_sqm'])
                     st.caption(f"AI Suggestion: {ai_gfa:,.0f} m²")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['total_area_sqm']} m²")
-            st.session_state.edited_project['gross_floor_area'] = gfa
+        st.session_state.edited_project['gross_floor_area'] = gfa
+        
+        # Construction Cost per sqm
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Construction Cost (VND/m²)**")
+        with col2:
+            const_cost = st.number_input(
+                "Construction Cost (VND/m²)",
+                value=int(project_data.get('construction_cost_per_sqm', 0) or 0),
+                min_value=0,
+                step=1000000,
+                format="%d",
+                key="edit_const_cost",
+                label_visibility="collapsed"
+            )
+            if ai_suggestions.get("construction_cost_per_sqm"):
+                try:
+                    ai_const = float(ai_suggestions['construction_cost_per_sqm'])
+                    st.caption(f"AI Suggestion: {ai_const:,.0f} VND/m²")
+                except:
+                    st.caption(f"AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
+        st.session_state.edited_project['construction_cost_per_sqm'] = const_cost
+        
+        # Land Cost per sqm
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Land Cost (VND/m²)**")
+        with col2:
+            land_cost = st.number_input(
+                "Land Cost (VND/m²)",
+                value=int(project_data.get('land_cost_per_sqm', 0) or 0),
+                min_value=0,
+                step=1000000,
+                format="%d",
+                key="edit_land_cost",
+                label_visibility="collapsed"
+            )
+            if ai_suggestions.get("land_cost_per_sqm"):
+                try:
+                    ai_land_cost = float(ai_suggestions['land_cost_per_sqm'])
+                    st.caption(f"AI Suggestion: {ai_land_cost:,.0f} VND/m²")
+                except:
+                    st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
+        st.session_state.edited_project['land_cost_per_sqm'] = land_cost
     
     def render_project_timeline(self, project_data):
         """Render project timeline editor"""
         st.subheader("Project Timeline")
         
-        col1, col2 = st.columns(2)
+        # Each field on its own row with label and input side by side
         
+        # Construction Start Year
+        col1, col2 = st.columns([1, 3])
         with col1:
-            # Construction timeline
+            st.markdown("**Construction Start Year**")
+        with col2:
             const_start = st.number_input(
                 "Construction Start Year",
                 value=int(project_data.get('construction_start_year', datetime.now().year) or datetime.now().year),
                 min_value=2000,  # Allow historical years
                 max_value=2040,
-                key="edit_const_start"
+                key="edit_const_start",
+                label_visibility="collapsed"
             )
-            st.session_state.edited_project['construction_start_year'] = const_start
-            
+        st.session_state.edited_project['construction_start_year'] = const_start
+        
+        # Construction Duration
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Construction Duration (years)**")
+        with col2:
             const_years = st.number_input(
                 "Construction Duration (years)",
                 value=int(project_data.get('construction_years', 3) or 3),
                 min_value=1,
                 max_value=10,
-                key="edit_const_years"
+                key="edit_const_years",
+                label_visibility="collapsed"
             )
-            st.session_state.edited_project['construction_years'] = const_years
-            
-            # Sales timeline
+        st.session_state.edited_project['construction_years'] = const_years
+        
+        # Sales Start Year
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Sales Start Year**")
+        with col2:
             sales_start = st.number_input(
                 "Sales Start Year",
                 value=int(project_data.get('sale_start_year', datetime.now().year) or datetime.now().year),
-                key="edit_sales_start"
+                min_value=2000,
+                max_value=2040,
+                key="edit_sales_start",
+                label_visibility="collapsed"
             )
-            st.session_state.edited_project['sale_start_year'] = sales_start
-            
+        st.session_state.edited_project['sale_start_year'] = sales_start
+        
+        # Sales Duration
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Sales Duration (years)**")
+        with col2:
             sales_years = st.number_input(
                 "Sales Duration (years)",
                 value=int(project_data.get('sales_years', 3) or 3),
-                key="edit_sales_years"
+                min_value=1,
+                max_value=10,
+                key="edit_sales_years",
+                label_visibility="collapsed"
             )
-            st.session_state.edited_project['sales_years'] = sales_years
+        st.session_state.edited_project['sales_years'] = sales_years
         
+        # Revenue Booking Start Year
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Revenue Booking Start Year**")
         with col2:
-            # Revenue booking timeline
             revenue_start = st.number_input(
                 "Revenue Booking Start Year",
                 value=int(project_data.get('revenue_booking_start_year', datetime.now().year + 1) or datetime.now().year + 1),
-                key="edit_revenue_start"
+                min_value=2000,
+                max_value=2040,
+                key="edit_revenue_start",
+                label_visibility="collapsed"
             )
-            st.session_state.edited_project['revenue_booking_start_year'] = revenue_start
-            
+        st.session_state.edited_project['revenue_booking_start_year'] = revenue_start
+        
+        # Project Completion Year
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Project Completion Year**")
+            st.caption("(Revenue Booking End Year)")
+        with col2:
             completion_year = st.number_input(
-                "Project Completion Year (Revenue Booking End Year)",
+                "Project Completion Year",
                 value=int(project_data.get('project_completion_year', datetime.now().year + 3) or datetime.now().year + 3),
-                key="edit_completion"
+                min_value=2000,
+                max_value=2040,
+                key="edit_completion",
+                label_visibility="collapsed"
             )
-            st.session_state.edited_project['project_completion_year'] = completion_year
-            
-            # Land payment year
+        st.session_state.edited_project['project_completion_year'] = completion_year
+        
+        # Land Payment Year
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Land Payment Year**")
+        with col2:
             land_payment = st.number_input(
                 "Land Payment Year",
                 value=int(project_data.get('land_payment_year', const_start) or const_start),
-                key="edit_land_payment"
+                min_value=2000,
+                max_value=2040,
+                key="edit_land_payment",
+                label_visibility="collapsed"
             )
-            st.session_state.edited_project['land_payment_year'] = land_payment
+        st.session_state.edited_project['land_payment_year'] = land_payment
+        
+        # Financial Parameters Section
+        st.markdown("---")
+        st.markdown("### Financial Parameters (from Assumptions)")
+        
+        # Load assumptions once for all financial parameters
+        from utils.mongodb_utils import load_assumptions_from_mongodb
+        company_ticker = project_data.get('company_ticker', '')
+        assumptions = load_assumptions_from_mongodb(company_ticker)
+        
+        # Helper function to get assumption value
+        # Note: Assumptions are stored as decimal/float values (e.g., 0.12 for 12%)
+        def get_assumption_value(assumptions, name, default_decimal):
+            if assumptions:
+                for assumption in assumptions:
+                    if assumption.get('name') == name:
+                        try:
+                            # Value is already stored as decimal (e.g., 0.12 for 12%)
+                            return float(assumption.get('value', default_decimal))
+                        except (ValueError, TypeError):
+                            return default_decimal
+            return default_decimal
+        
+        # WACC Rate - loaded from Assumptions (non-editable)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**WACC Rate (%)**")
+        with col2:
+            # Get WACC from assumptions
+            wacc_decimal = get_assumption_value(assumptions, 'WACC', 0.12)
+            wacc_percentage = wacc_decimal * 100
             
-            # Financial parameters
-            wacc = st.number_input(
-                "WACC Rate",
-                value=float(project_data.get('wacc_rate', 0.12) or 0.12),
-                min_value=0.0,
-                step=0.01,
-                format="%.2f",
-                key="edit_wacc"
+            # Display as disabled text input
+            st.text_input(
+                "WACC Rate (%)",
+                value=f"{wacc_percentage:.1f}%",
+                disabled=True,
+                key="wacc_display",
+                label_visibility="collapsed",
+                help="To edit this value, go to the Assumptions tab"
             )
-            st.session_state.edited_project['wacc_rate'] = wacc
+        st.session_state.edited_project['wacc_rate'] = wacc_decimal
+        
+        # SG&A Percentage - loaded from Assumptions (non-editable)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**SG&A (% of Revenue)**")
+        with col2:
+            # Get SG&A from assumptions
+            sga_decimal = get_assumption_value(assumptions, 'SG&A % of Revenue', 0.08)
+            sga_percentage = sga_decimal * 100
             
-            # SG&A Percentage
-            sga_pct = st.number_input(
-                "SG&A as % of Revenue",
-                value=float(project_data.get('sga_percentage', 0.08) or 0.08),
-                min_value=0.0,
-                step=0.01,
-                format="%.2f",
-                key="edit_sga_pct"
+            # Display as disabled text input
+            st.text_input(
+                "SG&A (% of Revenue)",
+                value=f"{sga_percentage:.1f}%",
+                disabled=True,
+                key="sga_display",
+                label_visibility="collapsed",
+                help="To edit this value, go to the Assumptions tab"
             )
-            st.session_state.edited_project['sga_percentage'] = sga_pct
+        st.session_state.edited_project['sga_percentage'] = sga_decimal
+        
+        # Debt Financing % - loaded from Assumptions (non-editable)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Debt Financing (% of project)**")
+        with col2:
+            # Get debt financing from assumptions (stored as percentage like others)
+            debt_financing_decimal = get_assumption_value(assumptions, 'Debt Financing %', 0.30)
+            debt_financing_percentage = debt_financing_decimal * 100
             
-            # Cost of Debt
-            cost_of_debt = st.number_input(
-                "Cost of Debt (Interest Rate)",
-                value=float(project_data.get('cost_of_debt', 0.08) or 0.08),
-                min_value=0.0,
-                step=0.01,
-                format="%.2f",
-                key="edit_cost_of_debt"
+            # Display as disabled text input
+            st.text_input(
+                "Debt Financing (%)",
+                value=f"{debt_financing_percentage:.1f}%",
+                disabled=True,
+                key="debt_financing_display",
+                label_visibility="collapsed",
+                help="To edit this value, go to the Assumptions tab"
             )
-            st.session_state.edited_project['cost_of_debt'] = cost_of_debt
+        st.session_state.edited_project['debt_financing_pct'] = debt_financing_decimal
+        
+        # Cost of Debt - loaded from Assumptions (non-editable)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Cost of Debt (%)**")
+        with col2:
+            # Get cost of debt from assumptions
+            cost_of_debt_decimal = get_assumption_value(assumptions, 'Cost of Debt', 0.08)
+            cost_of_debt_percentage = cost_of_debt_decimal * 100
+            
+            # Display as disabled text input
+            st.text_input(
+                "Cost of Debt (%)",
+                value=f"{cost_of_debt_percentage:.1f}%",
+                disabled=True,
+                key="cost_of_debt_display",
+                label_visibility="collapsed",
+                help="To edit this value, go to the Assumptions tab"
+            )
+        st.session_state.edited_project['cost_of_debt'] = cost_of_debt_decimal
     
     def render_revenue_distribution_editor(self, project_data):
         """Render revenue distribution editor with year-by-year percentages"""
@@ -1325,7 +1495,7 @@ class ProjectPipelineRealEstateTab:
                     int(current_year),
                     int(edited.get('revenue_booking_start_year', current_year + 1)),
                     int(edited.get('project_completion_year', current_year + 3)),
-                    -total_const_cost/1e9,
+                    (-total_const_cost-total_land_cost)*edited.get('debt_financing_percentage', 0.3)/1e9,
                     int(edited.get('construction_years', 3)),
                     float(edited.get('cost_of_debt', 0.08)),
                     revenue_dist  # Pass custom revenue distribution
@@ -1441,14 +1611,15 @@ class ProjectPipelineRealEstateTab:
         else:
             st.info("✅ No changes detected")
         
-        # Save button
+        # Get project name for use in buttons
+        project_name = edited.get('project_name', project_data.get('project_name', 'Unnamed Project'))
+        
+        # Save and Delete buttons
         col1, col2, col3 = st.columns(3)
         
         with col1:
             if st.button("💾 Save Changes to MongoDB", type="primary", disabled=len(changes) == 0):
                 try:
-                    # Get project name
-                    project_name = edited.get('project_name', project_data.get('project_name', 'Unnamed Project'))
                     # Calculate financial metrics before saving
                     nsa = edited.get('net_sellable_area', 0)
                     asp = edited.get('average_selling_price', 0)
@@ -1522,9 +1693,39 @@ class ProjectPipelineRealEstateTab:
                 except Exception as e:
                     st.error(f"Error saving project: {str(e)}")
         
+        # Delete button
+        with col2:
+            if st.button("🗑️ Delete from MongoDB", type="secondary", use_container_width=True):
+                # Add confirmation dialog
+                if 'confirm_delete' not in st.session_state:
+                    st.session_state.confirm_delete = True
+                    st.warning(f"⚠️ Are you sure you want to delete '{project_name}'? Click again to confirm.")
+                else:
+                    # Delete the project
+                    from utils.mongodb_utils import delete_project_from_mongodb
+                    company_ticker = project_data.get('company_ticker', '')
+                    result = delete_project_from_mongodb(company_ticker, project_name)
+                    if result['success']:
+                        st.success(f"✅ Project '{project_name}' deleted successfully!")
+                        # Clean up session state
+                        if 'current_editing_project' in st.session_state:
+                            del st.session_state.current_editing_project
+                        if 'edited_project' in st.session_state:
+                            del st.session_state.edited_project
+                        if 'confirm_delete' in st.session_state:
+                            del st.session_state.confirm_delete
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to delete project: {result.get('message', 'Unknown error')}")
+                        if 'confirm_delete' in st.session_state:
+                            del st.session_state.confirm_delete
+        
         # Cancel button
         with col3:
             if st.button("❌ Cancel", use_container_width=True):
                 if 'current_editing_project' in st.session_state:
                     del st.session_state.current_editing_project
+                if 'confirm_delete' in st.session_state:
+                    del st.session_state.confirm_delete
                 st.rerun()
