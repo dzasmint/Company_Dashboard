@@ -262,6 +262,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1,
+                format="%,d",
                 key="new_project_units"
             )
             
@@ -279,7 +280,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1,
-                format="%d",
+                format="%,d",
                 key="new_project_land_area"
             )
             
@@ -288,7 +289,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1,
-                format="%d",
+                format="%,d",
                 key="new_project_gfa"
             )
         
@@ -304,7 +305,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1000000,
-                format="%d",
+                format="%,d",
                 key="new_project_asp"
             )
             
@@ -313,7 +314,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1000000,
-                format="%d",
+                format="%,d",
                 key="new_project_construction_cost"
             )
             
@@ -322,7 +323,7 @@ class ProjectPipelineRealEstateTab:
                 min_value=0,
                 value=0,
                 step=1000000,
-                format="%d",
+                format="%,d",
                 key="new_project_land_cost"
             )
         
@@ -773,6 +774,8 @@ class ProjectPipelineRealEstateTab:
                 "Total Units",
                 value=int(project_data.get('total_units', 0) or 0),
                 min_value=0,
+                step=1,
+                format="%,d",
                 key="edit_total_units"
             )
             # Show AI suggestion inline if available
@@ -825,7 +828,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('average_selling_price', 0) or 0),
                 min_value=0,
                 step=1000000,
-                format="%d",
+                format="%,d",
                 key="edit_asp"
             )
             # Show AI suggestion inline if available
@@ -843,7 +846,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('land_area', 0) or 0),
                 min_value=0,
                 step=1,
-                format="%d",
+                format="%,d",
                 key="edit_land_area"
             )
             # Show AI suggestion inline if available
@@ -861,7 +864,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('construction_cost_per_sqm', 0) or 0),
                 min_value=0,
                 step=1000000,
-                format="%d",
+                format="%,d",
                 key="edit_const_cost"
             )
             # Show AI suggestion inline if available
@@ -879,7 +882,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('land_cost_per_sqm', 0) or 0),
                 min_value=0,
                 step=1000000,
-                format="%d",
+                format="%,d",
                 key="edit_land_cost"
             )
             # Show AI suggestion inline if available
@@ -897,7 +900,7 @@ class ProjectPipelineRealEstateTab:
                 value=int(project_data.get('gross_floor_area', 0) or 0),
                 min_value=0,
                 step=1,
-                format="%d",
+                format="%,d",
                 key="edit_gfa"
             )
             # Show AI suggestion inline if available
