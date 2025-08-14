@@ -1452,7 +1452,7 @@ class ProjectPipelineRealEstateTab:
             st.plotly_chart(fig, use_container_width=True)
     
     def render_project_balance_sheet_analysis(self, project_data):
-        """Render balance sheet analysis using project data"""
+        """Render comprehensive financial statements forecast using project data"""
         # First display Project Financial Summary
         st.subheader("📊 Project Financial Summary")
         
@@ -1531,8 +1531,8 @@ class ProjectPipelineRealEstateTab:
         
         st.markdown("---")
         
-        # Now display Balance Sheet Analysis
-        st.subheader("📊 Balance Sheet Analysis")
+        # Now display Comprehensive Financial Statements Forecast
+        st.subheader("📊 Comprehensive Financial Statements Forecast")
         
         # Import balance sheet manager
         import sys
@@ -1809,10 +1809,10 @@ class ProjectPipelineRealEstateTab:
                 st.session_state['project_bs_analysis_results'] = df
                 
             except Exception as e:
-                st.error(f"❌ Error running balance sheet analysis: {str(e)}")
+                st.error(f"❌ Error running financial statements forecast: {str(e)}")
         else:
             # Show info message when insufficient data
-            st.info("ℹ️ Balance sheet analysis will be generated automatically once project parameters are configured (revenue and construction/land costs required)")
+            st.info("ℹ️ Financial statements forecast will be generated automatically once project parameters are configured (revenue and construction/land costs required)")
     
     def render_project_financial_analysis(self, project_data):
         """Render financial analysis including RNAV calculation"""
@@ -1852,15 +1852,15 @@ class ProjectPipelineRealEstateTab:
         # Calculate RNAV if requested
         if st.button("Calculate RNAV", key="calc_rnav"):
             try:
-                # Check if Balance Sheet Analysis is available
+                # Check if Financial Statements Forecast is available
                 if 'project_bs_analysis_results' not in st.session_state:
-                    st.error("⚠️ Please wait for Balance Sheet Analysis to complete before calculating RNAV")
+                    st.error("⚠️ Please wait for Financial Statements Forecast to complete before calculating RNAV")
                     return
                 
                 bs_df = st.session_state['project_bs_analysis_results']
                 current_year = datetime.now().year
                 
-                # Extract cash flows from Balance Sheet Analysis for RNAV calculation
+                # Extract cash flows from Financial Statements Forecast for RNAV calculation
                 # We need: presales inflows, construction outflows, land outflows, SG&A outflows, and tax outflows
                 
                 # Determine project timeline from balance sheet
@@ -2090,7 +2090,7 @@ class ProjectPipelineRealEstateTab:
                     edited['total_pbt'] = pbt
                     edited['total_pat'] = pat
                     
-                    # Save Balance Sheet Analysis data if available
+                    # Save Financial Statements Forecast data if available
                     if 'project_bs_analysis_results' in st.session_state:
                         bs_df = st.session_state['project_bs_analysis_results']
                         
