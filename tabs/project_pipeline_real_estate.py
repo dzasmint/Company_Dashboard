@@ -2094,6 +2094,9 @@ class ProjectPipelineRealEstateTab:
                     if 'project_bs_analysis_results' in st.session_state:
                         bs_df = st.session_state['project_bs_analysis_results']
                         
+                        # Debug: Show that we're capturing financial statements
+                        st.info("📊 Capturing Comprehensive Financial Statements Forecast for MongoDB save...")
+                        
                         # Convert DataFrame to dictionary format for MongoDB storage
                         balance_sheet_data = {}
                         
@@ -2139,6 +2142,9 @@ class ProjectPipelineRealEstateTab:
                         # Store complete balance sheet analysis in project data
                         edited['balance_sheet_analysis'] = balance_sheet_data
                         
+                        # Debug: Show how many years of data we're saving
+                        st.success(f"✅ Captured {len(balance_sheet_data)} years of financial statements data")
+                        
                         # Also extract summary totals for quick access
                         total_row = bs_df[bs_df['Year'] == 'Total']
                         if not total_row.empty:
@@ -2154,6 +2160,8 @@ class ProjectPipelineRealEstateTab:
                                 'final_cash_balance': float(total_row['Cumulative_Cash_Balance'].iloc[0]),
                                 'final_inventory_balance': float(total_row['Inventory_Balance'].iloc[0])
                             }
+                    else:
+                        st.warning("⚠️ No Financial Statements Forecast available yet. The forecast will be generated automatically when sufficient project parameters are provided.")
                     
                     # Get RNAV value from either session state or edited project
                     rnav_to_save = st.session_state.get('last_calculated_rnav', 

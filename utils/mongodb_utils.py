@@ -477,6 +477,13 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             "company_ticker": document["company_ticker"]
         })
         
+        # Log if financial statements are being saved
+        if document.get("balance_sheet_analysis"):
+            years_count = len(document["balance_sheet_analysis"])
+            message_suffix = f" (including {years_count} years of financial statements)"
+        else:
+            message_suffix = ""
+        
         if existing:
             # Update existing document but preserve created_date and location if not provided
             document["created_date"] = existing.get("created_date", datetime.datetime.now())
@@ -488,12 +495,12 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
                 document
             )
             action = "updated"
-            message = f"✅ Project '{project_name}' updated successfully in MongoDB"
+            message = f"✅ Project '{project_name}' updated successfully in MongoDB{message_suffix}"
         else:
             # Insert new document
             result = collection.insert_one(document)
             action = "saved"
-            message = f"✅ Project '{project_name}' saved successfully to MongoDB"
+            message = f"✅ Project '{project_name}' saved successfully to MongoDB{message_suffix}"
         
         return {"success": True, "message": message, "action": action}
         
