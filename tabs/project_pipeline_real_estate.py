@@ -1453,6 +1453,85 @@ class ProjectPipelineRealEstateTab:
     
     def render_project_balance_sheet_analysis(self, project_data):
         """Render balance sheet analysis using project data"""
+        # First display Project Financial Summary
+        st.subheader("📊 Project Financial Summary")
+        
+        # Get edited project data
+        edited = st.session_state.edited_project
+        
+        # Calculate totals for summary
+        nsa = float(edited.get('net_sellable_area', 0) or 0)
+        asp = float(edited.get('average_selling_price', 0) or 0)
+        gfa = float(edited.get('gross_floor_area', 0) or 0)
+        const_cost = float(edited.get('construction_cost_per_sqm', 0) or 0)
+        land_area = float(edited.get('land_area', 0) or 0)
+        land_cost = float(edited.get('land_cost_per_sqm', 0) or 0)
+        
+        total_revenue = nsa * asp
+        total_const_cost = gfa * const_cost
+        total_land_cost = land_area * land_cost
+        sga_pct = float(edited.get('sga_percentage', 0.08) or 0.08)
+        total_sga = total_revenue * sga_pct
+        
+        # Get debt and financial parameters
+        total_debt = float(edited.get('total_debt', 0) or 0)
+        cost_of_debt = float(edited.get('cost_of_debt', 0.08) or 0.08)
+        
+        # Get timeline parameters
+        const_start = int(edited.get('construction_start_year', 2025) or 2025)
+        const_years = int(edited.get('construction_years', 3) or 3)
+        const_end = const_start + const_years - 1
+        
+        revenue_booking_start = int(edited.get('revenue_booking_start_year', 2027) or 2027)
+        revenue_booking_years = int(edited.get('revenue_booking_years', 2) or 2)
+        revenue_booking_end = revenue_booking_start + revenue_booking_years - 1
+        
+        debt_repayment_start = int(edited.get('debt_repayment_year', revenue_booking_end) or revenue_booking_end)
+        
+        # Calculate financial metrics
+        total_project_cost = total_const_cost + total_land_cost
+        actual_debt_pct = (total_debt / total_project_cost * 100) if total_project_cost > 0 else 0
+        
+        # Create summary data (removed PBT and PAT)
+        summary_data = {
+            "Metric": [
+                "Total Revenue",
+                "Total Construction Cost",
+                "Total Land Cost",
+                "Total SG&A",
+                "Total Debt",
+                "Debt/Project Ratio",
+                "Cost of Debt",
+                "Construction Period",
+                "Revenue Recognition",
+                "Debt Repayment Year"
+            ],
+            "Value": [
+                f"{total_revenue/1e9:,.1f}B VND",
+                f"{total_const_cost/1e9:,.1f}B VND",
+                f"{total_land_cost/1e9:,.1f}B VND",
+                f"{total_sga/1e9:,.1f}B VND",
+                f"{total_debt/1e9:,.1f}B VND",
+                f"{actual_debt_pct:.0f}%",
+                f"{cost_of_debt*100:.1f}%",
+                f"{const_start}-{const_end}",
+                f"{revenue_booking_start}-{revenue_booking_end}",
+                f"Year {debt_repayment_start}"
+            ]
+        }
+        
+        # Display as DataFrame
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(
+            summary_df,
+            use_container_width=True,
+            hide_index=True,
+            height=350  # Reduced height since we have fewer rows
+        )
+        
+        st.markdown("---")
+        
+        # Now display Balance Sheet Analysis
         st.subheader("📊 Balance Sheet Analysis")
         
         # Import balance sheet manager
