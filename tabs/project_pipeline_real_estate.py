@@ -1919,10 +1919,6 @@ class ProjectPipelineRealEstateTab:
                 st.session_state.edited_project['rnav_value'] = rnav_value_float
                 st.session_state['last_calculated_rnav'] = rnav_value_float
                 
-                # Display P&L Schedule
-                with st.expander("View P&L Schedule"):
-                    st.dataframe(df_pnl)
-                
                 # Display RNAV Schedule
                 with st.expander("View RNAV Calculation Details"):
                     st.dataframe(df_rnav)
