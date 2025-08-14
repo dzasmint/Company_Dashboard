@@ -2432,42 +2432,42 @@ class RealEstateFinancialModel:
             st.markdown("---")
             st.subheader("💵 Project Cash Flow by Source")
             
-            # Get historical cash flow data from CSV for the selected ticker
+            # Get historical cash flow data from FA_A_processed.csv for the selected ticker
             historical_cash_flow = 0
-            historical_data = st.session_state.get('historical_data')
             
-            if historical_data is not None and not historical_data.empty:
-                # Try to get cash flow from operations for the base year (2024)
-                latest_date_idx = None
-                
-                # Check if base_year exists in the index
-                if str(base_year) in historical_data.index:
-                    latest_date_idx = str(base_year)
-                elif base_year in historical_data.index:
-                    latest_date_idx = base_year
-                
-                if latest_date_idx is not None:
-                    # Try different column names for operating cash flow
-                    if 'Operating_Cash_Flow' in historical_data.columns:
-                        historical_cash_flow = historical_data.loc[latest_date_idx, 'Operating_Cash_Flow'] / 1e9
-                    elif 'OCF' in historical_data.columns:
-                        historical_cash_flow = historical_data.loc[latest_date_idx, 'OCF'] / 1e9
-                    elif 'Cash_From_Operations' in historical_data.columns:
-                        historical_cash_flow = historical_data.loc[latest_date_idx, 'Cash_From_Operations'] / 1e9
-                    elif 'CF_Operations' in historical_data.columns:
-                        historical_cash_flow = historical_data.loc[latest_date_idx, 'CF_Operations'] / 1e9
-                    else:
-                        # If no operating cash flow, try to get change in cash
-                        if 'Cash' in historical_data.columns:
-                            # Get current year and previous year cash to calculate change
-                            current_cash = historical_data.loc[latest_date_idx, 'Cash'] / 1e9 if 'Cash' in historical_data.columns else 0
-                            # Try to get previous year cash
-                            prev_year_idx = str(base_year - 1)
-                            if prev_year_idx in historical_data.index and 'Cash' in historical_data.columns:
-                                prev_cash = historical_data.loc[prev_year_idx, 'Cash'] / 1e9
-                                historical_cash_flow = current_cash - prev_cash
-                            else:
-                                historical_cash_flow = 0
+            try:
+                # Load FA_A_processed.csv directly
+                fa_annual_path = 'data/FA_A_processed.csv'
+                if os.path.exists(fa_annual_path):
+                    fa_annual_df = pd.read_csv(fa_annual_path)
+                    
+                    # Filter for selected ticker and base year
+                    ticker_data = fa_annual_df[(fa_annual_df['TICKER'] == selected_ticker) & 
+                                               (fa_annual_df['YEAR'] == base_year)]
+                    
+                    if not ticker_data.empty:
+                        # Try different column names for operating cash flow
+                        if 'Operating_Cash_Flow' in ticker_data.columns:
+                            historical_cash_flow = ticker_data['Operating_Cash_Flow'].iloc[0] / 1e9 if not pd.isna(ticker_data['Operating_Cash_Flow'].iloc[0]) else 0
+                        elif 'OCF' in ticker_data.columns:
+                            historical_cash_flow = ticker_data['OCF'].iloc[0] / 1e9 if not pd.isna(ticker_data['OCF'].iloc[0]) else 0
+                        elif 'Cash_From_Operations' in ticker_data.columns:
+                            historical_cash_flow = ticker_data['Cash_From_Operations'].iloc[0] / 1e9 if not pd.isna(ticker_data['Cash_From_Operations'].iloc[0]) else 0
+                        elif 'CF_Operations' in ticker_data.columns:
+                            historical_cash_flow = ticker_data['CF_Operations'].iloc[0] / 1e9 if not pd.isna(ticker_data['CF_Operations'].iloc[0]) else 0
+                        else:
+                            # If no operating cash flow, try to get change in cash
+                            if 'Cash' in ticker_data.columns:
+                                current_cash = ticker_data['Cash'].iloc[0] / 1e9 if not pd.isna(ticker_data['Cash'].iloc[0]) else 0
+                                # Try to get previous year cash
+                                prev_year_data = fa_annual_df[(fa_annual_df['TICKER'] == selected_ticker) & 
+                                                              (fa_annual_df['YEAR'] == base_year - 1)]
+                                if not prev_year_data.empty and 'Cash' in prev_year_data.columns:
+                                    prev_cash = prev_year_data['Cash'].iloc[0] / 1e9 if not pd.isna(prev_year_data['Cash'].iloc[0]) else 0
+                                    historical_cash_flow = current_cash - prev_cash
+            except Exception as e:
+                # Silent fail - cash flow is optional
+                pass
             
             # Initialize cash flow rows
             cash_rows = []
@@ -3066,7 +3066,208 @@ class RealEstateFinancialModel:
                 avg_pat_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
                 st.metric("Avg PAT Margin", f"{avg_pat_margin:.1f}%")
             
-            # Section 6: Visualization Chart (moved to bottom)
+            # Section 6: Comprehensive Balance Sheet Statement
+            st.markdown("---")
+            st.subheader("📊 Comprehensive Balance Sheet Statement")
+            
+            # Initialize balance sheet items
+            bs_rows = []
+            
+            # Initialize aggregated balance sheet data
+            total_debt_by_year = {hist_col: 0}
+            total_inventory_by_year = {hist_col: 0}
+            total_customer_prepayment_by_year = {hist_col: 0}
+            total_cash_by_year = {hist_col: 0}
+            
+            for year in years:
+                year_str = str(year)
+                total_debt_by_year[year_str] = 0
+                total_inventory_by_year[year_str] = 0
+                total_customer_prepayment_by_year[year_str] = 0
+                total_cash_by_year[year_str] = 0
+            
+            # Load historical balance sheet data from FA_A_processed.csv
+            hist_debt = 0
+            hist_inventory = 0
+            hist_cash = 0
+            hist_customer_prepayment = 0  # Usually not available in standard financials
+            
+            try:
+                # Load FA_A_processed.csv directly
+                fa_annual_path = 'data/FA_A_processed.csv'
+                if os.path.exists(fa_annual_path):
+                    fa_annual_df = pd.read_csv(fa_annual_path)
+                    
+                    # Filter for selected ticker and base year
+                    ticker_data = fa_annual_df[(fa_annual_df['TICKER'] == selected_ticker) & 
+                                               (fa_annual_df['YEAR'] == base_year)]
+                    
+                    if not ticker_data.empty:
+                        # Get historical debt (ST + LT debt)
+                        if 'ST_Debt' in ticker_data.columns:
+                            hist_debt += ticker_data['ST_Debt'].iloc[0] / 1e9 if not pd.isna(ticker_data['ST_Debt'].iloc[0]) else 0
+                        if 'LT_Debt' in ticker_data.columns:
+                            hist_debt += ticker_data['LT_Debt'].iloc[0] / 1e9 if not pd.isna(ticker_data['LT_Debt'].iloc[0]) else 0
+                        
+                        # Get historical inventory
+                        if 'Inventory' in ticker_data.columns:
+                            hist_inventory = ticker_data['Inventory'].iloc[0] / 1e9 if not pd.isna(ticker_data['Inventory'].iloc[0]) else 0
+                        elif 'Inventories' in ticker_data.columns:
+                            hist_inventory = ticker_data['Inventories'].iloc[0] / 1e9 if not pd.isna(ticker_data['Inventories'].iloc[0]) else 0
+                        
+                        # Get historical cash
+                        if 'Cash' in ticker_data.columns:
+                            hist_cash = ticker_data['Cash'].iloc[0] / 1e9 if not pd.isna(ticker_data['Cash'].iloc[0]) else 0
+                        elif 'Cash_Equivalent' in ticker_data.columns:
+                            hist_cash = ticker_data['Cash_Equivalent'].iloc[0] / 1e9 if not pd.isna(ticker_data['Cash_Equivalent'].iloc[0]) else 0
+                        
+                        # Customer prepayment - check various possible column names
+                        if 'Unearned_Revenue' in ticker_data.columns:
+                            hist_customer_prepayment = ticker_data['Unearned_Revenue'].iloc[0] / 1e9 if not pd.isna(ticker_data['Unearned_Revenue'].iloc[0]) else 0
+                        elif 'Deferred_Revenue' in ticker_data.columns:
+                            hist_customer_prepayment = ticker_data['Deferred_Revenue'].iloc[0] / 1e9 if not pd.isna(ticker_data['Deferred_Revenue'].iloc[0]) else 0
+                        elif 'Customer_Advances' in ticker_data.columns:
+                            hist_customer_prepayment = ticker_data['Customer_Advances'].iloc[0] / 1e9 if not pd.isna(ticker_data['Customer_Advances'].iloc[0]) else 0
+                else:
+                    st.warning(f"Historical data file not found: {fa_annual_path}")
+            except Exception as e:
+                st.warning(f"Could not load historical balance sheet data: {str(e)}")
+            
+            # Aggregate data from all projects
+            for _, project in df_projects.iterrows():
+                financial_statements = project.get('comprehensive_financial_statements', {})
+                project_name = project.get('project_name', 'Unknown')
+                
+                # Track cumulative cash for this project
+                project_cumulative_cash = 0
+                
+                for year in years:
+                    year_str = str(year)
+                    
+                    if year_str in financial_statements:
+                        year_data = financial_statements[year_str]
+                        
+                        # Aggregate debt balance
+                        if 'debt_balance' in year_data:
+                            total_debt_by_year[year_str] += year_data.get('debt_balance', 0) / 1e9
+                        elif 'Debt_Balance' in year_data:
+                            total_debt_by_year[year_str] += year_data.get('Debt_Balance', 0) / 1e9
+                        
+                        # Aggregate inventory balance
+                        if 'inventory_balance' in year_data:
+                            total_inventory_by_year[year_str] += year_data.get('inventory_balance', 0) / 1e9
+                        elif 'Inventory_Balance' in year_data:
+                            total_inventory_by_year[year_str] += year_data.get('Inventory_Balance', 0) / 1e9
+                        
+                        # Aggregate customer prepayment balance
+                        if 'customer_prepayment_balance' in year_data:
+                            total_customer_prepayment_by_year[year_str] += year_data.get('customer_prepayment_balance', 0) / 1e9
+                        elif 'Customer_Prepayment_Balance' in year_data:
+                            total_customer_prepayment_by_year[year_str] += year_data.get('Customer_Prepayment_Balance', 0) / 1e9
+                        
+                        # Aggregate cash - prefer cumulative balance, otherwise calculate from cash flow
+                        if 'cumulative_cash_balance' in year_data:
+                            # Direct cumulative balance from project
+                            project_cash = year_data.get('cumulative_cash_balance', 0) / 1e9
+                            total_cash_by_year[year_str] += project_cash
+                        elif 'Cumulative_Cash_Balance' in year_data:
+                            # Alternative field name
+                            project_cash = year_data.get('Cumulative_Cash_Balance', 0) / 1e9
+                            total_cash_by_year[year_str] += project_cash
+                        elif 'cash_balance_change' in year_data or 'Cash_Balance_Change' in year_data:
+                            # Calculate cumulative from cash flow changes
+                            cash_change = year_data.get('cash_balance_change', year_data.get('Cash_Balance_Change', 0)) / 1e9
+                            project_cumulative_cash += cash_change
+                            total_cash_by_year[year_str] += project_cumulative_cash
+                        else:
+                            # No cash data for this year, carry forward previous balance
+                            total_cash_by_year[year_str] += project_cumulative_cash
+            
+            # Create balance sheet rows
+            # Row 1: Total Debt
+            debt_row = {'Balance Sheet Item': 'Total Debt'}
+            debt_row[hist_col] = hist_debt
+            for year in years:
+                debt_row[str(year)] = total_debt_by_year[str(year)]
+            bs_rows.append(debt_row)
+            
+            # Row 2: Inventory
+            inventory_row = {'Balance Sheet Item': 'Inventory'}
+            inventory_row[hist_col] = hist_inventory
+            for year in years:
+                inventory_row[str(year)] = total_inventory_by_year[str(year)]
+            bs_rows.append(inventory_row)
+            
+            # Row 3: Customer Prepayment
+            prepayment_row = {'Balance Sheet Item': 'Customer Prepayment'}
+            prepayment_row[hist_col] = hist_customer_prepayment
+            for year in years:
+                prepayment_row[str(year)] = total_customer_prepayment_by_year[str(year)]
+            bs_rows.append(prepayment_row)
+            
+            # Row 4: Total Cash
+            cash_row = {'Balance Sheet Item': 'Total Cash'}
+            cash_row[hist_col] = hist_cash
+            for year in years:
+                cash_row[str(year)] = total_cash_by_year[str(year)]
+            bs_rows.append(cash_row)
+            
+            # Row 5: Net Debt (Debt - Cash)
+            net_debt_row = {'Balance Sheet Item': 'Net Debt'}
+            net_debt_row[hist_col] = hist_debt - hist_cash
+            for year in years:
+                year_str = str(year)
+                net_debt_row[year_str] = total_debt_by_year[year_str] - total_cash_by_year[year_str]
+            bs_rows.append(net_debt_row)
+            
+            # Row 6: Working Capital (Inventory + Cash - Customer Prepayment)
+            working_capital_row = {'Balance Sheet Item': 'Working Capital'}
+            working_capital_row[hist_col] = hist_inventory + hist_cash - hist_customer_prepayment
+            for year in years:
+                year_str = str(year)
+                working_capital_row[year_str] = (total_inventory_by_year[year_str] + 
+                                                 total_cash_by_year[year_str] - 
+                                                 total_customer_prepayment_by_year[year_str])
+            bs_rows.append(working_capital_row)
+            
+            # Create DataFrame
+            bs_df = pd.DataFrame(bs_rows)
+            
+            st.write("**Consolidated Balance Sheet Items (Billion VND)**")
+            
+            # Style function to highlight key rows
+            def style_bs_table(row):
+                item = str(row['Balance Sheet Item'])
+                if item in ['Net Debt', 'Working Capital']:
+                    return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
+                return [''] * len(row)
+            
+            # Define column configuration
+            bs_column_config = {
+                'Balance Sheet Item': st.column_config.TextColumn('Balance Sheet Item', width='medium'),
+            }
+            for col in [hist_col] + [str(y) for y in years]:
+                bs_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+            
+            st.dataframe(
+                bs_df.style
+                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .apply(style_bs_table, axis=1),
+                use_container_width=True,
+                column_config=bs_column_config,
+                hide_index=True
+            )
+            
+            # Add explanatory notes
+            st.caption("Note: This consolidated balance sheet aggregates data from all real estate projects and company operations.")
+            st.caption("• **Total Debt**: Sum of all project debts")
+            st.caption("• **Inventory**: Work-in-progress real estate projects (construction + land costs - recognized COGS)")
+            st.caption("• **Customer Prepayment**: Presales received but not yet recognized as revenue")
+            st.caption("• **Total Cash**: Cumulative cash position from all projects")
+            st.caption("• **Net Debt**: Total Debt minus Total Cash (negative = net cash position)")
+            st.caption("• **Working Capital**: Inventory + Cash - Customer Prepayment")
+            
+            # Section 7: Visualization Chart (moved to bottom)
             st.markdown("---")
             st.subheader("Revenue, COGS, and Gross Profit Visualization")
             
