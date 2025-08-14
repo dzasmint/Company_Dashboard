@@ -1477,6 +1477,7 @@ class ProjectPipelineRealEstateTab:
         total_const_cost = gfa * const_cost
         total_land_cost = land_area * land_cost
         sga_pct = float(edited.get('sga_percentage', 0.08) or 0.08)
+        total_sga = total_revenue * sga_pct  # Calculate total SG&A
         
         # Get timeline parameters
         const_start = int(edited.get('construction_start_year', 2025) or 2025)
