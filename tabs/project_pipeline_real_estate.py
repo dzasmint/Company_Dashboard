@@ -1823,7 +1823,30 @@ class ProjectPipelineRealEstateTab:
                     current_year
                 )
                 
-                # Generate schedules with custom distributions
+                # Use balance sheet data if available for tax expense
+                tax_expense = []
+                if 'project_bs_analysis_results' in st.session_state:
+                    bs_df = st.session_state['project_bs_analysis_results']
+                    # Extract tax expense from balance sheet (already calculated)
+                    for year in range(int(project_start), int(edited.get('project_completion_year', current_year + 3)) + 1):
+                        year_data = bs_df[bs_df["Year"] == year]
+                        if not year_data.empty:
+                            tax_value = -float(year_data["Tax"].iloc[0])/1e9  # Convert to billions and negative for expense
+                        else:
+                            tax_value = 0.0
+                        tax_expense.append(tax_value)
+                else:
+                    # Simple tax calculation if balance sheet not available
+                    # Tax is 20% of PBT, spread over revenue recognition period
+                    revenue_years = edited.get('project_completion_year', current_year + 3) - edited.get('revenue_booking_start_year', current_year + 1) + 1
+                    annual_tax = (pbt * 0.2) / revenue_years / 1e9  # Convert to billions
+                    for year in range(int(project_start), int(edited.get('project_completion_year', current_year + 3)) + 1):
+                        if year >= edited.get('revenue_booking_start_year', current_year + 1):
+                            tax_expense.append(-annual_tax)  # Negative for expense
+                        else:
+                            tax_expense.append(0.0)
+                
+                # Generate schedules for RNAV calculation (cash flows)
                 presales_dist = edited.get('presales_distribution', {})
                 if not isinstance(presales_dist, dict):
                     presales_dist = {}
@@ -1864,39 +1887,7 @@ class ProjectPipelineRealEstateTab:
                     presales_dist  # SG&A follows sales distribution
                 )
                 
-                # Generate P&L with custom revenue distribution
-                revenue_dist = edited.get('revenue_distribution', {})
-                if not isinstance(revenue_dist, dict):
-                    revenue_dist = {}
-                df_pnl = generate_pnl_schedule_custom(
-                    total_revenue/1e9,
-                    -total_land_cost/1e9,
-                    -total_const_cost/1e9,
-                    -total_sga/1e9,
-                    int(project_start),
-                    int(current_year),
-                    int(edited.get('revenue_booking_start_year', current_year + 1)),
-                    int(edited.get('project_completion_year', current_year + 3)),
-                    (-total_const_cost-total_land_cost)*edited.get('debt_financing_percentage', 0.3)/1e9,
-                    int(edited.get('construction_years', 3)),
-                    float(edited.get('cost_of_debt', 0.08)),
-                    revenue_dist  # Pass custom revenue distribution
-                )
-                
-                # Store the P&L schedule in session state for saving
-                st.session_state.last_calculated_pnl = df_pnl
-                
-                # Extract tax expense
-                tax_expense = []
-                for year in range(int(project_start), int(edited.get('project_completion_year', current_year + 3)) + 1):
-                    year_data = df_pnl[df_pnl["Year"] == year]
-                    if not year_data.empty and year_data["Type"].iloc[0] != "Summary":
-                        tax_value = year_data["Tax Expense (20%)"].iloc[0]
-                    else:
-                        tax_value = 0.0
-                    tax_expense.append(tax_value)
-                
-                # Calculate RNAV
+                # Calculate RNAV (no P&L generation)
                 df_rnav = RNAV_Calculation(
                     selling_progress,
                     construction_payment,
@@ -2039,33 +2030,70 @@ class ProjectPipelineRealEstateTab:
                     edited['total_pbt'] = pbt
                     edited['total_pat'] = pat
                     
-                    # Use the P&L schedule from RNAV calculation if available
-                    if 'last_calculated_pnl' in st.session_state:
-                        df_pnl = st.session_state.last_calculated_pnl
+                    # Save Balance Sheet Analysis data if available
+                    if 'project_bs_analysis_results' in st.session_state:
+                        bs_df = st.session_state['project_bs_analysis_results']
                         
-                        # Extract P&L schedule from the DataFrame
-                        pnl_schedule = {}
+                        # Convert DataFrame to dictionary format for MongoDB storage
+                        balance_sheet_data = {}
                         
-                        # Process each year in the P&L schedule
-                        for _, row in df_pnl.iterrows():
-                            if row['Type'] != 'Summary':  # Skip summary row
+                        # Process each year (excluding Total row)
+                        for _, row in bs_df.iterrows():
+                            if row['Year'] != 'Total':
                                 year_str = str(int(row['Year']))
                                 
-                                # Store complete P&L data with original signs (negative for costs)
-                                pnl_schedule[year_str] = {
-                                    'revenue': row['Revenue'],
-                                    'construction_cost': row['Construction Payment'],  # Keep negative
-                                    'land_cost': row['Land Payment'],  # Keep negative
-                                    'sga': row['SG&A'],  # Keep negative
-                                    'ebitda': row['EBITDA'],
-                                    'interest_expense': row['Interest Expense'],  # Keep negative
-                                    'pbt': row['PBT'],
-                                    'tax': row['Tax Expense (20%)'],
-                                    'pat': row['PAT']
+                                # Store all balance sheet, P&L, and cash flow data
+                                balance_sheet_data[year_str] = {
+                                    # Balance Sheet items
+                                    'debt_balance': float(row['Debt_Balance']),
+                                    'cash_balance': float(row['Cumulative_Cash_Balance']),
+                                    'land_cost': float(row['Land_Cost']),
+                                    'construction_cost': float(row['Construction_Cost']),
+                                    'interest_capitalized': float(row['Interest_Capitalized']),
+                                    'inventory_addition': float(row['Inventory_Addition']),
+                                    'inventory_balance': float(row['Inventory_Balance']),
+                                    'presales': float(row['Presales']),
+                                    'customer_prepayment_balance': float(row['Customer_Prepayment_Balance']),
+                                    
+                                    # P&L items
+                                    'revenue_recognition': float(row['Revenue_Recognition']),
+                                    'cogs': float(row['COGS']),
+                                    'sga_expense': float(row['SGA_Expense']),
+                                    'interest_expense_cash': float(row['Interest_Expense_Cash']),
+                                    'pbt': float(row['PBT']),
+                                    'tax': float(row['Tax']),
+                                    'pat': float(row['PAT']),
+                                    
+                                    # Cash Flow items
+                                    'cash_inflow_presales': float(row['Cash_Inflow_Presales']),
+                                    'debt_disbursement': float(row['Debt_Disbursement']),
+                                    'debt_repayment': float(row['Debt_Repayment']),
+                                    'cash_outflow_land': float(row['Cash_Outflow_Land']),
+                                    'cash_outflow_construction': float(row['Cash_Outflow_Construction']),
+                                    'cash_outflow_interest': float(row['Cash_Outflow_Interest']),
+                                    'cash_outflow_sga': float(row['Cash_Outflow_SGA']),
+                                    'cash_outflow_tax': float(row['Cash_Outflow_Tax']),
+                                    'cash_balance_change': float(row['Cash_Balance_Change'])
                                 }
                         
-                        # Store P&L schedule in project data
-                        edited['pnl_schedule'] = pnl_schedule
+                        # Store complete balance sheet analysis in project data
+                        edited['balance_sheet_analysis'] = balance_sheet_data
+                        
+                        # Also extract summary totals for quick access
+                        total_row = bs_df[bs_df['Year'] == 'Total']
+                        if not total_row.empty:
+                            edited['balance_sheet_summary'] = {
+                                'total_revenue': float(total_row['Revenue_Recognition'].iloc[0]),
+                                'total_cogs': float(total_row['COGS'].iloc[0]),
+                                'total_sga': float(total_row['SGA_Expense'].iloc[0]),
+                                'total_interest': float(total_row['Interest_Expense_Cash'].iloc[0]),
+                                'total_pbt': float(total_row['PBT'].iloc[0]),
+                                'total_tax': float(total_row['Tax'].iloc[0]),
+                                'total_pat': float(total_row['PAT'].iloc[0]),
+                                'final_debt_balance': float(total_row['Debt_Balance'].iloc[0]),
+                                'final_cash_balance': float(total_row['Cumulative_Cash_Balance'].iloc[0]),
+                                'final_inventory_balance': float(total_row['Inventory_Balance'].iloc[0])
+                            }
                     
                     # Get RNAV value from either session state or edited project
                     rnav_to_save = st.session_state.get('last_calculated_rnav', 

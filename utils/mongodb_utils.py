@@ -461,8 +461,11 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             # Distribution percentages
             "revenue_distribution": project_data.get('revenue_distribution', {}),
             "presales_distribution": project_data.get('presales_distribution', {}),
-            # P&L schedule
+            # P&L schedule (legacy - replaced by balance_sheet_analysis)
             "pnl_schedule": project_data.get('pnl_schedule', {}),
+            # Balance Sheet Analysis - comprehensive financial statements
+            "balance_sheet_analysis": project_data.get('balance_sheet_analysis', {}),
+            "balance_sheet_summary": project_data.get('balance_sheet_summary', {}),
             # Timestamps
             "last_updated": datetime.datetime.now(),
             "created_date": datetime.datetime.now()
