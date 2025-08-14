@@ -2223,6 +2223,348 @@ class RealEstateFinancialModel:
                 hide_index=True
             )
             
+            # Section 4.7: Total Debts by Source
+            st.markdown("---")
+            st.subheader("💳 Total Debts by Source")
+            
+            # Initialize debt rows
+            debt_rows = []
+            
+            # Track total debt by year
+            total_debt_by_year = {year: 0 for year in years}
+            
+            # Load debt balance from each project's comprehensive financial statements
+            for project_name in project_revenue_breakdown.keys():
+                row_data = {'Debt Source': f"{project_name}"}
+                row_data[hist_col] = 0  # No historical breakdown
+                
+                # Find the project in df_projects
+                project_data = None
+                for _, project in df_projects.iterrows():
+                    if project.get('project_name') == project_name:
+                        project_data = project
+                        break
+                
+                if project_data is not None:
+                    # Try to get debt from comprehensive_financial_statements
+                    financial_statements = project_data.get('comprehensive_financial_statements', {})
+                    
+                    for year in years:
+                        year_str = str(year)
+                        debt_balance = 0
+                        
+                        if year_str in financial_statements:
+                            year_data = financial_statements[year_str]
+                            # Get debt balance from balance sheet section
+                            if 'debt_balance' in year_data:
+                                # Convert from raw VND to billions
+                                debt_balance = year_data.get('debt_balance', 0) / 1e9
+                            elif 'Debt_Balance' in year_data:
+                                # Alternative field name
+                                debt_balance = year_data.get('Debt_Balance', 0) / 1e9
+                            else:
+                                # If no specific debt balance field, calculate from debt financing
+                                # Use debt financing percentage of total construction cost
+                                construction_cost = year_data.get('construction_cost', 0) / 1e9
+                                land_cost = year_data.get('land_cost', 0) / 1e9
+                                debt_financing_pct = project_data.get('debt_financing_pct', 0.3)
+                                
+                                # Simple approximation: debt is percentage of total project cost
+                                total_project_cost = abs(construction_cost) + abs(land_cost)
+                                if total_project_cost > 0:
+                                    debt_balance = total_project_cost * debt_financing_pct
+                        
+                        row_data[year_str] = debt_balance
+                        total_debt_by_year[year] += debt_balance
+                else:
+                    # No project data found, set zeros
+                    for year in years:
+                        row_data[str(year)] = 0
+                
+                debt_rows.append(row_data)
+            
+            # Add total row
+            if debt_rows:
+                total_debt_row = {'Debt Source': 'TOTAL DEBT'}
+                total_debt_row[hist_col] = 0  # No historical total
+                for year in years:
+                    total_debt_row[str(year)] = total_debt_by_year[year]
+                debt_rows.append(total_debt_row)
+            
+            # Create DataFrame for debt
+            if debt_rows:
+                debt_df = pd.DataFrame(debt_rows)
+                
+                st.write("**Project Debt Balance by Source (Billion VND)**")
+                
+                # Style function to highlight total row
+                def highlight_debt_rows(row):
+                    source = str(row['Debt Source'])
+                    if 'TOTAL DEBT' in source:
+                        return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
+                    else:
+                        return [''] * len(row)
+                
+                # Define column configuration for consistent width
+                debt_column_config = {
+                    'Debt Source': st.column_config.TextColumn('Debt Source', width='medium'),
+                }
+                for col in [hist_col] + [str(y) for y in years]:
+                    debt_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+                
+                st.dataframe(
+                    debt_df.style
+                    .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                    .apply(highlight_debt_rows, axis=1),
+                    use_container_width=True,
+                    column_config=debt_column_config,
+                    hide_index=True
+                )
+                
+                # Add explanation
+                st.caption("Note: Debt balances are loaded from each project's comprehensive financial statements in MongoDB. If specific debt balance is not available, it's estimated as debt financing percentage of total project cost.")
+            
+            # Section 4.8: Inventory by Source
+            st.markdown("---")
+            st.subheader("📦 Inventory by Source")
+            
+            # Initialize inventory rows
+            inventory_rows = []
+            
+            # Track total inventory by year
+            total_inventory_by_year = {year: 0 for year in years}
+            
+            # Load inventory balance from each project's comprehensive financial statements
+            for project_name in project_revenue_breakdown.keys():
+                row_data = {'Inventory Source': f"{project_name}"}
+                row_data[hist_col] = 0  # No historical breakdown
+                
+                # Find the project in df_projects
+                project_data = None
+                for _, project in df_projects.iterrows():
+                    if project.get('project_name') == project_name:
+                        project_data = project
+                        break
+                
+                if project_data is not None:
+                    # Try to get inventory from comprehensive_financial_statements
+                    financial_statements = project_data.get('comprehensive_financial_statements', {})
+                    
+                    for year in years:
+                        year_str = str(year)
+                        inventory_balance = 0
+                        
+                        if year_str in financial_statements:
+                            year_data = financial_statements[year_str]
+                            # Get inventory balance from balance sheet section
+                            if 'inventory_balance' in year_data:
+                                # Convert from raw VND to billions
+                                inventory_balance = year_data.get('inventory_balance', 0) / 1e9
+                            elif 'Inventory_Balance' in year_data:
+                                # Alternative field name
+                                inventory_balance = year_data.get('Inventory_Balance', 0) / 1e9
+                            elif 'inventory' in year_data:
+                                # Another alternative
+                                inventory_balance = year_data.get('inventory', 0) / 1e9
+                            else:
+                                # If no specific inventory field, try to calculate from construction and land costs
+                                # Inventory = cumulative construction cost + land cost - COGS recognized
+                                construction_cost = abs(year_data.get('construction_cost', 0)) / 1e9
+                                land_cost = abs(year_data.get('land_cost', 0)) / 1e9
+                                cogs = abs(year_data.get('cogs', 0)) / 1e9
+                                
+                                # Simple approximation: inventory builds up with costs and reduces with COGS
+                                if construction_cost > 0 or land_cost > 0:
+                                    inventory_balance = construction_cost + land_cost - cogs
+                                    inventory_balance = max(0, inventory_balance)  # Ensure non-negative
+                        
+                        row_data[year_str] = inventory_balance
+                        total_inventory_by_year[year] += inventory_balance
+                else:
+                    # No project data found, set zeros
+                    for year in years:
+                        row_data[str(year)] = 0
+                
+                inventory_rows.append(row_data)
+            
+            # Add total row
+            if inventory_rows:
+                total_inventory_row = {'Inventory Source': 'TOTAL INVENTORY'}
+                total_inventory_row[hist_col] = 0  # No historical total
+                for year in years:
+                    total_inventory_row[str(year)] = total_inventory_by_year[year]
+                inventory_rows.append(total_inventory_row)
+            
+            # Create DataFrame for inventory
+            if inventory_rows:
+                inventory_df = pd.DataFrame(inventory_rows)
+                
+                st.write("**Project Inventory Balance by Source (Billion VND)**")
+                
+                # Style function to highlight total row
+                def highlight_inventory_rows(row):
+                    source = str(row['Inventory Source'])
+                    if 'TOTAL INVENTORY' in source:
+                        return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
+                    else:
+                        return [''] * len(row)
+                
+                # Define column configuration for consistent width
+                inventory_column_config = {
+                    'Inventory Source': st.column_config.TextColumn('Inventory Source', width='medium'),
+                }
+                for col in [hist_col] + [str(y) for y in years]:
+                    inventory_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+                
+                st.dataframe(
+                    inventory_df.style
+                    .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                    .apply(highlight_inventory_rows, axis=1),
+                    use_container_width=True,
+                    column_config=inventory_column_config,
+                    hide_index=True
+                )
+                
+                # Add explanation
+                st.caption("Note: Inventory balances represent work-in-progress real estate projects. Values are loaded from MongoDB and include construction costs, land costs, and capitalized interest, net of recognized COGS.")
+            
+            # Section 4.9: Cash Balance by Source
+            st.markdown("---")
+            st.subheader("💵 Cash Balance by Source")
+            
+            # Initialize cash balance rows
+            cash_rows = []
+            
+            # Track total cash by year
+            total_cash_by_year = {year: 0 for year in years}
+            
+            # Load cash balance from each project's comprehensive financial statements
+            for project_name in project_revenue_breakdown.keys():
+                row_data = {'Cash Source': f"{project_name}"}
+                row_data[hist_col] = 0  # No historical breakdown
+                
+                # Find the project in df_projects
+                project_data = None
+                for _, project in df_projects.iterrows():
+                    if project.get('project_name') == project_name:
+                        project_data = project
+                        break
+                
+                if project_data is not None:
+                    # Try to get cash balance from comprehensive_financial_statements
+                    financial_statements = project_data.get('comprehensive_financial_statements', {})
+                    
+                    for year in years:
+                        year_str = str(year)
+                        cash_balance = 0
+                        
+                        if year_str in financial_statements:
+                            year_data = financial_statements[year_str]
+                            # Get cash balance from balance sheet or cash flow section
+                            if 'cumulative_cash_balance' in year_data:
+                                # Convert from raw VND to billions
+                                cash_balance = year_data.get('cumulative_cash_balance', 0) / 1e9
+                            elif 'Cumulative_Cash_Balance' in year_data:
+                                # Alternative field name
+                                cash_balance = year_data.get('Cumulative_Cash_Balance', 0) / 1e9
+                            elif 'cash_balance' in year_data:
+                                # Another alternative
+                                cash_balance = year_data.get('cash_balance', 0) / 1e9
+                            elif 'Cash_Balance_Change' in year_data:
+                                # If only have cash flow change, use that
+                                cash_balance = year_data.get('Cash_Balance_Change', 0) / 1e9
+                            else:
+                                # If no specific cash field, try to calculate from cash flows
+                                # Cash = Presales inflow - Construction outflow - Land outflow - Interest outflow - SG&A outflow
+                                presales = year_data.get('presales', 0) / 1e9
+                                cash_inflow_presales = year_data.get('Cash_Inflow_Presales', presales)
+                                
+                                # Get cash outflows (should be negative)
+                                construction_outflow = year_data.get('Cash_Outflow_Construction', 0) / 1e9
+                                land_outflow = year_data.get('Cash_Outflow_Land', 0) / 1e9
+                                interest_outflow = year_data.get('Cash_Outflow_Interest', 0) / 1e9
+                                sga_outflow = year_data.get('Cash_Outflow_SGA', 0) / 1e9
+                                tax_outflow = year_data.get('Cash_Outflow_Tax', 0) / 1e9
+                                
+                                # Get debt flows
+                                debt_disbursement = year_data.get('Debt_Disbursement', 0) / 1e9
+                                debt_repayment = year_data.get('Debt_Repayment', 0) / 1e9
+                                
+                                # Calculate net cash flow for the year
+                                net_cash_flow = (cash_inflow_presales + debt_disbursement + 
+                                               construction_outflow + land_outflow + 
+                                               interest_outflow + sga_outflow + 
+                                               tax_outflow + debt_repayment)
+                                
+                                # For simplicity, show net cash flow instead of cumulative
+                                cash_balance = net_cash_flow
+                        
+                        row_data[year_str] = cash_balance
+                        total_cash_by_year[year] += cash_balance
+                else:
+                    # No project data found, set zeros
+                    for year in years:
+                        row_data[str(year)] = 0
+                
+                cash_rows.append(row_data)
+            
+            # Add total row
+            if cash_rows:
+                total_cash_row = {'Cash Source': 'TOTAL CASH BALANCE'}
+                total_cash_row[hist_col] = 0  # No historical total
+                for year in years:
+                    total_cash_row[str(year)] = total_cash_by_year[year]
+                cash_rows.append(total_cash_row)
+            
+            # Create DataFrame for cash balance
+            if cash_rows:
+                cash_df = pd.DataFrame(cash_rows)
+                
+                st.write("**Project Cash Balance by Source (Billion VND)**")
+                
+                # Style function to highlight total row and negative values
+                def style_cash_table(df_style):
+                    # Create style DataFrame
+                    styles = pd.DataFrame('', index=df_style.index, columns=df_style.columns)
+                    
+                    # Apply row-level styles for total
+                    for idx, row in df_style.iterrows():
+                        source = cash_df.iloc[idx]['Cash Source']
+                        if 'TOTAL CASH BALANCE' in source:
+                            styles.iloc[idx] = 'font-weight: bold; background-color: #f0f0f0'
+                    
+                    # Apply cell-level coloring for negative values
+                    for col in [hist_col] + [str(y) for y in years]:
+                        if col in df_style.columns:
+                            for idx in df_style.index:
+                                if idx < len(cash_df):  # Ensure we don't go out of bounds
+                                    val = cash_df.iloc[idx][col] if col in cash_df.columns else 0
+                                    if isinstance(val, (int, float)) and val < 0:
+                                        current_style = styles.at[idx, col]
+                                        # Add red color for negative cash
+                                        styles.at[idx, col] = f"{current_style}; color: red"
+                    
+                    return styles
+                
+                # Define column configuration for consistent width
+                cash_column_config = {
+                    'Cash Source': st.column_config.TextColumn('Cash Source', width='medium'),
+                }
+                for col in [hist_col] + [str(y) for y in years]:
+                    cash_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+                
+                st.dataframe(
+                    cash_df.style
+                    .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                    .apply(lambda x: style_cash_table(cash_df), axis=None),
+                    use_container_width=True,
+                    column_config=cash_column_config,
+                    hide_index=True
+                )
+                
+                # Add explanation
+                st.caption("Note: Cash balances are loaded from each project's comprehensive financial statements. Positive values indicate cash surplus, negative values (in red) indicate cash needs. Values include presales inflows, construction/land outflows, debt flows, and operating expenses.")
+            
             # Section 5: Comprehensive P&L with Interest Expense
             st.markdown("---")
             st.subheader("💰 Comprehensive P&L Statement")
