@@ -1939,9 +1939,57 @@ class ProjectPipelineRealEstateTab:
                 st.session_state.edited_project['rnav_value'] = rnav_value_float
                 st.session_state['last_calculated_rnav'] = rnav_value_float
                 
-                # Display RNAV Schedule
-                with st.expander("View RNAV Calculation Details"):
-                    st.dataframe(df_rnav)
+                # Display RNAV Schedule (transposed with years as columns)
+                st.subheader("📊 RNAV Calculation Details")
+                
+                # Prepare dataframe for transposition
+                # Separate the Total RNAV row
+                total_row = df_rnav[df_rnav["Year"] == "Total RNAV"]
+                year_rows = df_rnav[df_rnav["Year"] != "Total RNAV"].copy()
+                
+                # Set Year as index for year rows
+                year_rows = year_rows.set_index("Year")
+                
+                # Transpose so years become columns
+                df_transposed = year_rows.T
+                
+                # Add Total RNAV column if it exists
+                if not total_row.empty:
+                    # Get the total values (excluding Year column)
+                    total_values = total_row.drop(columns=["Year"]).iloc[0]
+                    df_transposed["Total"] = total_values
+                
+                # Rename the index to be more descriptive
+                index_labels = {
+                    'Inflow (Revenue)': 'Revenue Inflow',
+                    'Construction Cost': 'Construction Cost',
+                    'Land Cost': 'Land Cost', 
+                    'SG&A': 'SG&A Expense',
+                    'Tax': 'Tax Payment',
+                    'Total Outflow': 'Total Cash Outflow',
+                    'Net Cash Flow': 'Net Cash Flow',
+                    'Discount Factor': 'Discount Factor',
+                    'Discounted Cash Flow': 'NPV (Discounted CF)'
+                }
+                df_transposed.index = df_transposed.index.map(lambda x: index_labels.get(x, x))
+                
+                # Format for display - all values in billions VND except Discount Factor
+                format_dict = {}
+                for col in df_transposed.columns:
+                    format_dict[col] = "{:,.1f}"
+                
+                # Apply special formatting for Discount Factor row if it exists
+                if 'Discount Factor' in df_transposed.index:
+                    # Create a styled dataframe
+                    styled_df = df_transposed.style.format(format_dict)
+                    # Override format for Discount Factor row
+                    for col in df_transposed.columns:
+                        styled_df = styled_df.format({col: "{:.4f}"}, subset=(['Discount Factor'], [col]))
+                else:
+                    styled_df = df_transposed.style.format(format_dict)
+                
+                # Display the transposed table
+                st.dataframe(styled_df, use_container_width=True)
                     
             except Exception as e:
                 st.error(f"Error calculating RNAV: {str(e)}")
