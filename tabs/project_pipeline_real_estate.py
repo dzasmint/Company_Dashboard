@@ -1697,11 +1697,23 @@ class ProjectPipelineRealEstateTab:
                 cashflow_df.index.name = 'Cash Flow Item'
                 # Balance Sheet keeps the original name
                 
+                # Set consistent styling for first column width
+                # Use CSS to ensure consistent first column width across all tables
+                st.markdown("""
+                <style>
+                    /* Set consistent width for first column (index) in all dataframes */
+                    .stDataFrame [data-testid="StyledDataTable"] > div > div > div > div:first-child {
+                        min-width: 250px !important;
+                        max-width: 250px !important;
+                    }
+                </style>
+                """, unsafe_allow_html=True)
+                
                 # Display Balance Sheet table
                 st.subheader("📊 Balance Sheet")
                 
                 # Apply styling to balance sheet
-                styled_bs_df = bs_df.style.apply(highlight_sections, axis=0).format(format_dict)
+                styled_bs_df = bs_df.style.apply(highlight_sections, axis=0).format(format_dict).set_properties(**{'text-align': 'left'}, subset=pd.IndexSlice[:, :])
                 st.dataframe(
                     styled_bs_df,
                     use_container_width=True,
@@ -1717,7 +1729,7 @@ class ProjectPipelineRealEstateTab:
                     return pd.DataFrame('background-color: #FFF9C4', 
                                       index=df.index, columns=df.columns)
                 
-                styled_pnl_df = pnl_df.style.apply(highlight_pnl, axis=None).format(format_dict)
+                styled_pnl_df = pnl_df.style.apply(highlight_pnl, axis=None).format(format_dict).set_properties(**{'text-align': 'left'}, subset=pd.IndexSlice[:, :])
                 st.dataframe(
                     styled_pnl_df,
                     use_container_width=True,
@@ -1733,7 +1745,7 @@ class ProjectPipelineRealEstateTab:
                     return pd.DataFrame('background-color: #FFE0B2', 
                                       index=df.index, columns=df.columns)
                 
-                styled_cashflow_df = cashflow_df.style.apply(highlight_cashflow, axis=None).format(format_dict)
+                styled_cashflow_df = cashflow_df.style.apply(highlight_cashflow, axis=None).format(format_dict).set_properties(**{'text-align': 'left'}, subset=pd.IndexSlice[:, :])
                 st.dataframe(
                     styled_cashflow_df,
                     use_container_width=True,
