@@ -2428,19 +2428,19 @@ class RealEstateFinancialModel:
                 # Add explanation
                 st.caption("Note: Inventory balances represent work-in-progress real estate projects. Values are loaded from MongoDB and include construction costs, land costs, and capitalized interest, net of recognized COGS.")
             
-            # Section 4.9: Cash Balance by Source
+            # Section 4.9: Project Cash Flow by Source
             st.markdown("---")
-            st.subheader("💵 Cash Balance by Source")
+            st.subheader("💵 Project Cash Flow by Source")
             
-            # Initialize cash balance rows
+            # Initialize cash flow rows
             cash_rows = []
             
-            # Track total cash by year
-            total_cash_by_year = {year: 0 for year in years}
+            # Track total cash flow by year
+            total_cash_flow_by_year = {year: 0 for year in years}
             
-            # Load cash balance from each project's comprehensive financial statements
+            # Load cash balance change (cash flow) from each project's comprehensive financial statements
             for project_name in project_revenue_breakdown.keys():
-                row_data = {'Cash Source': f"{project_name}"}
+                row_data = {'Cash Flow Source': f"{project_name}"}
                 row_data[hist_col] = 0  # No historical breakdown
                 
                 # Find the project in df_projects
@@ -2451,56 +2451,50 @@ class RealEstateFinancialModel:
                         break
                 
                 if project_data is not None:
-                    # Try to get cash balance from comprehensive_financial_statements
+                    # Get cash flow from comprehensive_financial_statements
                     financial_statements = project_data.get('comprehensive_financial_statements', {})
                     
                     for year in years:
                         year_str = str(year)
-                        cash_balance = 0
+                        cash_flow = 0
                         
                         if year_str in financial_statements:
                             year_data = financial_statements[year_str]
-                            # Get cash balance from balance sheet or cash flow section
-                            if 'cumulative_cash_balance' in year_data:
-                                # Convert from raw VND to billions
-                                cash_balance = year_data.get('cumulative_cash_balance', 0) / 1e9
-                            elif 'Cumulative_Cash_Balance' in year_data:
-                                # Alternative field name
-                                cash_balance = year_data.get('Cumulative_Cash_Balance', 0) / 1e9
-                            elif 'cash_balance' in year_data:
-                                # Another alternative
-                                cash_balance = year_data.get('cash_balance', 0) / 1e9
+                            
+                            # Primary: Get cash balance change directly if available
+                            if 'cash_balance_change' in year_data:
+                                cash_flow = year_data.get('cash_balance_change', 0) / 1e9
                             elif 'Cash_Balance_Change' in year_data:
-                                # If only have cash flow change, use that
-                                cash_balance = year_data.get('Cash_Balance_Change', 0) / 1e9
+                                cash_flow = year_data.get('Cash_Balance_Change', 0) / 1e9
                             else:
-                                # If no specific cash field, try to calculate from cash flows
-                                # Cash = Presales inflow - Construction outflow - Land outflow - Interest outflow - SG&A outflow
-                                presales = year_data.get('presales', 0) / 1e9
-                                cash_inflow_presales = year_data.get('Cash_Inflow_Presales', presales)
+                                # Calculate net cash flow from individual components
+                                # All values should be in raw VND, convert to billions
                                 
-                                # Get cash outflows (should be negative)
-                                construction_outflow = year_data.get('Cash_Outflow_Construction', 0) / 1e9
-                                land_outflow = year_data.get('Cash_Outflow_Land', 0) / 1e9
-                                interest_outflow = year_data.get('Cash_Outflow_Interest', 0) / 1e9
-                                sga_outflow = year_data.get('Cash_Outflow_SGA', 0) / 1e9
-                                tax_outflow = year_data.get('Cash_Outflow_Tax', 0) / 1e9
+                                # Cash inflows (positive)
+                                cash_inflow_presales = year_data.get('cash_inflow_presales', 0) / 1e9
+                                debt_disbursement = year_data.get('debt_disbursement', 0) / 1e9
                                 
-                                # Get debt flows
-                                debt_disbursement = year_data.get('Debt_Disbursement', 0) / 1e9
-                                debt_repayment = year_data.get('Debt_Repayment', 0) / 1e9
+                                # Cash outflows (should already be negative in DB)
+                                cash_outflow_construction = year_data.get('cash_outflow_construction', 0) / 1e9
+                                cash_outflow_land = year_data.get('cash_outflow_land', 0) / 1e9
+                                cash_outflow_interest = year_data.get('cash_outflow_interest', 0) / 1e9
+                                cash_outflow_sga = year_data.get('cash_outflow_sga', 0) / 1e9
+                                cash_outflow_tax = year_data.get('cash_outflow_tax', 0) / 1e9
+                                debt_repayment = year_data.get('debt_repayment', 0) / 1e9
                                 
                                 # Calculate net cash flow for the year
-                                net_cash_flow = (cash_inflow_presales + debt_disbursement + 
-                                               construction_outflow + land_outflow + 
-                                               interest_outflow + sga_outflow + 
-                                               tax_outflow + debt_repayment)
-                                
-                                # For simplicity, show net cash flow instead of cumulative
-                                cash_balance = net_cash_flow
+                                # Since outflows are already negative, we can simply add all components
+                                cash_flow = (cash_inflow_presales + 
+                                           debt_disbursement + 
+                                           cash_outflow_construction + 
+                                           cash_outflow_land + 
+                                           cash_outflow_interest + 
+                                           cash_outflow_sga + 
+                                           cash_outflow_tax + 
+                                           debt_repayment)
                         
-                        row_data[year_str] = cash_balance
-                        total_cash_by_year[year] += cash_balance
+                        row_data[year_str] = cash_flow
+                        total_cash_flow_by_year[year] += cash_flow
                 else:
                     # No project data found, set zeros
                     for year in years:
@@ -2510,17 +2504,17 @@ class RealEstateFinancialModel:
             
             # Add total row
             if cash_rows:
-                total_cash_row = {'Cash Source': 'TOTAL CASH BALANCE'}
+                total_cash_row = {'Cash Flow Source': 'TOTAL NET CASH FLOW'}
                 total_cash_row[hist_col] = 0  # No historical total
                 for year in years:
-                    total_cash_row[str(year)] = total_cash_by_year[year]
+                    total_cash_row[str(year)] = total_cash_flow_by_year[year]
                 cash_rows.append(total_cash_row)
             
-            # Create DataFrame for cash balance
+            # Create DataFrame for cash flow
             if cash_rows:
                 cash_df = pd.DataFrame(cash_rows)
                 
-                st.write("**Project Cash Balance by Source (Billion VND)**")
+                st.write("**Project Cash Flow by Source (Billion VND)**")
                 
                 # Style function to highlight total row and negative values
                 def style_cash_table(df_style):
@@ -2529,8 +2523,8 @@ class RealEstateFinancialModel:
                     
                     # Apply row-level styles for total
                     for idx, row in df_style.iterrows():
-                        source = cash_df.iloc[idx]['Cash Source']
-                        if 'TOTAL CASH BALANCE' in source:
+                        source = cash_df.iloc[idx]['Cash Flow Source']
+                        if 'TOTAL NET CASH FLOW' in source:
                             styles.iloc[idx] = 'font-weight: bold; background-color: #f0f0f0'
                     
                     # Apply cell-level coloring for negative values
@@ -2541,14 +2535,14 @@ class RealEstateFinancialModel:
                                     val = cash_df.iloc[idx][col] if col in cash_df.columns else 0
                                     if isinstance(val, (int, float)) and val < 0:
                                         current_style = styles.at[idx, col]
-                                        # Add red color for negative cash
+                                        # Add red color for negative cash flow
                                         styles.at[idx, col] = f"{current_style}; color: red"
                     
                     return styles
                 
                 # Define column configuration for consistent width
                 cash_column_config = {
-                    'Cash Source': st.column_config.TextColumn('Cash Source', width='medium'),
+                    'Cash Flow Source': st.column_config.TextColumn('Cash Flow Source', width='medium'),
                 }
                 for col in [hist_col] + [str(y) for y in years]:
                     cash_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
@@ -2563,7 +2557,7 @@ class RealEstateFinancialModel:
                 )
                 
                 # Add explanation
-                st.caption("Note: Cash balances are loaded from each project's comprehensive financial statements. Positive values indicate cash surplus, negative values (in red) indicate cash needs. Values include presales inflows, construction/land outflows, debt flows, and operating expenses.")
+                st.caption("Note: Shows annual net cash flow (change) for each project. Positive values indicate cash generation, negative values (in red) indicate cash consumption. Includes: presales inflows (+), debt disbursements (+), construction/land payments (-), interest/SG&A/tax expenses (-), and debt repayments (-).")
             
             # Section 5: Comprehensive P&L with Interest Expense
             st.markdown("---")
