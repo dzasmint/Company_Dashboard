@@ -1546,8 +1546,9 @@ class ProjectPipelineRealEstateTab:
         with col4:
             st.metric("Revenue Recognition", f"{revenue_booking_start}-{revenue_booking_end}")
         
-        # Run balance sheet analysis button
-        if st.button("🔍 Generate Balance Sheet Schedules", type="primary", use_container_width=True):
+        # Auto-calculate balance sheet analysis
+        # Check if we have minimum required data to run analysis
+        if total_revenue > 0 and (total_const_cost > 0 or total_land_cost > 0):
             try:
                 # Get tax rate from assumptions or use default
                 tax_rate = 0.2  # Default 20% corporate tax rate in Vietnam
@@ -1744,6 +1745,9 @@ class ProjectPipelineRealEstateTab:
                 
             except Exception as e:
                 st.error(f"❌ Error running balance sheet analysis: {str(e)}")
+        else:
+            # Show info message when insufficient data
+            st.info("ℹ️ Balance sheet analysis will be generated automatically once project parameters are configured (revenue and construction/land costs required)")
         
         st.markdown("---")
     
