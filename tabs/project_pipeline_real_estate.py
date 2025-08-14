@@ -2094,53 +2094,63 @@ class ProjectPipelineRealEstateTab:
                     if 'project_bs_analysis_results' in st.session_state:
                         bs_df = st.session_state['project_bs_analysis_results']
                         
-                        # Debug: Show that we're capturing financial statements
-                        st.info("📊 Capturing Comprehensive Financial Statements Forecast for MongoDB save...")
+                        # Debug: Show DataFrame info
+                        st.info(f"📊 Found Financial Statements DataFrame with {len(bs_df)} rows")
+                        print(f"DEBUG: DataFrame shape: {bs_df.shape}")
+                        print(f"DEBUG: DataFrame columns: {list(bs_df.columns)}")
                         
                         # Convert DataFrame to dictionary format for MongoDB storage
                         balance_sheet_data = {}
                         
                         # Process each year (excluding Total row)
-                        for _, row in bs_df.iterrows():
-                            if row['Year'] != 'Total':
-                                year_str = str(int(row['Year']))
-                                
-                                # Store all balance sheet, P&L, and cash flow data
-                                balance_sheet_data[year_str] = {
-                                    # Balance Sheet items
-                                    'debt_balance': float(row['Debt_Balance']),
-                                    'cash_balance': float(row['Cumulative_Cash_Balance']),
-                                    'land_cost': float(row['Land_Cost']),
-                                    'construction_cost': float(row['Construction_Cost']),
-                                    'interest_capitalized': float(row['Interest_Capitalized']),
-                                    'inventory_addition': float(row['Inventory_Addition']),
-                                    'inventory_balance': float(row['Inventory_Balance']),
-                                    'presales': float(row['Presales']),
-                                    'customer_prepayment_balance': float(row['Customer_Prepayment_Balance']),
+                        for idx, row in bs_df.iterrows():
+                            year_value = row['Year']
+                            print(f"DEBUG: Processing row {idx}, Year value: {year_value}, type: {type(year_value)}")
+                            
+                            if str(year_value) != 'Total':
+                                try:
+                                    year_str = str(int(year_value))
                                     
-                                    # P&L items
-                                    'revenue_recognition': float(row['Revenue_Recognition']),
-                                    'cogs': float(row['COGS']),
-                                    'sga_expense': float(row['SGA_Expense']),
-                                    'interest_expense_cash': float(row['Interest_Expense_Cash']),
-                                    'pbt': float(row['PBT']),
-                                    'tax': float(row['Tax']),
-                                    'pat': float(row['PAT']),
-                                    
-                                    # Cash Flow items
-                                    'cash_inflow_presales': float(row['Cash_Inflow_Presales']),
-                                    'debt_disbursement': float(row['Debt_Disbursement']),
-                                    'debt_repayment': float(row['Debt_Repayment']),
-                                    'cash_outflow_land': float(row['Cash_Outflow_Land']),
-                                    'cash_outflow_construction': float(row['Cash_Outflow_Construction']),
-                                    'cash_outflow_interest': float(row['Cash_Outflow_Interest']),
-                                    'cash_outflow_sga': float(row['Cash_Outflow_SGA']),
-                                    'cash_outflow_tax': float(row['Cash_Outflow_Tax']),
-                                    'cash_balance_change': float(row['Cash_Balance_Change'])
-                                }
+                                    # Store all balance sheet, P&L, and cash flow data
+                                    balance_sheet_data[year_str] = {
+                                        # Balance Sheet items
+                                        'debt_balance': float(row['Debt_Balance']),
+                                        'cash_balance': float(row['Cumulative_Cash_Balance']),
+                                        'land_cost': float(row['Land_Cost']),
+                                        'construction_cost': float(row['Construction_Cost']),
+                                        'interest_capitalized': float(row['Interest_Capitalized']),
+                                        'inventory_addition': float(row['Inventory_Addition']),
+                                        'inventory_balance': float(row['Inventory_Balance']),
+                                        'presales': float(row['Presales']),
+                                        'customer_prepayment_balance': float(row['Customer_Prepayment_Balance']),
+                                        
+                                        # P&L items
+                                        'revenue_recognition': float(row['Revenue_Recognition']),
+                                        'cogs': float(row['COGS']),
+                                        'sga_expense': float(row['SGA_Expense']),
+                                        'interest_expense_cash': float(row['Interest_Expense_Cash']),
+                                        'pbt': float(row['PBT']),
+                                        'tax': float(row['Tax']),
+                                        'pat': float(row['PAT']),
+                                        
+                                        # Cash Flow items
+                                        'cash_inflow_presales': float(row['Cash_Inflow_Presales']),
+                                        'debt_disbursement': float(row['Debt_Disbursement']),
+                                        'debt_repayment': float(row['Debt_Repayment']),
+                                        'cash_outflow_land': float(row['Cash_Outflow_Land']),
+                                        'cash_outflow_construction': float(row['Cash_Outflow_Construction']),
+                                        'cash_outflow_interest': float(row['Cash_Outflow_Interest']),
+                                        'cash_outflow_sga': float(row['Cash_Outflow_SGA']),
+                                        'cash_outflow_tax': float(row['Cash_Outflow_Tax']),
+                                        'cash_balance_change': float(row['Cash_Balance_Change'])
+                                    }
+                                    print(f"DEBUG: Successfully processed year {year_str}")
+                                except Exception as e:
+                                    print(f"DEBUG: Error processing row {idx}: {e}")
+                                    st.error(f"Error processing year data: {e}")
                         
-                        # Store complete balance sheet analysis in project data
-                        edited['balance_sheet_analysis'] = balance_sheet_data
+                        # Store complete financial statements in project data
+                        edited['comprehensive_financial_statements'] = balance_sheet_data
                         
                         # Debug: Show how many years of data we're saving
                         st.success(f"✅ Captured {len(balance_sheet_data)} years of financial statements data")
@@ -2148,7 +2158,7 @@ class ProjectPipelineRealEstateTab:
                         # Also extract summary totals for quick access
                         total_row = bs_df[bs_df['Year'] == 'Total']
                         if not total_row.empty:
-                            edited['balance_sheet_summary'] = {
+                            edited['financial_statements_summary'] = {
                                 'total_revenue': float(total_row['Revenue_Recognition'].iloc[0]),
                                 'total_cogs': float(total_row['COGS'].iloc[0]),
                                 'total_sga': float(total_row['SGA_Expense'].iloc[0]),
@@ -2178,6 +2188,14 @@ class ProjectPipelineRealEstateTab:
                             edited['rnav_value'] = None
                     else:
                         edited['rnav_value'] = None
+                    
+                    # Debug: Check what's in edited before saving
+                    if 'comprehensive_financial_statements' in edited:
+                        st.info(f"📊 About to save {len(edited['comprehensive_financial_statements'])} years of financial data to MongoDB")
+                        print(f"DEBUG: edited contains comprehensive_financial_statements with {len(edited['comprehensive_financial_statements'])} years")
+                    else:
+                        print("DEBUG: edited does NOT contain comprehensive_financial_statements")
+                        st.warning("⚠️ Note: Financial statements data not found in save data")
                     
                     # Save to MongoDB
                     from utils.mongodb_utils import save_project_to_mongodb

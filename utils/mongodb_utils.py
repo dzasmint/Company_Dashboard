@@ -461,11 +461,11 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             # Distribution percentages
             "revenue_distribution": project_data.get('revenue_distribution', {}),
             "presales_distribution": project_data.get('presales_distribution', {}),
-            # P&L schedule (legacy - replaced by balance_sheet_analysis)
+            # P&L schedule (legacy - replaced by comprehensive_financial_statements)
             "pnl_schedule": project_data.get('pnl_schedule', {}),
-            # Balance Sheet Analysis - comprehensive financial statements
-            "balance_sheet_analysis": project_data.get('balance_sheet_analysis', {}),
-            "balance_sheet_summary": project_data.get('balance_sheet_summary', {}),
+            # Comprehensive Financial Statements - includes Balance Sheet, P&L, and Cash Flow
+            "comprehensive_financial_statements": project_data.get('comprehensive_financial_statements', {}),
+            "financial_statements_summary": project_data.get('financial_statements_summary', {}),
             # Timestamps
             "last_updated": datetime.datetime.now(),
             "created_date": datetime.datetime.now()
@@ -478,10 +478,17 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
         })
         
         # Log if financial statements are being saved
-        if document.get("balance_sheet_analysis"):
-            years_count = len(document["balance_sheet_analysis"])
+        if document.get("comprehensive_financial_statements"):
+            years_count = len(document["comprehensive_financial_statements"])
+            # Debug: Print what we're actually saving
+            print(f"DEBUG: Saving comprehensive_financial_statements with {years_count} years")
+            print(f"DEBUG: Years in data: {list(document['comprehensive_financial_statements'].keys())}")
+            # Check if summary exists too
+            if document.get("financial_statements_summary"):
+                print(f"DEBUG: financial_statements_summary also included with {len(document['financial_statements_summary'])} fields")
             message_suffix = f" (including {years_count} years of financial statements)"
         else:
+            print("DEBUG: No comprehensive_financial_statements found in document")
             message_suffix = ""
         
         if existing:
