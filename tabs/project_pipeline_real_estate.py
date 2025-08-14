@@ -1600,8 +1600,11 @@ class ProjectPipelineRealEstateTab:
                     # Inventory section
                     'Inventory_Addition': 'Inventory Addition',
                     'Inventory_Balance': 'Inventory Balance',
-                    # P&L section
+                    # Presales and Revenue section
+                    'Presales': 'Presales',
+                    'Customer_Prepayment_Balance': 'Customer Prepayment Balance',
                     'Revenue_Recognition': 'Revenue Recognition',
+                    # P&L section
                     'COGS': 'Cost of Goods Sold',
                     'SGA_Expense': 'SG&A Expense (P&L)',
                     'Interest_Expense_Cash': 'Interest Expense (P&L)',
@@ -1644,8 +1647,11 @@ class ProjectPipelineRealEstateTab:
                         # Inventory section - light green
                         elif row_name in ['Inventory Addition', 'Inventory Balance']:
                             colors.append('background-color: #E8F5E9')
+                        # Presales and Revenue section - light purple
+                        elif row_name in ['Presales', 'Customer Prepayment Balance', 'Revenue Recognition']:
+                            colors.append('background-color: #F3E5F5')
                         # P&L section - light yellow
-                        elif row_name in ['Revenue Recognition', 'Cost of Goods Sold', 'SG&A Expense (P&L)', 
+                        elif row_name in ['Cost of Goods Sold', 'SG&A Expense (P&L)', 
                                         'Interest Expense (P&L)', 'PBT', 'Tax', 'PAT']:
                             colors.append('background-color: #FFF9C4')
                         # Cash flow section - light orange

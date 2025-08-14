@@ -91,6 +91,8 @@ def generate_balance_sheet_schedules(
     land_cost = np.zeros(n_years)  # New array for land cost
     inventory_addition = np.zeros(n_years)
     inventory_balance = np.zeros(n_years)
+    presales = np.zeros(n_years)  # Presales in each year
+    customer_prepayment_balance = np.zeros(n_years)  # Customer prepayment balance
     revenue_recognition = np.zeros(n_years)
     cogs = np.zeros(n_years)
     cash_inflow_presales = np.zeros(n_years)
@@ -133,6 +135,7 @@ def generate_balance_sheet_schedules(
     for year, amount in presales_schedule.items():
         if year in years:
             idx = years.index(year)
+            presales[idx] = amount  # Record presales
             cash_inflow_presales[idx] = amount
             # SG&A follows presales schedule - calculated as % of presales
             sga_amount = amount * sga_percentage
@@ -240,7 +243,18 @@ def generate_balance_sheet_schedules(
             inventory_balance[i] = previous_inventory + inventory_addition[i]
             cogs[i] = 0
     
-    # 8. Calculate P&L items (PBT, Tax, PAT)
+    # 8. Calculate customer prepayment balance
+    # Customer prepayment increases with presales and decreases with revenue recognition
+    for i in range(n_years):
+        if i == 0:
+            previous_prepayment = 0
+        else:
+            previous_prepayment = customer_prepayment_balance[i-1]
+        
+        # Add presales, subtract revenue recognized
+        customer_prepayment_balance[i] = previous_prepayment + presales[i] - revenue_recognition[i]
+    
+    # 9. Calculate P&L items (PBT, Tax, PAT)
     pbt = np.zeros(n_years)  # Profit before tax
     tax_expense = np.zeros(n_years)  # Tax expense
     pat = np.zeros(n_years)  # Profit after tax
@@ -262,7 +276,7 @@ def generate_balance_sheet_schedules(
         # PAT = PBT - Tax
         pat[i] = pbt[i] - tax_expense[i]
     
-    # 9. Calculate net cash flow (outflows are already negative)
+    # 10. Calculate net cash flow (outflows are already negative)
     cash_balance_change = (
         cash_inflow_presales 
         + debt_disbursement  # Cash inflow from debt
@@ -291,8 +305,11 @@ def generate_balance_sheet_schedules(
         # Inventory section
         'Inventory_Addition': inventory_addition,
         'Inventory_Balance': inventory_balance,
-        # P&L section
+        # Presales and Revenue section
+        'Presales': presales,
+        'Customer_Prepayment_Balance': customer_prepayment_balance,
         'Revenue_Recognition': revenue_recognition,
+        # P&L section
         'COGS': cogs,
         'SGA_Expense': sga_expense,
         'Interest_Expense_Cash': interest_expense_cash,
@@ -324,8 +341,11 @@ def generate_balance_sheet_schedules(
         # Inventory section
         'Inventory_Addition': [inventory_addition.sum()],
         'Inventory_Balance': [inventory_balance[-1]],  # Final balance
-        # P&L section
+        # Presales and Revenue section
+        'Presales': [presales.sum()],
+        'Customer_Prepayment_Balance': [customer_prepayment_balance[-1]],  # Final balance
         'Revenue_Recognition': [revenue_recognition.sum()],
+        # P&L section
         'COGS': [cogs.sum()],
         'SGA_Expense': [sga_expense.sum()],
         'Interest_Expense_Cash': [interest_expense_cash.sum()],
