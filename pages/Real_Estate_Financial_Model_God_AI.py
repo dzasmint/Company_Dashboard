@@ -1542,6 +1542,9 @@ class RealEstateFinancialModel:
             project_sga_breakdown = {}
             project_interest_breakdown = {}
             
+            # Track logged projects for debug output
+            logged_projects = set()
+            
             # Load project schedules from MongoDB P&L schedule
             for year in years:
                 project_revenue_by_year[year] = 0
@@ -1582,16 +1585,15 @@ class RealEstateFinancialModel:
                         # New format has different field names
                         if 'revenue_recognition' in year_data:
                             # New format from comprehensive_financial_statements
-                            # Values are in raw VND, convert to billions
+                            # Values are in raw VND, expenses are already negative in MongoDB
                             
                             # Get revenue (convert to billions)
                             revenue_amount = year_data.get('revenue_recognition', 0) / 1e9
                             project_revenue_by_year[year] += revenue_amount
                             project_revenue_breakdown[project_name][year] = revenue_amount
                             
-                            # Get COGS - directly available in new format (convert to billions, ensure negative)
-                            cogs_raw = year_data.get('cogs', 0) / 1e9
-                            project_cogs = -abs(cogs_raw) if cogs_raw != 0 else 0  # Ensure negative
+                            # Get COGS - already negative in MongoDB (convert to billions)
+                            project_cogs = year_data.get('cogs', 0) / 1e9  # Already negative in DB
                             project_cogs_breakdown[project_name][year] = project_cogs
                             project_cogs_by_year[year] += project_cogs
                             
@@ -1599,15 +1601,22 @@ class RealEstateFinancialModel:
                             land_cost = year_data.get('land_cost', 0) / 1e9
                             project_land_breakdown[project_name][year] = land_cost
                             
-                            # Get SG&A - ensure negative (convert to billions)
-                            sga_raw = year_data.get('sga_expense', 0) / 1e9
-                            sga_amount = -abs(sga_raw) if sga_raw != 0 else 0  # Ensure negative
+                            # Get SG&A - already negative in MongoDB (convert to billions)
+                            sga_amount = year_data.get('sga_expense', 0) / 1e9  # Already negative in DB
                             project_sga_breakdown[project_name][year] = sga_amount
                             
-                            # Get Interest expense from P&L - ensure negative (convert to billions)
-                            interest_raw = year_data.get('interest_expense_cash', 0) / 1e9
-                            interest_amount = -abs(interest_raw) if interest_raw != 0 else 0  # Ensure negative
+                            # Get Interest expense from P&L - already negative in MongoDB (convert to billions)
+                            interest_amount = year_data.get('interest_expense_cash', 0) / 1e9  # Already negative in DB
                             project_interest_breakdown[project_name][year] = interest_amount
+                            
+                            # Debug: Log first project's values for verification
+                            if year == years[0] and project_name not in logged_projects:
+                                logged_projects.add(project_name)
+                                print(f"DEBUG: Project '{project_name}' Year {year} from MongoDB:")
+                                print(f"  Revenue: {revenue_amount:.1f}B VND")
+                                print(f"  COGS: {project_cogs:.1f}B VND (should be negative)")
+                                print(f"  SG&A: {sga_amount:.1f}B VND (should be negative)")
+                                print(f"  Interest: {interest_amount:.1f}B VND (should be negative)")
                         else:
                             # Old format from pnl_schedule
                             # Old format values are already in billions VND
@@ -2214,201 +2223,7 @@ class RealEstateFinancialModel:
                 hide_index=True
             )
             
-            # Section 4.6: Debt Management
-            st.markdown("---")
-            st.subheader("💳 Debt Management")
-            
-            # Get historical data if available
-            historical_data = st.session_state.get('historical_data')
-            
-            # Initialize debt management data
-            debt_mgmt_rows = []
-            
-            # Determine the latest historical year
-            latest_hist_year = None
-            hist_values = {}
-            
-            if historical_data is not None and not historical_data.empty:
-                # Get 2024 data from annual dataset
-                latest_date_idx = None
-                
-                # Check if base_year exists in the index
-                if str(base_year) in historical_data.index:
-                    latest_date_idx = str(base_year)
-                    latest_hist_year = base_year
-                elif base_year in historical_data.index:
-                    latest_date_idx = base_year
-                    latest_hist_year = base_year
-                    
-                    if latest_date_idx is not None:
-                        # Extract values from historical data - using correct column names from FA_processed.csv
-                        # Cash and Cash Equivalents
-                        if 'Cash' in historical_data.columns:
-                            hist_values['Cash and cash equivalents'] = historical_data.loc[latest_date_idx, 'Cash']
-                        elif 'Cash_Equivalent' in historical_data.columns:
-                            cash_equiv = historical_data.loc[latest_date_idx, 'Cash_Equivalent']
-                            hist_values['Cash and cash equivalents'] = cash_equiv
-                        else:
-                            hist_values['Cash and cash equivalents'] = 0
-                        
-                        # Short-term investment - might not be directly available
-                        hist_values['Short-term investment'] = 0  # Default as this is often not separated
-                        
-                        # Short-term debt
-                        if 'ST_Debt' in historical_data.columns:
-                            hist_values['Short-term debt'] = historical_data.loc[latest_date_idx, 'ST_Debt']
-                        else:
-                            hist_values['Short-term debt'] = 0
-                        
-                        # Long-term debt
-                        if 'LT_Debt' in historical_data.columns:
-                            hist_values['Long-term debt'] = historical_data.loc[latest_date_idx, 'LT_Debt']
-                        else:
-                            hist_values['Long-term debt'] = 0
-                        
-                        # Interest expense
-                        if 'Interest_Expense' in historical_data.columns:
-                            hist_values['Interest expense'] = abs(historical_data.loc[latest_date_idx, 'Interest_Expense'])
-                        else:
-                            hist_values['Interest expense'] = 0
-                        
-                        # Convert to billions VND
-                        for key in hist_values:
-                            if hist_values[key] and not pd.isna(hist_values[key]):
-                                hist_values[key] = hist_values[key] / 1e9  # Convert to billions
-                            else:
-                                hist_values[key] = 0
-            
-            # Create columns for display (use consistent format with other tables)
-            debt_display_years = ['2024H'] + [str(y) for y in years]
-            
-            # Row 1: Cash and cash equivalents
-            cash_row = {'Item': 'Cash and cash equivalents'}
-            cash_row['2024H'] = hist_values.get('Cash and cash equivalents', 100)
-            for year in years:
-                # For now, keep historical value or use default
-                base_value = hist_values.get('Cash and cash equivalents', 100) if hist_values else 100
-                growth_rate = 1.05  # 5% growth assumption
-                years_ahead = year - (latest_hist_year if latest_hist_year else years[0] - 1)
-                cash_row[str(year)] = base_value * (growth_rate ** years_ahead)
-            debt_mgmt_rows.append(cash_row)
-            
-            # Row 2: Short-term investment
-            st_inv_row = {'Item': 'Short-term investment'}
-            st_inv_row['2024H'] = hist_values.get('Short-term investment', 50)
-            for year in years:
-                base_value = hist_values.get('Short-term investment', 50) if hist_values else 50
-                growth_rate = 1.03  # 3% growth assumption
-                years_ahead = year - (latest_hist_year if latest_hist_year else years[0] - 1)
-                st_inv_row[str(year)] = base_value * (growth_rate ** years_ahead)
-            debt_mgmt_rows.append(st_inv_row)
-            
-            # Row 3: Short-term debt
-            st_debt_row = {'Item': 'Short-term debt'}
-            st_debt_row['2024H'] = hist_values.get('Short-term debt', 200)
-            for year in years:
-                base_value = hist_values.get('Short-term debt', 200) if hist_values else 200
-                # Short-term debt might fluctuate with working capital needs
-                st_debt_row[str(year)] = base_value * (1 + 0.1 * ((year - years[0]) / len(years)))
-            debt_mgmt_rows.append(st_debt_row)
-            
-            # Row 4: Long-term debt
-            lt_debt_row = {'Item': 'Long-term debt'}
-            lt_debt_row['2024H'] = hist_values.get('Long-term debt', 500)
-            for year in years:
-                base_value = hist_values.get('Long-term debt', 500) if hist_values else 500
-                # Long-term debt might increase with project financing
-                lt_debt_row[str(year)] = base_value * (1 + 0.15 * ((year - years[0]) / len(years)))
-            debt_mgmt_rows.append(lt_debt_row)
-            
-            # Row 5: Interest expense
-            int_expense_row = {'Item': 'Interest expense'}
-            int_expense_row['2024H'] = hist_values.get('Interest expense', 40)
-            for year in years:
-                # Calculate based on net debt and interest rate
-                cash = cash_row[str(year)]
-                st_inv = st_inv_row[str(year)]
-                st_debt = st_debt_row[str(year)]
-                lt_debt = lt_debt_row[str(year)]
-                net_debt = st_debt + lt_debt - cash - st_inv
-                
-                # Use historical interest rate or default
-                if latest_hist_year and hist_values.get('Interest expense', 0) > 0:
-                    hist_net_debt = (hist_values.get('Short-term debt', 0) + hist_values.get('Long-term debt', 0) - 
-                                   hist_values.get('Cash and cash equivalents', 0) - hist_values.get('Short-term investment', 0))
-                    if hist_net_debt > 0:
-                        implied_rate = hist_values['Interest expense'] / hist_net_debt
-                    else:
-                        implied_rate = 0.07  # Default 7%
-                else:
-                    implied_rate = 0.07  # Default 7%
-                
-                int_expense_row[str(year)] = max(0, net_debt * implied_rate)
-            debt_mgmt_rows.append(int_expense_row)
-            
-            # Row 6: Net Debt
-            net_debt_row = {'Item': 'Net Debt'}
-            # Calculate for historical year
-            net_debt_row['2024H'] = (st_debt_row['2024H'] + lt_debt_row['2024H'] - 
-                                    cash_row['2024H'] - st_inv_row['2024H'])
-            # Calculate for forecast years
-            for year in years:
-                year_str = str(year)
-                net_debt_row[year_str] = (st_debt_row[year_str] + lt_debt_row[year_str] - 
-                                         cash_row[year_str] - st_inv_row[year_str])
-            debt_mgmt_rows.append(net_debt_row)
-            
-            # Row 7: Interest expense rate
-            int_rate_row = {'Item': 'Interest expense rate (%)'}
-            # Calculate for historical year
-            if net_debt_row['2024H'] > 0:
-                int_rate_row['2024H'] = (int_expense_row['2024H'] / net_debt_row['2024H']) * 100
-            else:
-                int_rate_row['2024H'] = 0
-            # Calculate for forecast years
-            for year in years:
-                year_str = str(year)
-                if net_debt_row[year_str] > 0:
-                    int_rate_row[year_str] = (int_expense_row[year_str] / net_debt_row[year_str]) * 100
-                else:
-                    int_rate_row[year_str] = 0
-            debt_mgmt_rows.append(int_rate_row)
-            
-            # Create DataFrame
-            debt_mgmt_df = pd.DataFrame(debt_mgmt_rows)
-            
-            # Format the dataframe for display
-            st.write("**Debt Management (Billion VND)**")
-            
-            # Simple approach - format the DataFrame values before styling
-            formatted_df = debt_mgmt_df.copy()
-            
-            # Format numeric columns
-            for col in debt_display_years:
-                col_str = col
-                if col_str in formatted_df.columns:
-                    # Format as numbers with 1 decimal, except for Interest expense rate
-                    formatted_df[col_str] = formatted_df.apply(
-                        lambda row: f"{row[col_str]:.1f}%" if row['Item'] == 'Interest expense rate (%)' 
-                        else f"{row[col_str]:.1f}", 
-                        axis=1
-                    )
-            
-            # Apply highlighting for Net Debt and Interest expense rate rows
-            def highlight_important_rows(row):
-                if row['Item'] in ['Net Debt', 'Interest expense rate (%)']:
-                    return ['font-weight: bold'] * len(row)
-                return [''] * len(row)
-            
-            styled_df = formatted_df.style.apply(highlight_important_rows, axis=1)
-            
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
-            
-            # Add explanation
-            st.caption("Net Debt = Short-term debt + Long-term debt - Cash and cash equivalents - Short-term investment")
-            st.caption("Interest expense rate = Interest expense / Net Debt")
-            
-            # Section 5: Comprehensive P&L with Interest Expense (moved here from below)
+            # Section 5: Comprehensive P&L with Interest Expense
             st.markdown("---")
             st.subheader("💰 Comprehensive P&L Statement")
             

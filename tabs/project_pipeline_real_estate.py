@@ -2160,11 +2160,11 @@ class ProjectPipelineRealEstateTab:
                         if not total_row.empty:
                             edited['financial_statements_summary'] = {
                                 'total_revenue': float(total_row['Revenue_Recognition'].iloc[0]),
-                                'total_cogs': float(total_row['COGS'].iloc[0]),
-                                'total_sga': float(total_row['SGA_Expense'].iloc[0]),
-                                'total_interest': float(total_row['Interest_Expense_Cash'].iloc[0]),
+                                'total_cogs': -abs(float(total_row['COGS'].iloc[0])) if float(total_row['COGS'].iloc[0]) != 0 else 0,  # Ensure negative
+                                'total_sga': -abs(float(total_row['SGA_Expense'].iloc[0])) if float(total_row['SGA_Expense'].iloc[0]) != 0 else 0,  # Ensure negative
+                                'total_interest': -abs(float(total_row['Interest_Expense_Cash'].iloc[0])) if float(total_row['Interest_Expense_Cash'].iloc[0]) != 0 else 0,  # Ensure negative
                                 'total_pbt': float(total_row['PBT'].iloc[0]),
-                                'total_tax': float(total_row['Tax'].iloc[0]),
+                                'total_tax': -abs(float(total_row['Tax'].iloc[0])) if float(total_row['Tax'].iloc[0]) != 0 else 0,  # Ensure negative
                                 'total_pat': float(total_row['PAT'].iloc[0]),
                                 'final_debt_balance': float(total_row['Debt_Balance'].iloc[0]),
                                 'final_cash_balance': float(total_row['Cumulative_Cash_Balance'].iloc[0]),
