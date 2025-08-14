@@ -1642,8 +1642,8 @@ class ProjectPipelineRealEstateTab:
                     for idx in s.index:
                         item_name = idx  # idx is already the mapped label
                         
-                        # Debt section - light blue
-                        if item_name in ['Debt Balance']:
+                        # Debt and Cash section - light blue
+                        if item_name in ['Debt Balance', 'Cash Balance']:
                             colors.append('background-color: #E3F2FD')
                         # Cost section - light gray
                         elif item_name in ['Land Cost', 'Construction Cost', 'Interest Capitalized']:
@@ -1672,7 +1672,7 @@ class ProjectPipelineRealEstateTab:
                 pnl_items = ['Revenue (P&L)', 'COGS (P&L)', 'SG&A Expense (P&L)', 
                             'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']
                 
-                # Cash flow items
+                # Cash flow items (Cash Balance included in both Balance Sheet and Cash Flow)
                 cashflow_items = ['Cash Inflow (Presales)', 'Cash Inflow (Debt Disbursement)',
                                  'Cash Outflow (Debt Repayment)', 'Cash Outflow (Land)',
                                  'Cash Outflow (Construction)', 'Cash Outflow (Interest)',
@@ -1683,9 +1683,12 @@ class ProjectPipelineRealEstateTab:
                 pnl_df = display_df.loc[display_df.index.isin(pnl_items)].copy()
                 cashflow_df = display_df.loc[display_df.index.isin(cashflow_items)].copy()
                 
-                # Balance sheet items (everything else)
-                bs_items = [idx for idx in display_df.index 
-                           if idx not in pnl_items and idx not in cashflow_items]
+                # Balance sheet items - explicitly define order including Cash Balance
+                bs_items = ['Debt Balance', 'Cash Balance', 'Land Cost', 'Construction Cost', 
+                           'Interest Capitalized', 'Inventory Addition', 'Inventory Balance',
+                           'Presales', 'Customer Prepayment Balance']
+                # Filter to only include items that exist in display_df
+                bs_items = [item for item in bs_items if item in display_df.index]
                 bs_df = display_df.loc[bs_items].copy()
                 
                 # Create column configuration for consistent width across all tables
