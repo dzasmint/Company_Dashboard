@@ -2126,11 +2126,11 @@ class ProjectPipelineRealEstateTab:
                                         
                                         # P&L items
                                         'revenue_recognition': float(row['Revenue_Recognition']),
-                                        'cogs': float(row['COGS']),
-                                        'sga_expense': float(row['SGA_Expense']),
-                                        'interest_expense_cash': float(row['Interest_Expense_Cash']),
+                                        'cogs': -abs(float(row['COGS'])) if float(row['COGS']) != 0 else 0,  # Ensure negative
+                                        'sga_expense': -abs(float(row['SGA_Expense'])) if float(row['SGA_Expense']) != 0 else 0,  # Ensure negative
+                                        'interest_expense_cash': -abs(float(row['Interest_Expense_Cash'])) if float(row['Interest_Expense_Cash']) != 0 else 0,  # Ensure negative
                                         'pbt': float(row['PBT']),
-                                        'tax': float(row['Tax']),
+                                        'tax': -abs(float(row['Tax'])) if float(row['Tax']) != 0 else 0,  # Ensure negative
                                         'pat': float(row['PAT']),
                                         
                                         # Cash Flow items
