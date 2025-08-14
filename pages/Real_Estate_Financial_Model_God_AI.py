@@ -238,8 +238,7 @@ class RealEstateFinancialModel:
                 "AI Project Discovery", 
                 "Assumptions",
                 "Project Pipeline",
-                "Balance Sheet Analysis",
-                "Revenue Forecast",
+                "Model Forecast",
                 "Valuation",
                 "Research Insights",
                 "Export Model",
@@ -565,17 +564,15 @@ class RealEstateFinancialModel:
             self.render_assumptions_interface()
         elif selected_tab == tab_names[3]:  # Project Pipeline
             self.render_project_pipeline()
-        elif selected_tab == tab_names[4]:  # Balance Sheet Analysis
-            self.render_balance_sheet_analysis()
-        elif selected_tab == tab_names[5]:  # Revenue Forecast
+        elif selected_tab == tab_names[4]:  # Model Forecast
             self.render_revenue_forecast()
-        elif selected_tab == tab_names[6]:  # Valuation
+        elif selected_tab == tab_names[5]:  # Valuation
             self.render_valuation()
-        elif selected_tab == tab_names[7]:  # Research Insights
+        elif selected_tab == tab_names[6]:  # Research Insights
             self.render_research_insights()
-        elif selected_tab == tab_names[8]:  # Export Model
+        elif selected_tab == tab_names[7]:  # Export Model
             self.render_export_interface()
-        elif selected_tab == tab_names[9]:  # God AI Assistant
+        elif selected_tab == tab_names[8]:  # God AI Assistant
             self.render_god_ai_assistant()
         
     
@@ -616,16 +613,15 @@ class RealEstateFinancialModel:
             'Net Revenue': 'Net_Revenue',
             'Cost of Goods Sold': 'COGS',
             'Gross Profit': 'Gross_Profit',
-            'Operating Expenses': 'Operating_Expense',
             'EBITDA': 'EBITDA',
-            'Depreciation & Amortization': 'D&A',
+            'Depreciation & Amortization': 'Dep_Expense',
             'EBIT': 'EBIT',
-            'Interest Income': 'Interest_Income',
-            'Interest Expense': 'Interest_Expense',
-            'Profit Before Tax': 'Profit_Before_Tax',
-            'Tax': 'Corporate_Tax',
+            'Financial Income': 'Financial_Income',
+            'Financial Expense': 'Financial_Expense',
+            'Profit Before Tax': 'PBT',
+            'Tax Expense': 'Tax',
             'Profit After Tax': 'NPAT',
-            'Minority Interest': 'Minority_Interest',
+            'Minority Interest': 'Minority_Interest_In_Earning',
             'NPATMI': 'NPATMI'
         }
         
@@ -662,9 +658,9 @@ class RealEstateFinancialModel:
             if pd.isna(val) or val == 0:
                 return "-"
             elif abs(val) < 1:
-                return f"{val:.2f}"
+                return f"{val:.2f}"  # Keep decimal for percentages
             else:
-                return f"{val:,.1f}"
+                return f"{val:,.0f}"
         
         # Apply formatting
         styled_pnl = pnl_df.style.format(format_pnl_value)
@@ -679,6 +675,32 @@ class RealEstateFinancialModel:
         
         # Display the P&L table
         st.dataframe(styled_pnl, use_container_width=True, height=500)
+        
+        # Add a section to highlight key P&L items requested
+        st.subheader("Key Financial Metrics")
+        col1, col2, col3 = st.columns(3)
+        
+        # Get the latest year available
+        latest_year = years[-1] if years else None
+        
+        if latest_year and latest_year in pnl_df.columns:
+            with col1:
+                st.metric(
+                    "Financial Income (Latest Year)",
+                    f"{pnl_df.loc['Financial Income', latest_year]:,.1f}B VND" if 'Financial Income' in pnl_df.index else "N/A"
+                )
+            
+            with col2:
+                st.metric(
+                    "Profit Before Tax (Latest Year)",
+                    f"{pnl_df.loc['Profit Before Tax', latest_year]:,.1f}B VND" if 'Profit Before Tax' in pnl_df.index else "N/A"
+                )
+            
+            with col3:
+                st.metric(
+                    "Tax Expense (Latest Year)",
+                    f"{pnl_df.loc['Tax Expense', latest_year]:,.1f}B VND" if 'Tax Expense' in pnl_df.index else "N/A"
+                )
         
         # Add margin analysis below
         if margin_rows:
@@ -1369,6 +1391,22 @@ class RealEstateFinancialModel:
         business_segments = []
         segment_metrics = {}
         
+        # Clear old segments that no longer exist in assumptions
+        current_segments = []
+        for stream in revenue_streams:
+            segment_name = stream.get('segment_name', '')
+            if segment_name and 'real estate' not in segment_name.lower():
+                current_segments.append(segment_name)
+        
+        # Remove segments from base_year_revenues that are no longer in assumptions
+        segments_to_remove = []
+        for segment_name in st.session_state.base_year_revenues.keys():
+            if segment_name not in current_segments:
+                segments_to_remove.append(segment_name)
+        
+        for segment_name in segments_to_remove:
+            del st.session_state.base_year_revenues[segment_name]
+        
         # Load base year revenues directly from assumptions (silently in background)
         for stream in revenue_streams:
             segment_name = stream.get('segment_name', '')
@@ -1501,11 +1539,24 @@ class RealEstateFinancialModel:
                 else:
                     hist_values['NPATMI'] = 0
                 
-                # Interest expense
-                if 'Interest_Expense' in historical_data.columns:
+                # Minority Interest
+                if 'Minority_Interest_In_Earning' in historical_data.columns:
                     try:
-                        raw_value = historical_data.loc[hist_date_idx, 'Interest_Expense']
-                        hist_values['Interest expense'] = abs(raw_value) / 1e9 if not pd.isna(raw_value) else 0
+                        raw_value = historical_data.loc[hist_date_idx, 'Minority_Interest_In_Earning']
+                        # Minority interest is usually negative in the CSV (as it reduces NPAT to get NPATMI)
+                        # We want to display it as positive in the P&L
+                        hist_values['Minority Interest'] = abs(raw_value / 1e9) if not pd.isna(raw_value) else 0
+                    except:
+                        hist_values['Minority Interest'] = 0
+                else:
+                    hist_values['Minority Interest'] = 0
+                
+                # Interest expense - Load from Financial_Expense in CSV
+                if 'Financial_Expense' in historical_data.columns:
+                    try:
+                        raw_value = historical_data.loc[hist_date_idx, 'Financial_Expense']
+                        # Financial_Expense is already negative in the CSV, so we make it negative for P&L
+                        hist_values['Interest expense'] = raw_value / 1e9 if not pd.isna(raw_value) else 0
                     except:
                         hist_values['Interest expense'] = 0
                 else:
@@ -1541,6 +1592,9 @@ class RealEstateFinancialModel:
             project_land_breakdown = {}
             project_sga_breakdown = {}
             project_interest_breakdown = {}
+            
+            # Store other business segment revenue breakdown
+            other_revenue_breakdown = {}
             
             # Track logged projects for debug output
             logged_projects = set()
@@ -1659,7 +1713,15 @@ class RealEstateFinancialModel:
                 other_revenue_by_year[year] = 0
                 other_cogs_by_year[year] = 0
                 
+                # Check if base_year_revenues exists and has items
+                if 'base_year_revenues' not in st.session_state:
+                    st.session_state.base_year_revenues = {}
+                
                 for segment_name, base_revenue in st.session_state.base_year_revenues.items():
+                    # Initialize segment breakdown if not exists
+                    if segment_name not in other_revenue_breakdown:
+                        other_revenue_breakdown[segment_name] = {}
+                    
                     # Get metrics from segment_metrics if available
                     if segment_name in segment_metrics:
                         growth_rate = segment_metrics[segment_name]['revenue_growth']
@@ -1674,6 +1736,8 @@ class RealEstateFinancialModel:
                     years_from_base = year - base_year
                     year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
                     
+                    # Store in breakdown by segment
+                    other_revenue_breakdown[segment_name][str(year)] = year_revenue
                     other_revenue_by_year[year] += year_revenue
                     
                     # Calculate COGS from gross margin
@@ -1776,11 +1840,11 @@ class RealEstateFinancialModel:
                 'Revenue Source': st.column_config.TextColumn('Revenue Source', width='medium'),
             }
             for col in [hist_col] + [str(y) for y in years]:
-                column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+                column_config[col] = st.column_config.NumberColumn(col, width='small')
             
             st.dataframe(
                 revenue_df.style
-                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
                 .apply(highlight_special_rows, axis=1),
                 use_container_width=True,
                 column_config=column_config,
@@ -1875,11 +1939,11 @@ class RealEstateFinancialModel:
                 'COGS Source': st.column_config.TextColumn('COGS Source', width='medium'),
             }
             for col in [hist_col] + [str(y) for y in years]:
-                cogs_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+                cogs_column_config[col] = st.column_config.NumberColumn(col, width='small')
             
             st.dataframe(
                 cogs_df.style
-                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
                 .apply(highlight_special_rows_cogs, axis=1),
                 use_container_width=True,
                 column_config=cogs_column_config,
@@ -1957,11 +2021,11 @@ class RealEstateFinancialModel:
                 'Gross Profit Source': st.column_config.TextColumn('Gross Profit Source', width='medium'),
             }
             for col in [hist_col] + [str(y) for y in years]:
-                gp_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+                gp_column_config[col] = st.column_config.NumberColumn(col, width='small')
             
             st.dataframe(
                 gross_profit_df.style
-                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
                 .apply(highlight_total_row, axis=1),
                 use_container_width=True,
                 column_config=gp_column_config,
@@ -2086,17 +2150,21 @@ class RealEstateFinancialModel:
                     # Base year is the latest historical year, apply growth from there
                     years_from_base = year - base_year
                     segment_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
-                    row_data[str(year)] = -segment_revenue * sga_pct  # Negative value for expense
+                    segment_sga = -segment_revenue * sga_pct  # Negative value for expense
+                    row_data[str(year)] = segment_sga
                 
                 sga_rows.append(row_data)
             
             # Total SG&A row
             total_sga_row = {'SG&A Source': 'TOTAL SG&A'}
-            # Calculate historical SG&A by summing all segments
-            hist_sga_total = sum(row[hist_col] for row in sga_rows if row['SG&A Source'] != 'TOTAL SG&A')
+            # Calculate historical SG&A by summing all segments (exclude subtotals)
+            hist_sga_total = sum(row[hist_col] for row in sga_rows 
+                               if row['SG&A Source'] not in ['TOTAL SG&A', 'Total Projects SG&A'])
             total_sga_row[hist_col] = hist_sga_total
             for year in years:
-                total_sga = sum(row[str(year)] for row in sga_rows if row['SG&A Source'] != 'TOTAL SG&A')
+                # Exclude both TOTAL and subtotal rows from the sum
+                total_sga = sum(row[str(year)] for row in sga_rows 
+                              if row['SG&A Source'] not in ['TOTAL SG&A', 'Total Projects SG&A'])
                 total_sga_row[str(year)] = total_sga
             sga_rows.append(total_sga_row)
             
@@ -2171,13 +2239,69 @@ class RealEstateFinancialModel:
             total_gp_row = gross_profit_df[gross_profit_df['Gross Profit Source'] == 'TOTAL GROSS PROFIT'].iloc[0]
             total_sga_row = sga_df[sga_df['SG&A Source'] == 'TOTAL SG&A'].iloc[0]
             
-            # Calculate total interest directly from project_interest_breakdown
-            total_interest_row = {hist_col: 0}  # No historical interest breakdown
+            # First, load historical debt balance to calculate existing debt interest
+            hist_debt = 0
+            try:
+                # Load FA_A_processed.csv to get debt balance
+                fa_annual_path = 'data/FA_A_processed.csv'
+                if os.path.exists(fa_annual_path):
+                    fa_annual_df = pd.read_csv(fa_annual_path)
+                    
+                    # Filter for selected ticker and base year
+                    ticker_data = fa_annual_df[(fa_annual_df['TICKER'] == selected_ticker) & 
+                                               (fa_annual_df['DATE'] == base_year)]
+                    
+                    if not ticker_data.empty:
+                        # Get historical debt (ST + LT debt)
+                        st_debt_data = ticker_data[ticker_data['KEYCODE'] == 'ST_Debt']
+                        if not st_debt_data.empty:
+                            hist_debt += st_debt_data['VALUE'].iloc[0] / 1e9 if not pd.isna(st_debt_data['VALUE'].iloc[0]) else 0
+                        
+                        lt_debt_data = ticker_data[ticker_data['KEYCODE'] == 'LT_Debt']
+                        if not lt_debt_data.empty:
+                            hist_debt += lt_debt_data['VALUE'].iloc[0] / 1e9 if not pd.isna(lt_debt_data['VALUE'].iloc[0]) else 0
+            except:
+                pass  # Silent fail, hist_debt remains 0
+            
+            # Get cost of debt from assumptions (default 7% if not found)
+            cost_of_debt = 0.07  # Default 7%
+            try:
+                # Load assumptions from MongoDB to get cost of debt
+                from utils.mongodb_utils import load_assumptions_from_mongodb
+                assumptions_list = load_assumptions_from_mongodb(selected_ticker)
+                if assumptions_list:
+                    for assumption in assumptions_list:
+                        if assumption.get('Item') == 'Cost of Debt':
+                            # Convert percentage to decimal
+                            cost_of_debt = assumption.get('Value', 7.0) / 100
+                            break
+            except:
+                pass  # Use default if error
+            
+            # Calculate interest expense from projects and existing debt separately
+            # 1. Project interest from project_interest_breakdown
+            project_interest_row = {hist_col: 0}  # No historical project breakdown
             for year in years:
-                total_interest = 0
+                total_project_interest = 0
                 for project_name in project_interest_breakdown.keys():
-                    total_interest += project_interest_breakdown[project_name].get(year, 0)
-                total_interest_row[str(year)] = total_interest
+                    total_project_interest += project_interest_breakdown[project_name].get(year, 0)
+                project_interest_row[str(year)] = total_project_interest
+            
+            # 2. Interest on existing debt balance
+            # For historical, use the actual Financial_Expense from CSV
+            # For forecast, calculate as Debt Balance * Cost of Debt
+            existing_debt_interest_row = {hist_col: hist_values.get('Interest expense', 0)}  # Historical from Financial_Expense
+            
+            for year in years:
+                # Calculate interest on existing debt for forecast years
+                # Interest = Debt Balance * Cost of Debt (negative for expense)
+                existing_debt_interest = -abs(hist_debt * cost_of_debt) if hist_debt > 0 else 0
+                existing_debt_interest_row[str(year)] = existing_debt_interest
+            
+            # Total interest combines both sources
+            total_interest_row = {hist_col: hist_values.get('Interest expense', 0)}
+            for year in years:
+                total_interest_row[str(year)] = project_interest_row[str(year)] + existing_debt_interest_row[str(year)]
             
             # Create P&L rows
             pnl_rows = []
@@ -2291,8 +2415,22 @@ class RealEstateFinancialModel:
                 ebitda_row[year_str] = total_gp_row[year_str] + total_sga_row[year_str]
             pnl_rows.append(ebitda_row)
             
-            # Interest Expense row (negative values)
-            interest_row = {'P&L Item': 'Interest Expense'}
+            # Interest Expense from Projects (negative values)
+            project_interest_pnl_row = {'P&L Item': '  Interest Expense - Projects'}
+            project_interest_pnl_row[hist_col] = 0  # No historical breakdown
+            for year in years:
+                project_interest_pnl_row[str(year)] = project_interest_row[str(year)]
+            pnl_rows.append(project_interest_pnl_row)
+            
+            # Interest Expense from Existing Debt (negative values)
+            existing_interest_pnl_row = {'P&L Item': '  Interest Expense - Existing Debt'}
+            existing_interest_pnl_row[hist_col] = existing_debt_interest_row[hist_col]  # Historical from Financial_Expense
+            for year in years:
+                existing_interest_pnl_row[str(year)] = existing_debt_interest_row[str(year)]
+            pnl_rows.append(existing_interest_pnl_row)
+            
+            # Total Interest Expense row (negative values)
+            interest_row = {'P&L Item': 'Total Interest Expense'}
             interest_row[hist_col] = total_interest_row[hist_col]  # Add historical
             for year in years:
                 interest_row[str(year)] = total_interest_row[str(year)]
@@ -2325,6 +2463,83 @@ class RealEstateFinancialModel:
                 pat_row[year_str] = pbt_row[year_str] + tax_row[year_str]
             pnl_rows.append(pat_row)
             
+            # Calculate Minority Interest with project-level breakdown
+            # For forecast years: aggregate from projects based on (1 - ownership) * project PAT
+            # For historical: load from CSV
+            
+            # Store project-level minority interest for breakdown display
+            project_minority_interest_breakdown = {}
+            
+            minority_interest_row = {'P&L Item': 'Minority Interest'}
+            minority_interest_row[hist_col] = hist_values.get('Minority Interest', 0)  # Historical from CSV (positive)
+            
+            for year in years:
+                year_str = str(year)
+                total_minority_interest = 0
+                
+                # Calculate minority interest for each project
+                for project_name in project_revenue_breakdown.keys():
+                    # Find the project in df_projects to get ownership
+                    project_found = False
+                    project_ownership = 1.0  # Default to 100% ownership
+                    
+                    for _, project in df_projects.iterrows():
+                        if project.get('project_name') == project_name:
+                            project_found = True
+                            # Get project ownership (default to 1.0 = 100% if not specified)
+                            project_ownership = project.get('project_ownership', 1.0)
+                            break
+                    
+                    if project_found:
+                        # Calculate project PAT for this year
+                        # Project PAT = Project Revenue - Project COGS - Project SG&A - Project Interest - Tax
+                        project_revenue = project_revenue_breakdown[project_name].get(year, 0)
+                        project_cogs = project_cogs_breakdown[project_name].get(year, 0)
+                        project_sga = project_sga_breakdown[project_name].get(year, 0)
+                        project_interest = project_interest_breakdown[project_name].get(year, 0)
+                        
+                        # Calculate project PBT
+                        project_pbt = project_revenue + project_cogs + project_sga + project_interest
+                        
+                        # Calculate project tax (20% of positive PBT)
+                        project_tax = -max(0, project_pbt * 0.2)
+                        
+                        # Calculate project PAT
+                        project_pat = project_pbt + project_tax
+                        
+                        # Calculate minority interest for this project
+                        # Minority Interest = PAT * (1 - Ownership)
+                        # Minority shareholders share in both profits and losses
+                        minority_stake = 1 - project_ownership
+                        project_minority_interest = project_pat * minority_stake
+                        total_minority_interest += project_minority_interest
+                        
+                        # Store breakdown for display
+                        if project_name not in project_minority_interest_breakdown:
+                            project_minority_interest_breakdown[project_name] = {}
+                        project_minority_interest_breakdown[project_name][year] = {
+                            'ownership': project_ownership,
+                            'minority_stake': minority_stake,
+                            'project_pat': project_pat,
+                            'minority_interest': project_minority_interest
+                        }
+                
+                minority_interest_row[year_str] = total_minority_interest
+            
+            pnl_rows.append(minority_interest_row)
+            
+            # NPATMI row 
+            # For historical: NPATMI = PAT + Minority Interest (since MI represents profit from minority-owned subsidiaries)
+            # For forecast: NPATMI = PAT - Minority Interest (since MI represents profit going to minority shareholders)
+            npatmi_row = {'P&L Item': 'NPATMI (Net Profit After Tax and MI)'}
+            # Use actual NPATMI from historical data if available
+            npatmi_row[hist_col] = hist_values.get('NPATMI', pat_row[hist_col] - minority_interest_row[hist_col])
+            for year in years:
+                year_str = str(year)
+                # For forecast years: NPATMI = PAT - Minority Interest
+                npatmi_row[year_str] = pat_row[year_str] - minority_interest_row[year_str]
+            pnl_rows.append(npatmi_row)
+            
             # Create DataFrame
             pnl_df = pd.DataFrame(pnl_rows)
             
@@ -2349,10 +2564,14 @@ class RealEstateFinancialModel:
                     saved_values_map[year_str]['Gross Profit'] = saved_year.get('gross_profit', None)
                     saved_values_map[year_str]['SG&A'] = saved_year.get('sga', None)
                     saved_values_map[year_str]['EBITDA'] = saved_year.get('ebitda', None)
-                    saved_values_map[year_str]['Interest Expense'] = saved_year.get('interest_expense', None)
+                    saved_values_map[year_str]['  Interest Expense - Projects'] = saved_year.get('project_interest_expense', None)
+                    saved_values_map[year_str]['  Interest Expense - Existing Debt'] = saved_year.get('existing_debt_interest_expense', None)
+                    saved_values_map[year_str]['Total Interest Expense'] = saved_year.get('interest_expense', None)
                     saved_values_map[year_str]['Profit Before Tax'] = saved_year.get('pbt', None)
                     saved_values_map[year_str]['Tax (20%)'] = saved_year.get('tax', None)
                     saved_values_map[year_str]['Profit After Tax'] = saved_year.get('pat', None)
+                    saved_values_map[year_str]['Minority Interest'] = saved_year.get('minority_interest', None)
+                    saved_values_map[year_str]['NPATMI (Net Profit After Tax and MI)'] = saved_year.get('npatmi', None)
                     
                     # Map business segments
                     if 'business_segments' in saved_year:
@@ -2383,13 +2602,28 @@ class RealEstateFinancialModel:
                 # Create style DataFrame
                 styles = pd.DataFrame('', index=df_style.index, columns=df_style.columns)
                 
-                # Apply row-level styles
+                # Apply row-level styles with enhanced formatting
                 for idx, row in df_style.iterrows():
                     item = pnl_df.iloc[idx]['P&L Item']
-                    if item in ['Net Revenue', 'Total COGS', 'Gross Profit', 'EBITDA', 'Profit After Tax']:
-                        styles.iloc[idx] = 'font-weight: bold'
+                    
+                    # Major totals - bold with dark background
+                    if item in ['Net Revenue', 'NPATMI (Net Profit After Tax and MI)']:
+                        styles.iloc[idx] = 'font-weight: bold; background-color: #d4edda; color: #155724'  # Green highlight
+                    # Important subtotals - bold with light background
+                    elif item in ['Total COGS', 'Gross Profit', 'EBITDA', 'Profit Before Tax', 'Profit After Tax']:
+                        styles.iloc[idx] = 'font-weight: bold; background-color: #f0f2f6'  # Light gray
+                    # Other totals - just bold
+                    elif item in ['Total Interest Expense', 'SG&A']:
+                        styles.iloc[idx] = 'font-weight: bold; background-color: #f8f9fa'  # Very light gray
+                    # Minority Interest - special formatting
+                    elif item == 'Minority Interest':
+                        styles.iloc[idx] = 'font-style: italic; background-color: #fff3cd; color: #856404'  # Yellow highlight
+                    # Tax row - red text
+                    elif item == 'Tax (20%)':
+                        styles.iloc[idx] = 'color: #dc3545'  # Red text for expense
+                    # Sub-items (indented)
                     elif item.startswith('  '):
-                        styles.iloc[idx] = 'padding-left: 20px'
+                        styles.iloc[idx] = 'padding-left: 20px; color: #6c757d'  # Gray text for sub-items
                 
                 # Apply cell-level highlighting for changes
                 for idx, col in changed_cells:
@@ -2403,9 +2637,9 @@ class RealEstateFinancialModel:
                 if isinstance(val, str) and '\n' in val:
                     return val  # Already formatted with old value
                 else:
-                    return f"{val:.1f}"
+                    return f"{val:,.0f}"
             
-            st.write("**Comprehensive P&L Statement (Billion VND)**")
+            st.write("**Consolidated P&L Statement (Billion VND)**")
             if changed_cells:
                 st.caption("🟢 Green cells indicate changes from saved forecast (showing: current value / saved value)")
             
@@ -2430,6 +2664,70 @@ class RealEstateFinancialModel:
                 hide_index=True
             )
             
+            # Display Minority Interest Breakdown if there are projects with minority stakes
+            if project_minority_interest_breakdown:
+                st.markdown("---")
+                st.subheader("Minority Interest Breakdown by Project")
+                st.write("**Minority Interest Calculation Details (Billion VND)**")
+                
+                # Create breakdown table
+                mi_breakdown_rows = []
+                
+                for project_name in project_minority_interest_breakdown.keys():
+                    project_row = {'Project': project_name}
+                    project_row[hist_col] = 0  # No historical breakdown
+                    
+                    # Get project ownership for display
+                    project_ownership = 1.0
+                    for _, project in df_projects.iterrows():
+                        if project.get('project_name') == project_name:
+                            project_ownership = project.get('project_ownership', 1.0)
+                            break
+                    
+                    ownership_pct = project_ownership * 100
+                    minority_pct = (1 - project_ownership) * 100
+                    
+                    project_row['Ownership %'] = f"{ownership_pct:.1f}%"
+                    project_row['Minority %'] = f"{minority_pct:.1f}%"
+                    
+                    for year in years:
+                        if year in project_minority_interest_breakdown[project_name]:
+                            year_data = project_minority_interest_breakdown[project_name][year]
+                            project_row[str(year)] = year_data['minority_interest']
+                        else:
+                            project_row[str(year)] = 0
+                    
+                    mi_breakdown_rows.append(project_row)
+                
+                # Add total row
+                total_row = {'Project': 'TOTAL MINORITY INTEREST'}
+                total_row[hist_col] = minority_interest_row[hist_col]
+                total_row['Ownership %'] = ''
+                total_row['Minority %'] = ''
+                for year in years:
+                    total_row[str(year)] = minority_interest_row[str(year)]
+                mi_breakdown_rows.append(total_row)
+                
+                # Create DataFrame
+                mi_breakdown_df = pd.DataFrame(mi_breakdown_rows)
+                
+                # Style function for the breakdown table
+                def style_mi_table(row):
+                    if 'TOTAL' in str(row['Project']):
+                        return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
+                    return [''] * len(row)
+                
+                # Display the breakdown table
+                st.dataframe(
+                    mi_breakdown_df.style
+                    .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
+                    .apply(style_mi_table, axis=1),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.caption("Note: Minority Interest = Project PAT × (1 - Ownership %). Only shown for profitable projects.")
+            
             # Check for changes compared to saved data
             has_changes = False
             changed_items = {}  # Track which items have changed for the summary
@@ -2450,6 +2748,8 @@ class RealEstateFinancialModel:
                             ('gross_profit', gp_row[year_str]),
                             ('sga', sga_row[year_str]),
                             ('ebitda', ebitda_row[year_str]),
+                            ('project_interest_expense', project_interest_pnl_row[year_str]),
+                            ('existing_debt_interest_expense', existing_interest_pnl_row[year_str]),
                             ('interest_expense', interest_row[year_str]),
                             ('pbt', pbt_row[year_str]),
                             ('tax', tax_row[year_str]),
@@ -2484,65 +2784,9 @@ class RealEstateFinancialModel:
                                             changed_items[year_str] = []
                                         changed_items[year_str].append(f'{segment_name}_cogs')
             
-            # Display change indicator
+            # Display change indicator (keep for P&L tracking)
             if has_changes:
-                st.warning("⚠️ Unsaved changes detected in the P&L forecast compared to the database")
-                with st.expander("View changes summary"):
-                    for year_str, items in changed_items.items():
-                        st.write(f"**Year {year_str}:** {', '.join(items)}")
-            elif saved_forecast:
-                st.success("✅ P&L forecast matches the saved version in database")
-            
-            # Save forecast to MongoDB button
-            col_save1, col_save2, col_save3 = st.columns([1, 2, 1])
-            with col_save2:
-                button_type = "primary" if has_changes else "secondary"
-                button_label = "💾 Save Changes to Database" if has_changes else "💾 Save to Database"
-                
-                if st.button(button_label, type=button_type, use_container_width=True):
-                    # Prepare forecast data for MongoDB
-                    forecast_data = {}
-                    
-                    for year in years:
-                        year_str = str(year)
-                        
-                        # Extract P&L data for this year
-                        year_pnl = {
-                            'real_estate_revenue': re_revenue_row[year_str],
-                            'net_revenue': revenue_row[year_str],
-                            'real_estate_cogs': re_cogs_row[year_str],
-                            'total_cogs': total_cogs_pnl_row[year_str],
-                            'gross_profit': gp_row[year_str],
-                            'sga': sga_row[year_str],
-                            'ebitda': ebitda_row[year_str],
-                            'interest_expense': interest_row[year_str],
-                            'pbt': pbt_row[year_str],
-                            'tax': tax_row[year_str],
-                            'pat': pat_row[year_str],
-                            # Add individual business segments
-                            'business_segments': {}
-                        }
-                        
-                        # Add each business segment's revenue and COGS
-                        for segment_name in st.session_state.base_year_revenues.keys():
-                            year_pnl['business_segments'][segment_name] = {
-                                'revenue': segment_revenue_data[segment_name][year_str],
-                                'cogs': segment_cogs_data[segment_name][year_str]
-                            }
-                        
-                        forecast_data[year_str] = year_pnl
-                    
-                    # Save to MongoDB
-                    from utils.mongodb_utils import save_company_forecast
-                    result = save_company_forecast(selected_ticker, forecast_data)
-                    
-                    if result['success']:
-                        st.success(f"✅ {result['message']}")
-                        # Store in session state for reference
-                        st.session_state[f'saved_forecast_{selected_ticker}'] = forecast_data
-                        st.rerun()  # Rerun to update the change detection
-                    else:
-                        st.error(f"❌ {result['message']}")
+                st.info("ℹ️ Changes detected in the P&L forecast compared to the database")
             
             # Key metrics
             col1, col2, col3, col4 = st.columns(4)
@@ -2597,6 +2841,8 @@ class RealEstateFinancialModel:
             hist_inventory = 0
             hist_cash = 0
             hist_customer_prepayment = 0  # Usually not available in standard financials
+            hist_retained_earnings = 0
+            hist_minority_interest = 0
             
             try:
                 # Load FA_A_processed.csv directly
@@ -2632,10 +2878,22 @@ class RealEstateFinancialModel:
                         if not cash_equiv_data.empty:
                             hist_cash += cash_equiv_data['VALUE'].iloc[0] / 1e9 if not pd.isna(cash_equiv_data['VALUE'].iloc[0]) else 0
                         
-                        # Customer prepayment - typically part of Account_Payable or might not be separately reported
-                        # In Vietnamese accounting, customer advances are often included in Account_Payable
-                        # For now, we'll leave it as 0 since it's not separately reported
-                        hist_customer_prepayment = 0
+                        # Customer prepayment - Load from Advance_From_Custmers (note the typo in the KEYCODE)
+                        customer_advance_data = ticker_data[ticker_data['KEYCODE'] == 'Advance_From_Custmers']
+                        if not customer_advance_data.empty:
+                            hist_customer_prepayment = customer_advance_data['VALUE'].iloc[0] / 1e9 if not pd.isna(customer_advance_data['VALUE'].iloc[0]) else 0
+                        else:
+                            hist_customer_prepayment = 0
+                        
+                        # Get historical retained earnings
+                        retained_earnings_data = ticker_data[ticker_data['KEYCODE'] == 'Retain_Earning']
+                        if not retained_earnings_data.empty:
+                            hist_retained_earnings = retained_earnings_data['VALUE'].iloc[0] / 1e9 if not pd.isna(retained_earnings_data['VALUE'].iloc[0]) else 0
+                        
+                        # Get historical minority interest (balance sheet item, not earnings)
+                        minority_interest_data = ticker_data[ticker_data['KEYCODE'] == 'Minority_Interest']
+                        if not minority_interest_data.empty:
+                            hist_minority_interest = minority_interest_data['VALUE'].iloc[0] / 1e9 if not pd.isna(minority_interest_data['VALUE'].iloc[0]) else 0
                     else:
                         st.info(f"No historical data found for {selected_ticker} in year {base_year}")
                 else:
@@ -2852,11 +3110,36 @@ class RealEstateFinancialModel:
                     project_cash_row[str(year)] = cash_breakdown[project_name][str(year)]
                 bs_rows.append(project_cash_row)
             
-            # Total Cash row
+            # Add net cash change from other business segments
+            # Calculate as cumulative revenue - COGS from other segments
+            other_segment_cash_row = {'Balance Sheet Item': '  Net Cash from Other Segments'}
+            other_segment_cash_row[hist_col] = 0  # No historical breakdown
+            cumulative_other_cash = 0
+            for year in years:
+                # Net cash = Revenue - COGS from other business segments
+                other_revenue = other_revenue_by_year.get(year, 0)
+                other_cogs = other_cogs_by_year.get(year, 0)
+                net_cash_from_other = other_revenue - other_cogs
+                cumulative_other_cash += net_cash_from_other
+                other_segment_cash_row[str(year)] = cumulative_other_cash
+            bs_rows.append(other_segment_cash_row)
+            
+            # Total Cash row (includes historical + project cash + other segment cash)
             cash_row = {'Balance Sheet Item': 'TOTAL CASH'}
             cash_row[hist_col] = hist_cash
             for year in years:
-                cash_row[str(year)] = total_cash_by_year[str(year)]
+                # Total cash = project cash + cumulative cash from other segments
+                year_str = str(year)
+                # Get cumulative cash from other segments up to this year
+                cumulative_other = 0
+                for y in years:
+                    if y <= year:
+                        other_revenue = other_revenue_by_year.get(y, 0)
+                        other_cogs = other_cogs_by_year.get(y, 0)
+                        cumulative_other += (other_revenue - other_cogs)
+                    else:
+                        break
+                cash_row[year_str] = total_cash_by_year[year_str] + cumulative_other
             bs_rows.append(cash_row)
             
             # Add separator row
@@ -2871,7 +3154,9 @@ class RealEstateFinancialModel:
             net_debt_row[hist_col] = hist_debt - hist_cash
             for year in years:
                 year_str = str(year)
-                net_debt_row[year_str] = total_debt_by_year[year_str] - total_cash_by_year[year_str]
+                # Use the updated total cash that includes other segments
+                total_cash_with_other = cash_row[year_str]
+                net_debt_row[year_str] = total_debt_by_year[year_str] - total_cash_with_other
             bs_rows.append(net_debt_row)
             
             # Working Capital (Inventory + Cash - Customer Prepayment)
@@ -2879,10 +3164,59 @@ class RealEstateFinancialModel:
             working_capital_row[hist_col] = hist_inventory + hist_cash - hist_customer_prepayment
             for year in years:
                 year_str = str(year)
+                # Use the updated total cash that includes other segments
+                total_cash_with_other = cash_row[year_str]
                 working_capital_row[year_str] = (total_inventory_by_year[year_str] + 
-                                                 total_cash_by_year[year_str] - 
+                                                 total_cash_with_other - 
                                                  total_customer_prepayment_by_year[year_str])
             bs_rows.append(working_capital_row)
+            
+            # Add another separator row
+            separator_row2 = {'Balance Sheet Item': '─' * 30}
+            for col in [hist_col] + [str(y) for y in years]:
+                separator_row2[col] = None
+            bs_rows.append(separator_row2)
+            
+            # EQUITY SECTION
+            # Retained Earnings
+            retained_earnings_row_bs = {'Balance Sheet Item': 'Retained Earnings'}
+            retained_earnings_row_bs[hist_col] = hist_retained_earnings
+            
+            # Calculate cumulative retained earnings for forecast years
+            cumulative_retained_earnings = hist_retained_earnings
+            for year in years:
+                year_str = str(year)
+                # Get NPATMI for this year from consolidated P&L (already calculated above)
+                npatmi_for_year = npatmi_row.get(year_str, 0) if 'npatmi_row' in locals() else 0
+                
+                # Add NPATMI to cumulative retained earnings
+                cumulative_retained_earnings += npatmi_for_year
+                retained_earnings_row_bs[year_str] = cumulative_retained_earnings
+            bs_rows.append(retained_earnings_row_bs)
+            
+            # Minority Interest
+            minority_interest_row_bs = {'Balance Sheet Item': 'Minority Interest'}
+            minority_interest_row_bs[hist_col] = hist_minority_interest
+            
+            # Calculate cumulative minority interest for forecast years
+            cumulative_minority_interest = hist_minority_interest
+            for year in years:
+                year_str = str(year)
+                # Get minority interest for this year from consolidated P&L (already calculated above)
+                minority_for_year = minority_interest_row.get(year_str, 0) if 'minority_interest_row' in locals() else 0
+                
+                # Add to cumulative minority interest
+                cumulative_minority_interest += minority_for_year
+                minority_interest_row_bs[year_str] = cumulative_minority_interest
+            bs_rows.append(minority_interest_row_bs)
+            
+            # Total Equity
+            total_equity_row = {'Balance Sheet Item': 'TOTAL EQUITY'}
+            total_equity_row[hist_col] = hist_retained_earnings + hist_minority_interest
+            for year in years:
+                year_str = str(year)
+                total_equity_row[year_str] = retained_earnings_row_bs[year_str] + minority_interest_row_bs[year_str]
+            bs_rows.append(total_equity_row)
             
             # Create DataFrame
             bs_df = pd.DataFrame(bs_rows)
@@ -2893,11 +3227,14 @@ class RealEstateFinancialModel:
             def style_bs_table(row):
                 item = str(row['Balance Sheet Item'])
                 # Total rows - bold with background
-                if item in ['TOTAL DEBT', 'TOTAL INVENTORY', 'TOTAL CUSTOMER PREPAYMENT', 'TOTAL CASH']:
+                if item in ['TOTAL DEBT', 'TOTAL INVENTORY', 'TOTAL CUSTOMER PREPAYMENT', 'TOTAL CASH', 'TOTAL EQUITY']:
                     return ['font-weight: bold; background-color: #e6f2ff'] * len(row)
                 # Calculated metrics - bold with different background
                 elif item in ['NET DEBT (Debt - Cash)', 'WORKING CAPITAL']:
                     return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
+                # Equity components - with light green background
+                elif item in ['Retained Earnings', 'Minority Interest']:
+                    return ['background-color: #e8f5e9'] * len(row)
                 # Project details - indented with lighter font
                 elif item.startswith('  '):
                     return ['padding-left: 20px; color: #666'] * len(row)
@@ -2911,83 +3248,490 @@ class RealEstateFinancialModel:
                 'Balance Sheet Item': st.column_config.TextColumn('Balance Sheet Item', width='medium'),
             }
             for col in [hist_col] + [str(y) for y in years]:
-                bs_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f')
+                bs_column_config[col] = st.column_config.NumberColumn(col, width='small')
             
             st.dataframe(
                 bs_df.style
-                .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
                 .apply(style_bs_table, axis=1),
                 use_container_width=True,
                 column_config=bs_column_config,
                 hide_index=True
             )
-            
-            # Add explanatory notes
-            st.caption("Note: This consolidated balance sheet aggregates data from all real estate projects and company operations.")
-            st.caption("**Calculation Method**: Forecast values = Historical balance (2024) + Cumulative net changes from all projects")
-            st.caption("• **Total Debt**: Historical debt + cumulative new borrowings - repayments from all projects")
-            st.caption("• **Inventory**: Historical inventory + new construction/land costs - COGS recognized")
-            st.caption("• **Customer Prepayment**: Historical prepayments + new presales - revenue recognized")
-            st.caption("• **Total Cash**: Historical cash + cumulative cash flows from all projects")
-            st.caption("• **Net Debt**: Total Debt minus Total Cash (negative = net cash position)")
-            st.caption("• **Working Capital**: Inventory + Cash - Customer Prepayment")
-            st.caption("• **Individual project rows**: Show each project's balance at year-end")
-            st.caption("• **TOTAL rows**: Show company-wide cumulative balance including historical base")
-            
-            # Section 7: Visualization Chart (moved to bottom)
+        
+            # Section 7: Consolidated Cash Flow Statement
             st.markdown("---")
-            st.subheader("Revenue, COGS, and Gross Profit Visualization")
+            st.subheader("Consolidated Cash Flow Statement")
             
-            # Create visualization
-            fig = go.Figure()
+            # Initialize cash flow items
+            cf_rows = []
             
-            # Extract data for visualization
-            revenue_values = [total_revenue_row[str(y)] for y in years]
-            cogs_values = [total_cogs_row[str(y)] for y in years]  # Already negative
-            gross_profit_values = [total_gp_row[str(y)] for y in years]
+            # Initialize aggregated cash flow data by year
+            operating_cf_by_year = {}
+            investing_cf_by_year = {}
+            financing_cf_by_year = {}
+            net_cf_by_year = {}
             
-            # Add revenue bars
-            fig.add_trace(go.Bar(
-                name='Total Revenue',
-                x=years,
-                y=revenue_values,
-                marker_color='lightblue',
-                text=[f'{v:.0f}B' for v in revenue_values],
-                textposition='outside'
-            ))
+            # Initialize breakdown components for operating cash flow
+            other_segment_revenue_cf = {}  # Revenue from non-real estate segments
+            other_segment_cogs_cf = {}  # COGS from non-real estate segments
+            presales_cf_breakdown = {}  # Cash inflow from project presales
+            interest_outflow_breakdown = {}  # Interest expense outflow
+            sga_outflow_breakdown = {}  # SG&A expense outflow
+            tax_outflow_breakdown = {}  # Tax expense outflow
             
-            # Add COGS bars (show absolute values for visualization but keep negative in data)
-            fig.add_trace(go.Bar(
-                name='Total COGS',
-                x=years,
-                y=[abs(v) for v in cogs_values],  # Show as positive bars for visualization
-                marker_color='lightcoral',
-                text=[f'{v:.0f}B' for v in cogs_values],  # Show actual negative values in text
-                textposition='outside'
-            ))
+            # Initialize breakdown for investing and financing
+            land_outflow_breakdown = {}  # Land payment breakdown by project
+            construction_outflow_breakdown = {}  # Construction cost breakdown by project
+            investing_cf_breakdown = {}  # Total investing CF (land + construction)
+            financing_cf_breakdown = {}
             
-            # Add gross profit line
-            fig.add_trace(go.Scatter(
-                name='Gross Profit',
-                x=years,
-                y=gross_profit_values,
-                mode='lines+markers',
-                line=dict(color='green', width=3),
-                marker=dict(size=8),
-                yaxis='y2'
-            ))
+            # Initialize for all years
+            for year in years:
+                year_str = str(year)
+                operating_cf_by_year[year_str] = 0
+                investing_cf_by_year[year_str] = 0
+                financing_cf_by_year[year_str] = 0
+                net_cf_by_year[year_str] = 0
+                other_segment_revenue_cf[year_str] = 0
+                other_segment_cogs_cf[year_str] = 0
             
-            fig.update_layout(
-                title="Revenue, COGS, and Gross Profit Forecast",
-                xaxis_title="Year",
-                yaxis=dict(title="Billion VND", side='left'),
-                yaxis2=dict(title="Gross Profit (B VND)", overlaying='y', side='right'),
-                barmode='group',
-                height=500,
-                hovermode='x unified'
+            # 1. Calculate revenue and COGS from other business segments (non-real estate)
+            # Revenue comes from other_revenue_breakdown, COGS calculated from gross margin
+            if other_revenue_breakdown:  # Only if there are other business segments
+                for segment_name, segment_revenue in other_revenue_breakdown.items():
+                    for year in years:
+                        year_str = str(year)
+                        revenue = segment_revenue.get(year_str, 0)
+                        other_segment_revenue_cf[year_str] += revenue
+                        operating_cf_by_year[year_str] += revenue
+                        
+                        # Calculate COGS for this segment
+                        # Get gross margin from segment_metrics
+                        if segment_name in segment_metrics:
+                            gross_margin = segment_metrics[segment_name]['gross_margin']
+                        else:
+                            gross_margin = 0.3  # Default 30%
+                        
+                        # COGS = Revenue * (1 - Gross Margin)
+                        segment_cogs = revenue * (1 - gross_margin)
+                        other_segment_cogs_cf[year_str] += segment_cogs
+                        # Subtract COGS from operating CF (it's an outflow)
+                        operating_cf_by_year[year_str] -= segment_cogs
+            
+            # 2. Aggregate cash flows from all projects
+            for _, project in df_projects.iterrows():
+                project_name = project.get('project_name', 'Unknown')
+                financial_statements = project.get('comprehensive_financial_statements', {})
+                
+                # Initialize project breakdown
+                if project_name not in presales_cf_breakdown:
+                    presales_cf_breakdown[project_name] = {}
+                    interest_outflow_breakdown[project_name] = {}
+                    sga_outflow_breakdown[project_name] = {}
+                    tax_outflow_breakdown[project_name] = {}
+                    land_outflow_breakdown[project_name] = {}
+                    construction_outflow_breakdown[project_name] = {}
+                    investing_cf_breakdown[project_name] = {}
+                    financing_cf_breakdown[project_name] = {}
+                
+                for year in years:
+                    year_str = str(year)
+                    
+                    if year_str in financial_statements:
+                        year_data = financial_statements[year_str]
+                        cashflow_data = year_data.get('cashflow', {})
+                        pnl_data = year_data.get('pnl', {})
+                        
+                        # Operating Cash Flow Components:
+                        # Cash inflow from presales (customer deposits) - directly from MongoDB
+                        presales_inflow = year_data.get('cash_inflow_presales', 0) / 1e9
+                        presales_cf_breakdown[project_name][year_str] = presales_inflow
+                        operating_cf_by_year[year_str] += presales_inflow
+                        
+                        # Cash outflow from interest expense (already negative in MongoDB)
+                        interest_outflow = year_data.get('cash_outflow_interest', 0) / 1e9
+                        interest_outflow_breakdown[project_name][year_str] = interest_outflow
+                        operating_cf_by_year[year_str] += interest_outflow
+                        
+                        # Cash outflow from SG&A expense (already negative in MongoDB)
+                        sga_outflow = year_data.get('cash_outflow_sga', 0) / 1e9
+                        sga_outflow_breakdown[project_name][year_str] = sga_outflow
+                        operating_cf_by_year[year_str] += sga_outflow
+                        
+                        # Cash outflow from tax expense (already negative in MongoDB)
+                        tax_outflow = year_data.get('cash_outflow_tax', 0) / 1e9
+                        tax_outflow_breakdown[project_name][year_str] = tax_outflow
+                        operating_cf_by_year[year_str] += tax_outflow
+                        
+                        # Investing Cash Flow (land and construction cash outflows)
+                        # Both are already negative in MongoDB
+                        land_outflow = year_data.get('cash_outflow_land', 0) / 1e9
+                        construction_outflow = year_data.get('cash_outflow_construction', 0) / 1e9
+                        
+                        # Store separate breakdowns
+                        land_outflow_breakdown[project_name][year_str] = land_outflow
+                        construction_outflow_breakdown[project_name][year_str] = construction_outflow
+                        
+                        # Total investing CF
+                        investing_cf = land_outflow + construction_outflow
+                        investing_cf_by_year[year_str] += investing_cf
+                        investing_cf_breakdown[project_name][year_str] = investing_cf
+                        
+                        # Financing Cash Flow (debt disbursement and repayment)
+                        debt_disbursement = year_data.get('debt_disbursement', 0) / 1e9
+                        debt_repayment = year_data.get('debt_repayment', 0) / 1e9  # Already negative in MongoDB
+                        financing_cf = debt_disbursement + debt_repayment
+                        financing_cf_by_year[year_str] += financing_cf
+                        financing_cf_breakdown[project_name][year_str] = financing_cf
+                    else:
+                        # No data for this year
+                        presales_cf_breakdown[project_name][year_str] = 0
+                        interest_outflow_breakdown[project_name][year_str] = 0
+                        sga_outflow_breakdown[project_name][year_str] = 0
+                        tax_outflow_breakdown[project_name][year_str] = 0
+                        land_outflow_breakdown[project_name][year_str] = 0
+                        construction_outflow_breakdown[project_name][year_str] = 0
+                        investing_cf_breakdown[project_name][year_str] = 0
+                        financing_cf_breakdown[project_name][year_str] = 0
+            
+            # Calculate net cash flow for each year
+            for year in years:
+                year_str = str(year)
+                net_cf_by_year[year_str] = (operating_cf_by_year[year_str] + 
+                                           investing_cf_by_year[year_str] + 
+                                           financing_cf_by_year[year_str])
+            
+            # Build the cash flow table rows
+            # Operating Cash Flow Section
+            cf_rows.append({'Cash Flow Item': 'OPERATING ACTIVITIES', **{str(y): None for y in years}})
+            
+            # Operating Cash Inflows
+            cf_rows.append({'Cash Flow Item': '  Cash Inflows:', **{str(y): None for y in years}})
+            
+            # Revenue from other business segments
+            if any(other_segment_revenue_cf[str(y)] != 0 for y in years):
+                other_revenue_row = {'Cash Flow Item': '    Revenue from Other Segments'}
+                for year in years:
+                    other_revenue_row[str(year)] = other_segment_revenue_cf[str(year)]
+                cf_rows.append(other_revenue_row)
+            
+            # Presales cash inflow by project
+            for project_name in sorted(presales_cf_breakdown.keys()):
+                if any(presales_cf_breakdown[project_name].get(str(y), 0) != 0 for y in years):
+                    project_row = {'Cash Flow Item': f'    Presales - {project_name}'}
+                    for year in years:
+                        year_str = str(year)
+                        project_row[year_str] = presales_cf_breakdown[project_name].get(year_str, 0)
+                    cf_rows.append(project_row)
+            
+            # Operating Cash Outflows
+            cf_rows.append({'Cash Flow Item': '  Cash Outflows:', **{str(y): None for y in years}})
+            
+            # COGS from other business segments
+            if any(other_segment_cogs_cf[str(y)] != 0 for y in years):
+                cogs_row = {'Cash Flow Item': '    COGS - Other Business Segments'}
+                for year in years:
+                    cogs_row[str(year)] = -other_segment_cogs_cf[str(year)]  # Show as negative
+                cf_rows.append(cogs_row)
+            
+            # Interest expense outflow by project
+            for project_name in sorted(interest_outflow_breakdown.keys()):
+                if any(interest_outflow_breakdown[project_name].get(str(y), 0) != 0 for y in years):
+                    project_row = {'Cash Flow Item': f'    Interest Expense - {project_name}'}
+                    for year in years:
+                        year_str = str(year)
+                        project_row[year_str] = interest_outflow_breakdown[project_name].get(year_str, 0)
+                    cf_rows.append(project_row)
+            
+            # SG&A expense outflow by project
+            for project_name in sorted(sga_outflow_breakdown.keys()):
+                if any(sga_outflow_breakdown[project_name].get(str(y), 0) != 0 for y in years):
+                    project_row = {'Cash Flow Item': f'    SG&A Expense - {project_name}'}
+                    for year in years:
+                        year_str = str(year)
+                        project_row[year_str] = sga_outflow_breakdown[project_name].get(year_str, 0)
+                    cf_rows.append(project_row)
+            
+            # Tax expense outflow by project
+            for project_name in sorted(tax_outflow_breakdown.keys()):
+                if any(tax_outflow_breakdown[project_name].get(str(y), 0) != 0 for y in years):
+                    project_row = {'Cash Flow Item': f'    Tax Expense - {project_name}'}
+                    for year in years:
+                        year_str = str(year)
+                        project_row[year_str] = tax_outflow_breakdown[project_name].get(year_str, 0)
+                    cf_rows.append(project_row)
+            
+            # Total Operating CF
+            operating_total_row = {'Cash Flow Item': 'TOTAL OPERATING CASH FLOW'}
+            for year in years:
+                operating_total_row[str(year)] = operating_cf_by_year[str(year)]
+            cf_rows.append(operating_total_row)
+            
+            # Add separator
+            cf_rows.append({'Cash Flow Item': '', **{str(y): None for y in years}})
+            
+            # Investing Cash Flow Section
+            cf_rows.append({'Cash Flow Item': 'INVESTING ACTIVITIES', **{str(y): None for y in years}})
+            
+            # Land Payment Outflows
+            cf_rows.append({'Cash Flow Item': '  Land Payments:', **{str(y): None for y in years}})
+            for project_name in sorted(land_outflow_breakdown.keys()):
+                if any(land_outflow_breakdown[project_name].get(str(y), 0) != 0 for y in years):
+                    project_row = {'Cash Flow Item': f'    Land Payment - {project_name}'}
+                    for year in years:
+                        year_str = str(year)
+                        project_row[year_str] = land_outflow_breakdown[project_name].get(year_str, 0)
+                    cf_rows.append(project_row)
+            
+            # Construction Cost Outflows
+            cf_rows.append({'Cash Flow Item': '  Construction Costs:', **{str(y): None for y in years}})
+            for project_name in sorted(construction_outflow_breakdown.keys()):
+                if any(construction_outflow_breakdown[project_name].get(str(y), 0) != 0 for y in years):
+                    project_row = {'Cash Flow Item': f'    Construction - {project_name}'}
+                    for year in years:
+                        year_str = str(year)
+                        project_row[year_str] = construction_outflow_breakdown[project_name].get(year_str, 0)
+                    cf_rows.append(project_row)
+            
+            # Total Investing CF
+            investing_total_row = {'Cash Flow Item': 'TOTAL INVESTING CASH FLOW'}
+            for year in years:
+                investing_total_row[str(year)] = investing_cf_by_year[str(year)]
+            cf_rows.append(investing_total_row)
+            
+            # Add separator
+            cf_rows.append({'Cash Flow Item': '', **{str(y): None for y in years}})
+            
+            # Financing Cash Flow Section
+            cf_rows.append({'Cash Flow Item': 'FINANCING ACTIVITIES', **{str(y): None for y in years}})
+            
+            # Add breakdown by project for financing CF
+            for project_name in sorted(financing_cf_breakdown.keys()):
+                project_row = {'Cash Flow Item': f'  └─ {project_name}'}
+                for year in years:
+                    year_str = str(year)
+                    project_row[year_str] = financing_cf_breakdown[project_name].get(year_str, 0)
+                cf_rows.append(project_row)
+            
+            # Total Financing CF
+            financing_total_row = {'Cash Flow Item': 'TOTAL FINANCING CASH FLOW'}
+            for year in years:
+                financing_total_row[str(year)] = financing_cf_by_year[str(year)]
+            cf_rows.append(financing_total_row)
+            
+            # Add separator with line
+            cf_rows.append({'Cash Flow Item': '─' * 30, **{str(y): None for y in years}})
+            
+            # Net Cash Flow
+            net_cf_row = {'Cash Flow Item': 'NET CASH FLOW'}
+            for year in years:
+                net_cf_row[str(year)] = net_cf_by_year[str(year)]
+            cf_rows.append(net_cf_row)
+            
+            # Create DataFrame
+            cf_df = pd.DataFrame(cf_rows)
+            
+            st.write("**Consolidated Cash Flow Statement (Billion VND)**")
+            
+            # Define style function for formatting
+            def style_cf_table(val):
+                if pd.isna(val) or val is None:
+                    return ''
+                if isinstance(val, str):
+                    return ''
+                # Color code: positive cash flow green, negative red
+                color = '#28a745' if val >= 0 else '#dc3545'
+                return f'color: {color}'
+            
+            # Apply styling to numeric columns
+            styled_cf_df = cf_df.style.applymap(
+                style_cf_table,
+                subset=[str(y) for y in years]
+            ).format(
+                {str(y): lambda x: f"{x:,.0f}" if pd.notna(x) and x != 0 else "-" 
+                 for y in years},
+                na_rep="-"
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            # Apply row highlighting for totals and net cash flow
+            def highlight_important_rows(row):
+                styles = [''] * len(row)
+                if 'TOTAL' in str(row.iloc[0]) or 'NET CASH FLOW' in str(row.iloc[0]):
+                    styles = ['font-weight: bold; background-color: #f8f9fa'] * len(row)
+                elif any(keyword in str(row.iloc[0]) for keyword in ['OPERATING ACTIVITIES', 'INVESTING ACTIVITIES', 'FINANCING ACTIVITIES']):
+                    styles = ['font-weight: bold; background-color: #e9ecef'] * len(row)
+                return styles
+            
+            styled_cf_df = styled_cf_df.apply(highlight_important_rows, axis=1)
+            
+            # Display the table
+            st.dataframe(
+                styled_cf_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            
+            # Save Consolidated Financial Statements to MongoDB
+            st.markdown("---")
+            st.subheader("Save Consolidated Financial Statements")
+            
+            col_save1, col_save2, col_save3 = st.columns([1, 2, 1])
+            with col_save2:
+                if st.button("💾 Save All Consolidated Statements to Database", type="primary", use_container_width=True):
+                    # Helper function to convert numpy types to Python native types
+                    def convert_to_native(obj):
+                        """Convert numpy types to native Python types for MongoDB"""
+                        import numpy as np
+                        if isinstance(obj, np.integer):
+                            return int(obj)
+                        elif isinstance(obj, np.floating):
+                            return float(obj)
+                        elif isinstance(obj, np.ndarray):
+                            return obj.tolist()
+                        elif isinstance(obj, dict):
+                            # Recursively convert dictionary values
+                            return {k: convert_to_native(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            # Recursively convert list items
+                            return [convert_to_native(item) for item in obj]
+                        elif pd.isna(obj):
+                            return 0
+                        else:
+                            return obj
+                    
+                    # Prepare consolidated financial data for MongoDB
+                    consolidated_data = {
+                        'ticker': selected_ticker,
+                        'base_year': int(base_year),
+                        'forecast_years': [str(y) for y in years],
+                        'timestamp': pd.Timestamp.now().isoformat(),
+                        'financial_statements': {}
+                    }
+                    
+                    for year in years:
+                        year_str = str(year)
+                        
+                        # Consolidated P&L Statement
+                        pnl_data = {
+                            'real_estate_revenue': convert_to_native(re_revenue_row.get(year_str, 0)),
+                            'other_revenue': convert_to_native(revenue_row.get(year_str, 0) - re_revenue_row.get(year_str, 0)),
+                            'net_revenue': convert_to_native(revenue_row.get(year_str, 0)),
+                            'real_estate_cogs': convert_to_native(re_cogs_row.get(year_str, 0)),
+                            'other_cogs': convert_to_native(total_cogs_pnl_row.get(year_str, 0) - re_cogs_row.get(year_str, 0)),
+                            'total_cogs': convert_to_native(total_cogs_pnl_row.get(year_str, 0)),
+                            'gross_profit': convert_to_native(gp_row.get(year_str, 0)),
+                            'sga': convert_to_native(sga_row.get(year_str, 0)),
+                            'ebitda': convert_to_native(ebitda_row.get(year_str, 0)),
+                            'project_interest_expense': convert_to_native(project_interest_pnl_row.get(year_str, 0)),
+                            'existing_debt_interest_expense': convert_to_native(existing_interest_pnl_row.get(year_str, 0)),
+                            'interest_expense': convert_to_native(interest_row.get(year_str, 0)),
+                            'pbt': convert_to_native(pbt_row.get(year_str, 0)),
+                            'tax': convert_to_native(tax_row.get(year_str, 0)),
+                            'pat': convert_to_native(pat_row.get(year_str, 0)),
+                            'minority_interest': convert_to_native(minority_interest_row.get(year_str, 0)),
+                            'npatmi': convert_to_native(npatmi_row.get(year_str, 0))
+                        }
+                        
+                        # Consolidated Balance Sheet
+                        balance_sheet_data = {
+                            # Assets
+                            'total_debt': convert_to_native(debt_row.get(year_str, 0)),
+                            'total_inventory': convert_to_native(inventory_row.get(year_str, 0)),
+                            'total_customer_prepayment': convert_to_native(prepayment_row.get(year_str, 0)),
+                            'total_cash': convert_to_native(cash_row.get(year_str, 0)),
+                            'net_debt': convert_to_native(net_debt_row.get(year_str, 0)),
+                            'working_capital': convert_to_native(working_capital_row.get(year_str, 0)),
+                            # Equity
+                            'retained_earnings': convert_to_native(retained_earnings_row_bs.get(year_str, 0)),
+                            'minority_interest_bs': convert_to_native(minority_interest_row_bs.get(year_str, 0)),
+                            'total_equity': convert_to_native(total_equity_row.get(year_str, 0))
+                        }
+                        
+                        # Consolidated Cash Flow Statement
+                        cash_flow_data = {
+                            'operating_cf': convert_to_native(operating_cf_by_year.get(year_str, 0)),
+                            'investing_cf': convert_to_native(investing_cf_by_year.get(year_str, 0)),
+                            'financing_cf': convert_to_native(financing_cf_by_year.get(year_str, 0)),
+                            'net_cf': convert_to_native(net_cf_by_year.get(year_str, 0)),
+                            # Operating CF breakdown
+                            'other_segment_revenue_cf': convert_to_native(other_segment_revenue_cf.get(year_str, 0)),
+                            'other_segment_cogs_cf': convert_to_native(other_segment_cogs_cf.get(year_str, 0)),
+                            'presales_cf': convert_to_native(sum(presales_cf_breakdown.get(p, {}).get(year_str, 0) for p in presales_cf_breakdown)),
+                            'interest_outflow': convert_to_native(sum(interest_outflow_breakdown.get(p, {}).get(year_str, 0) for p in interest_outflow_breakdown)),
+                            'sga_outflow': convert_to_native(sum(sga_outflow_breakdown.get(p, {}).get(year_str, 0) for p in sga_outflow_breakdown)),
+                            'tax_outflow': convert_to_native(sum(tax_outflow_breakdown.get(p, {}).get(year_str, 0) for p in tax_outflow_breakdown)),
+                            # Investing CF breakdown
+                            'land_outflow': convert_to_native(sum(land_outflow_breakdown.get(p, {}).get(year_str, 0) for p in land_outflow_breakdown)),
+                            'construction_outflow': convert_to_native(sum(construction_outflow_breakdown.get(p, {}).get(year_str, 0) for p in construction_outflow_breakdown)),
+                            # Financing CF breakdown
+                            'debt_changes': convert_to_native(sum(financing_cf_breakdown.get(p, {}).get(year_str, 0) for p in financing_cf_breakdown))
+                        }
+                        
+                        # Business segments detail
+                        business_segments_data = {}
+                        for segment_name in st.session_state.base_year_revenues.keys():
+                            if segment_name in segment_revenue_data:
+                                business_segments_data[segment_name] = {
+                                    'revenue': convert_to_native(segment_revenue_data[segment_name].get(year_str, 0)),
+                                    'cogs': convert_to_native(segment_cogs_data[segment_name].get(year_str, 0)),
+                                    'gross_profit': convert_to_native(segment_revenue_data[segment_name].get(year_str, 0) + segment_cogs_data[segment_name].get(year_str, 0))
+                                }
+                        
+                        # Combine all statements for this year
+                        consolidated_data['financial_statements'][year_str] = {
+                            'pnl': pnl_data,
+                            'balance_sheet': balance_sheet_data,
+                            'cash_flow': cash_flow_data,
+                            'business_segments': business_segments_data,
+                            'project_breakdown': {
+                                'revenue': {p: convert_to_native(project_revenue_breakdown.get(p, {}).get(year, 0)) for p in project_revenue_breakdown},
+                                'cogs': {p: convert_to_native(project_cogs_breakdown.get(p, {}).get(year, 0)) for p in project_cogs_breakdown},
+                                'sga': {p: convert_to_native(project_sga_breakdown.get(p, {}).get(year, 0)) for p in project_sga_breakdown},
+                                'interest': {p: convert_to_native(project_interest_breakdown.get(p, {}).get(year, 0)) for p in project_interest_breakdown}
+                            }
+                        }
+                    
+                    # Add historical data for reference - convert all values
+                    consolidated_data['historical'] = {
+                        'debt': convert_to_native(hist_debt),
+                        'inventory': convert_to_native(hist_inventory),
+                        'cash': convert_to_native(hist_cash),
+                        'customer_prepayment': convert_to_native(hist_customer_prepayment),
+                        'retained_earnings': convert_to_native(hist_retained_earnings),
+                        'minority_interest': convert_to_native(hist_minority_interest),
+                        'pnl_items': {k: convert_to_native(v) for k, v in hist_values.items()}
+                    }
+                    
+                    # Save to MongoDB with new collection structure
+                    from utils.mongodb_utils import save_consolidated_financials
+                    try:
+                        # Apply deep conversion to entire consolidated_data to ensure all numpy types are converted
+                        consolidated_data = convert_to_native(consolidated_data)
+                        
+                        # Check if function exists, if not create it
+                        result = save_consolidated_financials(consolidated_data)
+                        if result['success']:
+                            st.success(f"✅ {result['message']}")
+                            # Store in session state for reference
+                            st.session_state[f'saved_consolidated_{selected_ticker}'] = consolidated_data
+                        else:
+                            st.error(f"❌ {result['message']}")
+                    except (ImportError, AttributeError):
+                        # Function doesn't exist yet, use the existing save function as fallback
+                        from utils.mongodb_utils import save_company_forecast
+                        # Save P&L data using existing function
+                        pnl_only_data = {}
+                        for year_str in consolidated_data['financial_statements']:
+                            pnl_only_data[year_str] = consolidated_data['financial_statements'][year_str]['pnl']
+                        result = save_company_forecast(selected_ticker, pnl_only_data)
+                        if result['success']:
+                            st.success(f"✅ P&L data saved. Note: Full consolidated statements saving requires updating mongodb_utils.py")
+                        else:
+                            st.error(f"❌ {result['message']}")
+            
+            st.info("💡 This saves all three consolidated financial statements (P&L, Balance Sheet, Cash Flow) to the database for reporting and analysis.")
             
         else:
             st.info("No project data available. Please add projects in the Project Pipeline tab.")
@@ -3007,6 +3751,12 @@ class RealEstateFinancialModel:
         
         # Initialize forecast data
         forecast_data = {year: {} for year in years}
+        
+        # Get only selected revenue streams
+        if 'selected_streams_data' in st.session_state:
+            revenue_streams = st.session_state.selected_streams_data
+        else:
+            revenue_streams = st.session_state.comprehensive_model.get('revenue_streams', [])
         
         # Generate forecast for each segment using dynamic assumptions
         for stream in revenue_streams:
@@ -3042,7 +3792,7 @@ class RealEstateFinancialModel:
         # Display in billions VND
         st.write("**Revenue Forecast by Segment (Billion VND)**")
         display_df = forecast_df / 1e9
-        st.dataframe(display_df.style.format("{:.1f}"), use_container_width=True)
+        st.dataframe(display_df.style.format("{:,.0f}"), use_container_width=True)
         
         # Create stacked bar chart
         fig = go.Figure()
@@ -3227,7 +3977,7 @@ class RealEstateFinancialModel:
         if summary_data:
             summary_df = pd.DataFrame(summary_data)
             summary_df = summary_df.sort_values('Total Revenue', ascending=False)
-            st.dataframe(summary_df.style.format({'Total Revenue': '{:.1f}', 'Peak Revenue': '{:.1f}'}), use_container_width=True)
+            st.dataframe(summary_df.style.format({'Total Revenue': '{:,.0f}', 'Peak Revenue': '{:,.0f}'}), use_container_width=True)
     
     def render_other_segments_forecast(self):
         """Render forecast for selected non-real estate segments"""
@@ -3380,7 +4130,7 @@ class RealEstateFinancialModel:
         
         # Display table
         st.write("**Consolidated P&L Forecast (Billion VND)**")
-        st.dataframe(pnl_df.style.format("{:.1f}"), use_container_width=True)
+        st.dataframe(pnl_df.style.format("{:,.0f}"), use_container_width=True)
         
         # Create waterfall chart for revenue composition
         fig = go.Figure()

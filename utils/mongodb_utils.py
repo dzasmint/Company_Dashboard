@@ -405,6 +405,71 @@ def load_assumptions_from_mongodb(company_ticker):
         st.error(f"Error loading assumptions: {str(e)}")
         return None
 
+def save_consolidated_financials(consolidated_data):
+    """Save consolidated financial statements to MongoDB"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return {"success": False, "message": "Failed to connect to MongoDB"}
+        
+        # Get database and collection
+        db_name = 'VietnamStocks'
+        collection_name = 'ConsolidatedFinancials'
+        
+        db = client.get_database(db_name)
+        collection = db.get_collection(collection_name)
+        
+        # Use ticker as the unique identifier
+        ticker = consolidated_data.get('ticker')
+        if not ticker:
+            return {"success": False, "message": "Ticker is required"}
+        
+        # Update or insert the document
+        result = collection.replace_one(
+            {"ticker": ticker},
+            consolidated_data,
+            upsert=True
+        )
+        
+        if result.acknowledged:
+            if result.matched_count > 0:
+                return {"success": True, "message": f"Consolidated financials for {ticker} updated successfully"}
+            else:
+                return {"success": True, "message": f"Consolidated financials for {ticker} saved successfully"}
+        else:
+            return {"success": False, "message": "Failed to save to database"}
+            
+    except Exception as e:
+        return {"success": False, "message": f"Error saving consolidated financials: {str(e)}"}
+
+def load_consolidated_financials(ticker):
+    """Load consolidated financial statements from MongoDB"""
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return None
+        
+        # Get database and collection
+        db_name = 'VietnamStocks'
+        collection_name = 'ConsolidatedFinancials'
+        
+        db = client.get_database(db_name)
+        collection = db.get_collection(collection_name)
+        
+        # Find the document for this ticker
+        document = collection.find_one({"ticker": ticker})
+        
+        if document:
+            # Remove MongoDB's _id field before returning
+            document.pop('_id', None)
+            return document
+        
+        return None
+        
+    except Exception as e:
+        print(f"Error loading consolidated financials: {str(e)}")
+        return None
+
 def save_project_to_mongodb(project_data, project_name, rnav_value=None):
     """Save project data to MongoDB"""
     try:
