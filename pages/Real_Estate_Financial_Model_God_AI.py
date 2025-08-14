@@ -2432,6 +2432,43 @@ class RealEstateFinancialModel:
             st.markdown("---")
             st.subheader("💵 Project Cash Flow by Source")
             
+            # Get historical cash flow data from CSV for the selected ticker
+            historical_cash_flow = 0
+            historical_data = st.session_state.get('historical_data')
+            
+            if historical_data is not None and not historical_data.empty:
+                # Try to get cash flow from operations for the base year (2024)
+                latest_date_idx = None
+                
+                # Check if base_year exists in the index
+                if str(base_year) in historical_data.index:
+                    latest_date_idx = str(base_year)
+                elif base_year in historical_data.index:
+                    latest_date_idx = base_year
+                
+                if latest_date_idx is not None:
+                    # Try different column names for operating cash flow
+                    if 'Operating_Cash_Flow' in historical_data.columns:
+                        historical_cash_flow = historical_data.loc[latest_date_idx, 'Operating_Cash_Flow'] / 1e9
+                    elif 'OCF' in historical_data.columns:
+                        historical_cash_flow = historical_data.loc[latest_date_idx, 'OCF'] / 1e9
+                    elif 'Cash_From_Operations' in historical_data.columns:
+                        historical_cash_flow = historical_data.loc[latest_date_idx, 'Cash_From_Operations'] / 1e9
+                    elif 'CF_Operations' in historical_data.columns:
+                        historical_cash_flow = historical_data.loc[latest_date_idx, 'CF_Operations'] / 1e9
+                    else:
+                        # If no operating cash flow, try to get change in cash
+                        if 'Cash' in historical_data.columns:
+                            # Get current year and previous year cash to calculate change
+                            current_cash = historical_data.loc[latest_date_idx, 'Cash'] / 1e9 if 'Cash' in historical_data.columns else 0
+                            # Try to get previous year cash
+                            prev_year_idx = str(base_year - 1)
+                            if prev_year_idx in historical_data.index and 'Cash' in historical_data.columns:
+                                prev_cash = historical_data.loc[prev_year_idx, 'Cash'] / 1e9
+                                historical_cash_flow = current_cash - prev_cash
+                            else:
+                                historical_cash_flow = 0
+            
             # Initialize cash flow rows
             cash_rows = []
             
@@ -2441,7 +2478,7 @@ class RealEstateFinancialModel:
             # Load cash balance change (cash flow) from each project's comprehensive financial statements
             for project_name in project_revenue_breakdown.keys():
                 row_data = {'Cash Flow Source': f"{project_name}"}
-                row_data[hist_col] = 0  # No historical breakdown
+                row_data[hist_col] = 0  # Individual projects don't have historical breakdown
                 
                 # Find the project in df_projects
                 project_data = None
@@ -2502,10 +2539,18 @@ class RealEstateFinancialModel:
                 
                 cash_rows.append(row_data)
             
+            # Add Company Operations row (for non-real estate cash flow)
+            company_ops_row = {'Cash Flow Source': 'Company Operations (Non-RE)'}
+            company_ops_row[hist_col] = historical_cash_flow  # Use historical cash flow from CSV
+            for year in years:
+                # For forecast years, could estimate based on growth or leave as 0
+                company_ops_row[str(year)] = 0  # Placeholder - company operations cash flow not modeled yet
+            cash_rows.append(company_ops_row)
+            
             # Add total row
             if cash_rows:
                 total_cash_row = {'Cash Flow Source': 'TOTAL NET CASH FLOW'}
-                total_cash_row[hist_col] = 0  # No historical total
+                total_cash_row[hist_col] = historical_cash_flow  # Historical total equals company operations
                 for year in years:
                     total_cash_row[str(year)] = total_cash_flow_by_year[year]
                 cash_rows.append(total_cash_row)
