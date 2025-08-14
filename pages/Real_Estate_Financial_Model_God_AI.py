@@ -56,6 +56,10 @@ from utils.perplexity_utils import (
 from utils.project_pipeline_manager import ProjectPipelineManager
 from utils.claude_project_extractor import ClaudeProjectExtractor
 from utils.god_ai_assistant import GodAIAssistant
+
+# Import tabs
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tabs.Valuation import ValuationTab
 # ComprehensiveRevenueAnalyzer removed - financial modeling simplified
 # from core.data_loader import data_loader
 # from config.constants import FINANCIAL_CONFIG, REAL_ESTATE_CONFIG
@@ -567,7 +571,8 @@ class RealEstateFinancialModel:
         elif selected_tab == tab_names[4]:  # Model Forecast
             self.render_revenue_forecast()
         elif selected_tab == tab_names[5]:  # Valuation
-            self.render_valuation()
+            valuation_tab = ValuationTab()
+            valuation_tab.render()
         elif selected_tab == tab_names[6]:  # Research Insights
             self.render_research_insights()
         elif selected_tab == tab_names[7]:  # Export Model
@@ -4683,63 +4688,6 @@ class RealEstateFinancialModel:
         bs_tab = BalanceSheetAnalysisTab()
         bs_tab.render()
     
-    def render_valuation(self):
-        """Render simplified valuation analysis based on RNAV and revenue forecasts"""
-        st.header("Valuation Analysis")
-        
-        # RNAV Valuation
-        st.subheader("RNAV Valuation")
-        
-        total_rnav = 0  # Initialize total_rnav
-        if st.session_state.project_data is not None and isinstance(st.session_state.project_data, pd.DataFrame) and not st.session_state.project_data.empty:
-            if 'rnav_value' in st.session_state.project_data.columns:
-                total_rnav = st.session_state.project_data['rnav_value'].sum()
-                st.metric("Total RNAV", f"{total_rnav/1e9:,.0f}B VND")
-                
-                # Show project-level RNAV breakdown
-                project_rnav = st.session_state.project_data[['project_name', 'rnav_value']].copy()
-                project_rnav['rnav_value'] = project_rnav['rnav_value'] / 1e9  # Convert to billions
-                project_rnav = project_rnav.sort_values('rnav_value', ascending=False)
-                
-                st.dataframe(
-                    project_rnav.style.format({'rnav_value': '{:,.0f}B'}),
-                    use_container_width=True
-                )
-            else:
-                st.info("RNAV values not available in project data")
-        else:
-            st.info("Sync project data to calculate RNAV")
-        
-        # Simple Revenue-based Valuation
-        st.subheader("Revenue-Based Valuation")
-        
-        if 'selected_streams_data' in st.session_state and len(st.session_state.selected_streams_data) > 0:
-            # Calculate simple P/S based valuation
-            total_revenue = sum(s.get('revenue_2023', 0) for s in st.session_state.selected_streams_data)
-            
-            if total_revenue > 0:
-                # Assume industry average P/S ratios
-                ps_ratios = {
-                    'Conservative': 1.5,
-                    'Base': 2.5,
-                    'Optimistic': 3.5
-                }
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    value = (total_revenue * ps_ratios['Conservative']) / 1e9
-                    st.metric("Conservative (1.5x P/S)", f"{value:,.0f}B VND")
-                
-                with col2:
-                    value = (total_revenue * ps_ratios['Base']) / 1e9
-                    st.metric("Base (2.5x P/S)", f"{value:,.0f}B VND")
-                
-                with col3:
-                    value = (total_revenue * ps_ratios['Optimistic']) / 1e9
-                    st.metric("Optimistic (3.5x P/S)", f"{value:,.0f}B VND")
-        else:
-            st.info("Select revenue streams to see revenue-based valuation")
     
     def render_research_insights(self):
         """Render AI-powered research insights"""
