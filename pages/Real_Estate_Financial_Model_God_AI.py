@@ -2597,7 +2597,14 @@ class RealEstateFinancialModel:
             total_cogs_row = cogs_df[cogs_df['COGS Source'] == 'TOTAL COGS'].iloc[0]
             total_gp_row = gross_profit_df[gross_profit_df['Gross Profit Source'] == 'TOTAL GROSS PROFIT'].iloc[0]
             total_sga_row = sga_df[sga_df['SG&A Source'] == 'TOTAL SG&A'].iloc[0]
-            total_interest_row = interest_df[interest_df['Interest Source'] == 'TOTAL INTEREST EXPENSE'].iloc[0]
+            
+            # Calculate total interest directly from project_interest_breakdown
+            total_interest_row = {hist_col: 0}  # No historical interest breakdown
+            for year in years:
+                total_interest = 0
+                for project_name in project_interest_breakdown.keys():
+                    total_interest += project_interest_breakdown[project_name].get(year, 0)
+                total_interest_row[str(year)] = total_interest
             
             # Create P&L rows
             pnl_rows = []
