@@ -1660,6 +1660,24 @@ class RealEstateFinancialModel:
                     year_cogs = year_revenue * (1 - gross_margin)
                     other_cogs_by_year[year] += year_cogs
             
+            # Show data source indicator for projects
+            projects_using_new_format = 0
+            projects_using_old_format = 0
+            
+            # Count which format each project is using
+            for _, project in df_projects.iterrows():
+                if project.get('comprehensive_financial_statements'):
+                    projects_using_new_format += 1
+                elif project.get('pnl_schedule'):
+                    projects_using_old_format += 1
+            
+            # Display data source indicator if we have projects
+            if projects_using_new_format > 0 or projects_using_old_format > 0:
+                if projects_using_new_format > 0:
+                    st.success(f"✅ {projects_using_new_format} project(s) using Comprehensive Financial Statements from MongoDB")
+                if projects_using_old_format > 0:
+                    st.info(f"ℹ️ {projects_using_old_format} project(s) using legacy P&L schedule format")
+            
             # Project breakdown data is now incorporated into Total Revenue Forecast table
             
             # Section 2: Total Revenue Forecast
