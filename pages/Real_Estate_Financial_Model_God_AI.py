@@ -3147,13 +3147,29 @@ class RealEstateFinancialModel:
             except Exception as e:
                 st.warning(f"Could not load historical balance sheet data: {str(e)}")
             
-            # Aggregate data from all projects
+            # First, initialize with historical values as starting point
+            # These will be the base for cumulative calculations
+            cumulative_debt = hist_debt
+            cumulative_inventory = hist_inventory
+            cumulative_prepayment = hist_customer_prepayment
+            cumulative_cash = hist_cash
+            
+            # Store year-over-year changes for each project
+            debt_changes_by_year = {year_str: 0 for year_str in [str(y) for y in years]}
+            inventory_changes_by_year = {year_str: 0 for year_str in [str(y) for y in years]}
+            prepayment_changes_by_year = {year_str: 0 for year_str in [str(y) for y in years]}
+            cash_changes_by_year = {year_str: 0 for year_str in [str(y) for y in years]}
+            
+            # Aggregate changes from all projects
             for _, project in df_projects.iterrows():
                 financial_statements = project.get('comprehensive_financial_statements', {})
                 project_name = project.get('project_name', 'Unknown')
                 
-                # Track cumulative cash for this project
-                project_cumulative_cash = 0
+                # Track previous year values for this project to calculate changes
+                prev_debt = 0
+                prev_inventory = 0
+                prev_prepayment = 0
+                prev_cash = 0
                 
                 for year in years:
                     year_str = str(year)
@@ -3161,41 +3177,65 @@ class RealEstateFinancialModel:
                     if year_str in financial_statements:
                         year_data = financial_statements[year_str]
                         
-                        # Aggregate debt balance
+                        # Get current year debt balance
+                        current_debt = 0
                         if 'debt_balance' in year_data:
-                            total_debt_by_year[year_str] += year_data.get('debt_balance', 0) / 1e9
+                            current_debt = year_data.get('debt_balance', 0) / 1e9
                         elif 'Debt_Balance' in year_data:
-                            total_debt_by_year[year_str] += year_data.get('Debt_Balance', 0) / 1e9
+                            current_debt = year_data.get('Debt_Balance', 0) / 1e9
+                        # Calculate net change and add to total changes
+                        debt_changes_by_year[year_str] += (current_debt - prev_debt)
+                        prev_debt = current_debt
                         
-                        # Aggregate inventory balance
+                        # Get current year inventory balance
+                        current_inventory = 0
                         if 'inventory_balance' in year_data:
-                            total_inventory_by_year[year_str] += year_data.get('inventory_balance', 0) / 1e9
+                            current_inventory = year_data.get('inventory_balance', 0) / 1e9
                         elif 'Inventory_Balance' in year_data:
-                            total_inventory_by_year[year_str] += year_data.get('Inventory_Balance', 0) / 1e9
+                            current_inventory = year_data.get('Inventory_Balance', 0) / 1e9
+                        # Calculate net change and add to total changes
+                        inventory_changes_by_year[year_str] += (current_inventory - prev_inventory)
+                        prev_inventory = current_inventory
                         
-                        # Aggregate customer prepayment balance
+                        # Get current year customer prepayment balance
+                        current_prepayment = 0
                         if 'customer_prepayment_balance' in year_data:
-                            total_customer_prepayment_by_year[year_str] += year_data.get('customer_prepayment_balance', 0) / 1e9
+                            current_prepayment = year_data.get('customer_prepayment_balance', 0) / 1e9
                         elif 'Customer_Prepayment_Balance' in year_data:
-                            total_customer_prepayment_by_year[year_str] += year_data.get('Customer_Prepayment_Balance', 0) / 1e9
+                            current_prepayment = year_data.get('Customer_Prepayment_Balance', 0) / 1e9
+                        # Calculate net change and add to total changes
+                        prepayment_changes_by_year[year_str] += (current_prepayment - prev_prepayment)
+                        prev_prepayment = current_prepayment
                         
-                        # Aggregate cash - prefer cumulative balance, otherwise calculate from cash flow
-                        if 'cumulative_cash_balance' in year_data:
-                            # Direct cumulative balance from project
-                            project_cash = year_data.get('cumulative_cash_balance', 0) / 1e9
-                            total_cash_by_year[year_str] += project_cash
-                        elif 'Cumulative_Cash_Balance' in year_data:
-                            # Alternative field name
-                            project_cash = year_data.get('Cumulative_Cash_Balance', 0) / 1e9
-                            total_cash_by_year[year_str] += project_cash
-                        elif 'cash_balance_change' in year_data or 'Cash_Balance_Change' in year_data:
-                            # Calculate cumulative from cash flow changes
-                            cash_change = year_data.get('cash_balance_change', year_data.get('Cash_Balance_Change', 0)) / 1e9
-                            project_cumulative_cash += cash_change
-                            total_cash_by_year[year_str] += project_cumulative_cash
+                        # For cash, we can use cash_balance_change directly if available
+                        if 'cash_balance_change' in year_data:
+                            cash_changes_by_year[year_str] += year_data.get('cash_balance_change', 0) / 1e9
+                        elif 'Cash_Balance_Change' in year_data:
+                            cash_changes_by_year[year_str] += year_data.get('Cash_Balance_Change', 0) / 1e9
                         else:
-                            # No cash data for this year, carry forward previous balance
-                            total_cash_by_year[year_str] += project_cumulative_cash
+                            # Calculate from cumulative balance if available
+                            current_cash = 0
+                            if 'cumulative_cash_balance' in year_data:
+                                current_cash = year_data.get('cumulative_cash_balance', 0) / 1e9
+                            elif 'Cumulative_Cash_Balance' in year_data:
+                                current_cash = year_data.get('Cumulative_Cash_Balance', 0) / 1e9
+                            # Calculate net change
+                            cash_changes_by_year[year_str] += (current_cash - prev_cash)
+                            prev_cash = current_cash
+            
+            # Now calculate cumulative totals for each year
+            for year_str in [str(y) for y in years]:
+                # Add the year's changes to the cumulative totals
+                cumulative_debt += debt_changes_by_year[year_str]
+                cumulative_inventory += inventory_changes_by_year[year_str]
+                cumulative_prepayment += prepayment_changes_by_year[year_str]
+                cumulative_cash += cash_changes_by_year[year_str]
+                
+                # Store the cumulative totals
+                total_debt_by_year[year_str] = cumulative_debt
+                total_inventory_by_year[year_str] = cumulative_inventory
+                total_customer_prepayment_by_year[year_str] = cumulative_prepayment
+                total_cash_by_year[year_str] = cumulative_cash
             
             # Track breakdown by project for debugging
             debt_breakdown = {}
@@ -3256,8 +3296,11 @@ class RealEstateFinancialModel:
                             cash_breakdown[project_name][year_str] = project_cumulative_cash
             
             # Create balance sheet rows with breakdown
+            # Note: Individual project rows show the project's balance at each year
+            # Total rows show cumulative company-wide balance (historical + all project changes)
+            
             # DEBT SECTION
-            # Add individual project debt rows
+            # Add individual project debt rows (showing each project's balance)
             for project_name in debt_breakdown.keys():
                 project_debt_row = {'Balance Sheet Item': f'  {project_name} Debt'}
                 project_debt_row[hist_col] = 0  # No historical breakdown by project
@@ -3385,12 +3428,15 @@ class RealEstateFinancialModel:
             
             # Add explanatory notes
             st.caption("Note: This consolidated balance sheet aggregates data from all real estate projects and company operations.")
-            st.caption("• **Total Debt**: Sum of all project debts")
-            st.caption("• **Inventory**: Work-in-progress real estate projects (construction + land costs - recognized COGS)")
-            st.caption("• **Customer Prepayment**: Presales received but not yet recognized as revenue")
-            st.caption("• **Total Cash**: Cumulative cash position from all projects")
+            st.caption("**Calculation Method**: Forecast values = Historical balance (2024) + Cumulative net changes from all projects")
+            st.caption("• **Total Debt**: Historical debt + cumulative new borrowings - repayments from all projects")
+            st.caption("• **Inventory**: Historical inventory + new construction/land costs - COGS recognized")
+            st.caption("• **Customer Prepayment**: Historical prepayments + new presales - revenue recognized")
+            st.caption("• **Total Cash**: Historical cash + cumulative cash flows from all projects")
             st.caption("• **Net Debt**: Total Debt minus Total Cash (negative = net cash position)")
             st.caption("• **Working Capital**: Inventory + Cash - Customer Prepayment")
+            st.caption("• **Individual project rows**: Show each project's balance at year-end")
+            st.caption("• **TOTAL rows**: Show company-wide cumulative balance including historical base")
             
             # Section 7: Visualization Chart (moved to bottom)
             st.markdown("---")
