@@ -1577,8 +1577,8 @@ class ProjectPipelineRealEstateTab:
                 # Display Results
                 st.success("✅ Balance sheet analysis completed!")
                 
-                # Format the dataframe for display - include Total row
-                display_df = df.copy()
+                # Format the dataframe for display - exclude Total row
+                display_df = df[df['Year'] != 'Total'].copy()
                 
                 # Convert to billions VND for better readability
                 value_columns = [col for col in df.columns if col != 'Year']
@@ -1638,36 +1638,29 @@ class ProjectPipelineRealEstateTab:
                 def highlight_sections(s):
                     """Apply background colors to different sections"""
                     colors = []
-                    row_name = s.name  # Get the row name
                     
-                    # Check if this is the Total column
-                    if s.name == 'Total':
-                        # Apply bold and slightly darker colors for Total column
-                        for idx in s.index:
-                            colors.append('font-weight: bold')
-                    else:
-                        for idx in s.index:
-                            item_name = idx  # idx is already the mapped label
-                            
-                            # Debt section - light blue
-                            if item_name in ['Debt Balance']:
-                                colors.append('background-color: #E3F2FD')
-                            # Cost section - light gray
-                            elif item_name in ['Land Cost', 'Construction Cost', 'Interest Capitalized']:
-                                colors.append('background-color: #F5F5F5')
-                            # Inventory section - light green
-                            elif item_name in ['Inventory Addition', 'Inventory Balance']:
-                                colors.append('background-color: #E8F5E9')
-                            # Presales and Customer Prepayment section - light purple
-                            elif item_name in ['Presales', 'Customer Prepayment Balance']:
-                                colors.append('background-color: #F3E5F5')
-                            # P&L section - light yellow (all P&L items grouped together)
-                            elif item_name in ['Revenue (P&L)', 'COGS (P&L)', 'SG&A Expense (P&L)', 
-                                            'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']:
-                                colors.append('background-color: #FFF9C4')
-                            # Cash flow section - light orange
-                            else:
-                                colors.append('background-color: #FFE0B2')
+                    for idx in s.index:
+                        item_name = idx  # idx is already the mapped label
+                        
+                        # Debt section - light blue
+                        if item_name in ['Debt Balance']:
+                            colors.append('background-color: #E3F2FD')
+                        # Cost section - light gray
+                        elif item_name in ['Land Cost', 'Construction Cost', 'Interest Capitalized']:
+                            colors.append('background-color: #F5F5F5')
+                        # Inventory section - light green
+                        elif item_name in ['Inventory Addition', 'Inventory Balance']:
+                            colors.append('background-color: #E8F5E9')
+                        # Presales and Customer Prepayment section - light purple
+                        elif item_name in ['Presales', 'Customer Prepayment Balance']:
+                            colors.append('background-color: #F3E5F5')
+                        # P&L section - light yellow (all P&L items grouped together)
+                        elif item_name in ['Revenue (P&L)', 'COGS (P&L)', 'SG&A Expense (P&L)', 
+                                        'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']:
+                            colors.append('background-color: #FFF9C4')
+                        # Cash flow section - light orange
+                        else:
+                            colors.append('background-color: #FFE0B2')
                     
                     return colors
                 
@@ -1695,6 +1688,19 @@ class ProjectPipelineRealEstateTab:
                            if idx not in pnl_items and idx not in cashflow_items]
                 bs_df = display_df.loc[bs_items].copy()
                 
+                # Create column configuration for consistent width across all tables
+                # Calculate column widths based on number of years
+                num_years = len(display_df.columns)
+                col_width = max(100, min(150, 900 // num_years))  # Dynamic width based on years
+                
+                column_config = {}
+                for col in display_df.columns:
+                    column_config[col] = st.column_config.NumberColumn(
+                        col,
+                        width=col_width,
+                        format="%.1f"
+                    )
+                
                 # Display Balance Sheet table
                 st.subheader("📊 Balance Sheet")
                 
@@ -1703,7 +1709,8 @@ class ProjectPipelineRealEstateTab:
                 st.dataframe(
                     styled_bs_df,
                     use_container_width=True,
-                    height=300
+                    height=300,
+                    column_config=column_config
                 )
                 
                 # Display P&L table
@@ -1712,18 +1719,15 @@ class ProjectPipelineRealEstateTab:
                 # Apply yellow background to P&L table
                 def highlight_pnl(df):
                     """Apply yellow background to P&L table"""
-                    styles = pd.DataFrame('background-color: #FFF9C4', 
-                                        index=df.index, columns=df.columns)
-                    # Make Total column bold with darker background
-                    if 'Total' in df.columns:
-                        styles['Total'] = 'background-color: #FFD54F; font-weight: bold'
-                    return styles
+                    return pd.DataFrame('background-color: #FFF9C4', 
+                                      index=df.index, columns=df.columns)
                 
                 styled_pnl_df = pnl_df.style.apply(highlight_pnl, axis=None).format(format_dict)
                 st.dataframe(
                     styled_pnl_df,
                     use_container_width=True,
-                    height=250
+                    height=250,
+                    column_config=column_config
                 )
                 
                 # Display Cash Flow table
@@ -1732,18 +1736,15 @@ class ProjectPipelineRealEstateTab:
                 # Apply orange background to cash flow table
                 def highlight_cashflow(df):
                     """Apply orange background to cash flow table"""
-                    styles = pd.DataFrame('background-color: #FFE0B2', 
-                                        index=df.index, columns=df.columns)
-                    # Make Total column bold with darker background
-                    if 'Total' in df.columns:
-                        styles['Total'] = 'background-color: #FFB74D; font-weight: bold'
-                    return styles
+                    return pd.DataFrame('background-color: #FFE0B2', 
+                                      index=df.index, columns=df.columns)
                 
                 styled_cashflow_df = cashflow_df.style.apply(highlight_cashflow, axis=None).format(format_dict)
                 st.dataframe(
                     styled_cashflow_df,
                     use_container_width=True,
-                    height=300
+                    height=300,
+                    column_config=column_config
                 )
                 
                 # Store results in session state for potential export
