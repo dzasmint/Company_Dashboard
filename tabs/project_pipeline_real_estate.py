@@ -1546,6 +1546,9 @@ class ProjectPipelineRealEstateTab:
         # Run balance sheet analysis button
         if st.button("🔍 Generate Balance Sheet Schedules", type="primary", use_container_width=True):
             try:
+                # Get tax rate from assumptions or use default
+                tax_rate = 0.2  # Default 20% corporate tax rate in Vietnam
+                
                 # Generate balance sheet schedules
                 df = generate_simplified_balance_sheet_schedules(
                     total_debt=total_debt,
@@ -1564,7 +1567,8 @@ class ProjectPipelineRealEstateTab:
                     revenue_booking_start_year=revenue_booking_start,
                     revenue_booking_end_year=revenue_booking_end,
                     presales_distribution=presales_dist if presales_dist else None,
-                    revenue_distribution=revenue_dist if revenue_dist else None
+                    revenue_distribution=revenue_dist if revenue_dist else None,
+                    tax_rate=tax_rate
                 )
                 
                 # Display Results
@@ -1583,27 +1587,36 @@ class ProjectPipelineRealEstateTab:
                 display_df = display_df.set_index('Year')
                 display_df = display_df.T
                 
-                # Rename index with more readable labels
+                # Rename index with more readable labels - in the new order
                 index_labels = {
+                    # Debt section
                     'Debt_Disbursement': 'Debt Disbursement (Inflow)',
                     'Debt_Repayment': 'Debt Repayment (Outflow)',
-                    'Debt_Balance': 'Debt Balance (Outstanding)',
+                    'Debt_Balance': 'Debt Balance',
+                    # Cost section
                     'Land_Cost': 'Land Cost',
                     'Construction_Cost': 'Construction Cost',
                     'Interest_Capitalized': 'Interest Capitalized',
-                    'Interest_Expense_Cash': 'Interest Expense (P&L)',
-                    'SGA_Expense': 'SG&A Expense (P&L)',
+                    # Inventory section
                     'Inventory_Addition': 'Inventory Addition',
                     'Inventory_Balance': 'Inventory Balance',
+                    # P&L section
                     'Revenue_Recognition': 'Revenue Recognition',
                     'COGS': 'Cost of Goods Sold',
+                    'SGA_Expense': 'SG&A Expense (P&L)',
+                    'Interest_Expense_Cash': 'Interest Expense (P&L)',
+                    'PBT': 'PBT',
+                    'Tax': 'Tax',
+                    'PAT': 'PAT',
+                    # Cash flow section
                     'Cash_Inflow_Presales': 'Cash Inflow (Presales)',
                     'Cash_Outflow_Land': 'Cash Outflow (Land)',
                     'Cash_Outflow_Construction': 'Cash Outflow (Construction)',
                     'Cash_Outflow_Interest': 'Cash Outflow (Interest)',
                     'Cash_Outflow_SGA': 'Cash Outflow (SG&A)',
+                    'Cash_Outflow_Tax': 'Cash Outflow (Tax)',
                     'Cash_Balance_Change': 'Cash Balance Change',
-                    'Cumulative_Cash_Balance': 'Cumulative Cash Balance'
+                    'Cumulative_Cash_Balance': 'Cash Balance'
                 }
                 display_df.index = display_df.index.map(lambda x: index_labels.get(x, x))
                 display_df.index.name = 'Balance Sheet Item'

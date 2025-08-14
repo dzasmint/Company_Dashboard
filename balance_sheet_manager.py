@@ -19,7 +19,8 @@ def generate_balance_sheet_schedules(
     revenue_booking_end_year: int,
     revenue_distribution: Optional[Dict[int, float]] = None,  # {year: percentage} for revenue recognition
     project_start_year: int = None,
-    project_end_year: int = None
+    project_end_year: int = None,
+    tax_rate: float = 0.2  # Default 20% tax rate
 ) -> pd.DataFrame:
     """
     Generate comprehensive balance sheet schedules including debt, interest, inventory, and cash.
@@ -239,7 +240,29 @@ def generate_balance_sheet_schedules(
             inventory_balance[i] = previous_inventory + inventory_addition[i]
             cogs[i] = 0
     
-    # 8. Calculate net cash flow (outflows are already negative)
+    # 8. Calculate P&L items (PBT, Tax, PAT)
+    pbt = np.zeros(n_years)  # Profit before tax
+    tax_expense = np.zeros(n_years)  # Tax expense
+    pat = np.zeros(n_years)  # Profit after tax
+    cash_outflow_tax = np.zeros(n_years)  # Tax cash outflow
+    
+    for i in range(n_years):
+        # PBT = Revenue - COGS - SG&A - Interest Expense
+        pbt[i] = revenue_recognition[i] - cogs[i] - sga_expense[i] - interest_expense_cash[i]
+        
+        # Tax = PBT * Tax Rate (only if PBT is positive)
+        if pbt[i] > 0:
+            tax_expense[i] = pbt[i] * tax_rate
+            # Tax is paid in cash in the same year (simplified assumption)
+            cash_outflow_tax[i] = -tax_expense[i]
+        else:
+            tax_expense[i] = 0
+            cash_outflow_tax[i] = 0
+        
+        # PAT = PBT - Tax
+        pat[i] = pbt[i] - tax_expense[i]
+    
+    # 9. Calculate net cash flow (outflows are already negative)
     cash_balance_change = (
         cash_inflow_presales 
         + debt_disbursement  # Cash inflow from debt
@@ -247,32 +270,42 @@ def generate_balance_sheet_schedules(
         + cash_outflow_land  # Already negative
         + cash_outflow_interest  # Already negative
         + cash_outflow_sga  # Already negative
+        + cash_outflow_tax  # Already negative
         + debt_repayment  # Already negative
     )
     
     # Calculate cumulative cash balance
     cumulative_cash_balance = np.cumsum(cash_balance_change)
     
-    # Create DataFrame with results
+    # Create DataFrame with results in the requested order
     df = pd.DataFrame({
         'Year': years,
+        # Debt section
         'Debt_Disbursement': debt_disbursement,
         'Debt_Repayment': debt_repayment,
         'Debt_Balance': debt_balance,
+        # Cost section
         'Land_Cost': land_cost,
         'Construction_Cost': construction_cost,
         'Interest_Capitalized': interest_capitalized,
-        'Interest_Expense_Cash': interest_expense_cash,
-        'SGA_Expense': sga_expense,
+        # Inventory section
         'Inventory_Addition': inventory_addition,
         'Inventory_Balance': inventory_balance,
+        # P&L section
         'Revenue_Recognition': revenue_recognition,
         'COGS': cogs,
+        'SGA_Expense': sga_expense,
+        'Interest_Expense_Cash': interest_expense_cash,
+        'PBT': pbt,
+        'Tax': tax_expense,
+        'PAT': pat,
+        # Cash flow section
         'Cash_Inflow_Presales': cash_inflow_presales,
         'Cash_Outflow_Land': cash_outflow_land,
         'Cash_Outflow_Construction': cash_outflow_construction,
         'Cash_Outflow_Interest': cash_outflow_interest,
         'Cash_Outflow_SGA': cash_outflow_sga,
+        'Cash_Outflow_Tax': cash_outflow_tax,
         'Cash_Balance_Change': cash_balance_change,
         'Cumulative_Cash_Balance': cumulative_cash_balance
     })
@@ -280,23 +313,32 @@ def generate_balance_sheet_schedules(
     # Add summary row
     summary = pd.DataFrame({
         'Year': ['Total'],
+        # Debt section
         'Debt_Disbursement': [debt_disbursement.sum()],
         'Debt_Repayment': [debt_repayment.sum()],  # Already negative
         'Debt_Balance': [debt_balance[-1]],  # Final balance
+        # Cost section
         'Land_Cost': [land_cost.sum()],
         'Construction_Cost': [construction_cost.sum()],
         'Interest_Capitalized': [interest_capitalized.sum()],
-        'Interest_Expense_Cash': [interest_expense_cash.sum()],
-        'SGA_Expense': [sga_expense.sum()],
+        # Inventory section
         'Inventory_Addition': [inventory_addition.sum()],
         'Inventory_Balance': [inventory_balance[-1]],  # Final balance
+        # P&L section
         'Revenue_Recognition': [revenue_recognition.sum()],
         'COGS': [cogs.sum()],
+        'SGA_Expense': [sga_expense.sum()],
+        'Interest_Expense_Cash': [interest_expense_cash.sum()],
+        'PBT': [pbt.sum()],
+        'Tax': [tax_expense.sum()],
+        'PAT': [pat.sum()],
+        # Cash flow section
         'Cash_Inflow_Presales': [cash_inflow_presales.sum()],
         'Cash_Outflow_Land': [cash_outflow_land.sum()],
         'Cash_Outflow_Construction': [cash_outflow_construction.sum()],
         'Cash_Outflow_Interest': [cash_outflow_interest.sum()],
         'Cash_Outflow_SGA': [cash_outflow_sga.sum()],
+        'Cash_Outflow_Tax': [cash_outflow_tax.sum()],
         'Cash_Balance_Change': [cash_balance_change.sum()],
         'Cumulative_Cash_Balance': [cumulative_cash_balance[-1]]  # Final cash balance
     })
@@ -323,7 +365,8 @@ def generate_simplified_balance_sheet_schedules(
     revenue_booking_start_year: int,
     revenue_booking_end_year: int,
     presales_distribution: Optional[Dict[str, float]] = None,  # {year_str: percentage}
-    revenue_distribution: Optional[Dict[str, float]] = None  # {year_str: percentage} for revenue recognition
+    revenue_distribution: Optional[Dict[str, float]] = None,  # {year_str: percentage} for revenue recognition
+    tax_rate: float = 0.2  # Default 20% tax rate
 ) -> pd.DataFrame:
     """
     Simplified version that integrates with project pipeline calculations.
@@ -389,7 +432,8 @@ def generate_simplified_balance_sheet_schedules(
         debt_repayment_end_year=debt_repayment_end_year,
         revenue_booking_start_year=revenue_booking_start_year,
         revenue_booking_end_year=revenue_booking_end_year,
-        revenue_distribution=revenue_dist_converted
+        revenue_distribution=revenue_dist_converted,
+        tax_rate=tax_rate
     )
 
 
