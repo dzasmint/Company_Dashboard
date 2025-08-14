@@ -65,17 +65,36 @@ def generate_balance_sheet_schedules(
     
     # Determine project timeline
     if project_start_year is None:
-        project_start_year = min(
-            debt_disbursement_start_year,
-            min(presales_schedule.keys()) if presales_schedule else debt_disbursement_start_year
-        )
+        # Include all relevant start years in the timeline calculation
+        start_years = []
+        
+        # Add all years that have activities
+        start_years.append(debt_disbursement_start_year)
+        start_years.append(land_payment_year)
+        start_years.append(revenue_booking_start_year)
+        start_years.append(debt_repayment_start_year)
+        
+        if presales_schedule:
+            start_years.append(min(presales_schedule.keys()))
+        
+        # Filter out None values and get minimum
+        start_years = [y for y in start_years if y is not None]
+        project_start_year = min(start_years) if start_years else debt_disbursement_start_year
     
     if project_end_year is None:
-        project_end_year = max(
-            debt_repayment_end_year,
-            revenue_booking_end_year,
-            max(presales_schedule.keys()) if presales_schedule else revenue_booking_end_year
-        )
+        # Include all relevant end years
+        end_years = []
+        
+        end_years.append(debt_disbursement_end_year)
+        end_years.append(debt_repayment_end_year)
+        end_years.append(revenue_booking_end_year)
+        
+        if presales_schedule:
+            end_years.append(max(presales_schedule.keys()))
+        
+        # Filter out None values and get maximum
+        end_years = [y for y in end_years if y is not None]
+        project_end_year = max(end_years) if end_years else revenue_booking_end_year
     
     # Initialize arrays for each schedule
     years = list(range(project_start_year, project_end_year + 1))

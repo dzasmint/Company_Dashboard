@@ -1485,6 +1485,9 @@ class ProjectPipelineRealEstateTab:
         
         land_payment_year = int(edited.get('land_payment_year', const_start) or const_start)
         
+        # Debug: Show the timeline being used
+        st.info(f"📅 Timeline: Land payment ({land_payment_year}), Construction ({const_start}-{const_end})")
+        
         # Sales/Presales timeline
         presales_start = int(edited.get('sale_start_year', const_start) or const_start)
         sales_years = int(edited.get('sales_years', 3) or 3)
