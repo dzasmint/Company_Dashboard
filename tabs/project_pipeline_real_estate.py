@@ -1577,8 +1577,8 @@ class ProjectPipelineRealEstateTab:
                 # Display Results
                 st.success("✅ Balance sheet analysis completed!")
                 
-                # Format the dataframe for display
-                display_df = df[df['Year'] != 'Total'].copy()
+                # Format the dataframe for display - include Total row
+                display_df = df.copy()
                 
                 # Convert to billions VND for better readability
                 value_columns = [col for col in df.columns if col != 'Year']
@@ -1638,42 +1638,112 @@ class ProjectPipelineRealEstateTab:
                 def highlight_sections(s):
                     """Apply background colors to different sections"""
                     colors = []
-                    for idx in s.index:
-                        row_name = index_labels.get(idx, idx)
-                        
-                        # Debt section - light blue
-                        if row_name in ['Debt Balance']:
-                            colors.append('background-color: #E3F2FD')
-                        # Cost section - light gray
-                        elif row_name in ['Land Cost', 'Construction Cost', 'Interest Capitalized']:
-                            colors.append('background-color: #F5F5F5')
-                        # Inventory section - light green
-                        elif row_name in ['Inventory Addition', 'Inventory Balance']:
-                            colors.append('background-color: #E8F5E9')
-                        # Presales and Customer Prepayment section - light purple
-                        elif row_name in ['Presales', 'Customer Prepayment Balance']:
-                            colors.append('background-color: #F3E5F5')
-                        # P&L section - light yellow (all P&L items grouped together)
-                        elif row_name in ['Revenue (P&L)', 'COGS (P&L)', 'SG&A Expense (P&L)', 
-                                        'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']:
-                            colors.append('background-color: #FFF9C4')
-                        # Cash flow section - light orange
-                        else:
-                            colors.append('background-color: #FFE0B2')
+                    row_name = s.name  # Get the row name
+                    
+                    # Check if this is the Total column
+                    if s.name == 'Total':
+                        # Apply bold and slightly darker colors for Total column
+                        for idx in s.index:
+                            colors.append('font-weight: bold')
+                    else:
+                        for idx in s.index:
+                            item_name = idx  # idx is already the mapped label
+                            
+                            # Debt section - light blue
+                            if item_name in ['Debt Balance']:
+                                colors.append('background-color: #E3F2FD')
+                            # Cost section - light gray
+                            elif item_name in ['Land Cost', 'Construction Cost', 'Interest Capitalized']:
+                                colors.append('background-color: #F5F5F5')
+                            # Inventory section - light green
+                            elif item_name in ['Inventory Addition', 'Inventory Balance']:
+                                colors.append('background-color: #E8F5E9')
+                            # Presales and Customer Prepayment section - light purple
+                            elif item_name in ['Presales', 'Customer Prepayment Balance']:
+                                colors.append('background-color: #F3E5F5')
+                            # P&L section - light yellow (all P&L items grouped together)
+                            elif item_name in ['Revenue (P&L)', 'COGS (P&L)', 'SG&A Expense (P&L)', 
+                                            'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']:
+                                colors.append('background-color: #FFF9C4')
+                            # Cash flow section - light orange
+                            else:
+                                colors.append('background-color: #FFE0B2')
                     
                     return colors
                 
                 # Create format dictionary for all year columns
                 format_dict = {col: "{:.1f}" for col in display_df.columns}
                 
-                # Apply styling
-                styled_df = display_df.style.apply(highlight_sections, axis=0).format(format_dict)
+                # Split into three separate dataframes
+                # P&L items
+                pnl_items = ['Revenue (P&L)', 'COGS (P&L)', 'SG&A Expense (P&L)', 
+                            'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']
                 
-                # Display the styled dataframe
+                # Cash flow items
+                cashflow_items = ['Cash Inflow (Presales)', 'Cash Inflow (Debt Disbursement)',
+                                 'Cash Outflow (Debt Repayment)', 'Cash Outflow (Land)',
+                                 'Cash Outflow (Construction)', 'Cash Outflow (Interest)',
+                                 'Cash Outflow (SG&A)', 'Cash Outflow (Tax)',
+                                 'Cash Balance Change', 'Cash Balance']
+                
+                # Create separate dataframes
+                pnl_df = display_df.loc[display_df.index.isin(pnl_items)].copy()
+                cashflow_df = display_df.loc[display_df.index.isin(cashflow_items)].copy()
+                
+                # Balance sheet items (everything else)
+                bs_items = [idx for idx in display_df.index 
+                           if idx not in pnl_items and idx not in cashflow_items]
+                bs_df = display_df.loc[bs_items].copy()
+                
+                # Display Balance Sheet table
+                st.subheader("📊 Balance Sheet")
+                
+                # Apply styling to balance sheet
+                styled_bs_df = bs_df.style.apply(highlight_sections, axis=0).format(format_dict)
                 st.dataframe(
-                    styled_df,
+                    styled_bs_df,
                     use_container_width=True,
-                    height=600
+                    height=300
+                )
+                
+                # Display P&L table
+                st.subheader("💰 Profit & Loss Statement")
+                
+                # Apply yellow background to P&L table
+                def highlight_pnl(df):
+                    """Apply yellow background to P&L table"""
+                    styles = pd.DataFrame('background-color: #FFF9C4', 
+                                        index=df.index, columns=df.columns)
+                    # Make Total column bold with darker background
+                    if 'Total' in df.columns:
+                        styles['Total'] = 'background-color: #FFD54F; font-weight: bold'
+                    return styles
+                
+                styled_pnl_df = pnl_df.style.apply(highlight_pnl, axis=None).format(format_dict)
+                st.dataframe(
+                    styled_pnl_df,
+                    use_container_width=True,
+                    height=250
+                )
+                
+                # Display Cash Flow table
+                st.subheader("💵 Cash Flow Statement")
+                
+                # Apply orange background to cash flow table
+                def highlight_cashflow(df):
+                    """Apply orange background to cash flow table"""
+                    styles = pd.DataFrame('background-color: #FFE0B2', 
+                                        index=df.index, columns=df.columns)
+                    # Make Total column bold with darker background
+                    if 'Total' in df.columns:
+                        styles['Total'] = 'background-color: #FFB74D; font-weight: bold'
+                    return styles
+                
+                styled_cashflow_df = cashflow_df.style.apply(highlight_cashflow, axis=None).format(format_dict)
+                st.dataframe(
+                    styled_cashflow_df,
+                    use_container_width=True,
+                    height=300
                 )
                 
                 # Store results in session state for potential export
