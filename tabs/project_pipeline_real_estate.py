@@ -1590,8 +1590,6 @@ class ProjectPipelineRealEstateTab:
                 # Rename index with more readable labels - in the new order
                 index_labels = {
                     # Debt section
-                    'Debt_Disbursement': 'Debt Disbursement (Inflow)',
-                    'Debt_Repayment': 'Debt Repayment (Outflow)',
                     'Debt_Balance': 'Debt Balance',
                     # Cost section
                     'Land_Cost': 'Land Cost',
@@ -1613,6 +1611,8 @@ class ProjectPipelineRealEstateTab:
                     'PAT': 'PAT (P&L)',
                     # Cash flow section
                     'Cash_Inflow_Presales': 'Cash Inflow (Presales)',
+                    'Debt_Disbursement': 'Cash Inflow (Debt Disbursement)',
+                    'Debt_Repayment': 'Cash Outflow (Debt Repayment)',
                     'Cash_Outflow_Land': 'Cash Outflow (Land)',
                     'Cash_Outflow_Construction': 'Cash Outflow (Construction)',
                     'Cash_Outflow_Interest': 'Cash Outflow (Interest)',
@@ -1639,7 +1639,7 @@ class ProjectPipelineRealEstateTab:
                         row_name = index_labels.get(idx, idx)
                         
                         # Debt section - light blue
-                        if row_name in ['Debt Disbursement (Inflow)', 'Debt Repayment (Outflow)', 'Debt Balance']:
+                        if row_name in ['Debt Balance']:
                             colors.append('background-color: #E3F2FD')
                         # Cost section - light gray
                         elif row_name in ['Land Cost', 'Construction Cost', 'Interest Capitalized']:

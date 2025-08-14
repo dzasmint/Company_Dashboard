@@ -295,8 +295,6 @@ def generate_balance_sheet_schedules(
     df = pd.DataFrame({
         'Year': years,
         # Debt section
-        'Debt_Disbursement': debt_disbursement,
-        'Debt_Repayment': debt_repayment,
         'Debt_Balance': debt_balance,
         # Cost section
         'Land_Cost': land_cost,
@@ -318,6 +316,8 @@ def generate_balance_sheet_schedules(
         'PAT': pat,
         # Cash flow section
         'Cash_Inflow_Presales': cash_inflow_presales,
+        'Debt_Disbursement': debt_disbursement,
+        'Debt_Repayment': debt_repayment,
         'Cash_Outflow_Land': cash_outflow_land,
         'Cash_Outflow_Construction': cash_outflow_construction,
         'Cash_Outflow_Interest': cash_outflow_interest,
@@ -331,8 +331,6 @@ def generate_balance_sheet_schedules(
     summary = pd.DataFrame({
         'Year': ['Total'],
         # Debt section
-        'Debt_Disbursement': [debt_disbursement.sum()],
-        'Debt_Repayment': [debt_repayment.sum()],  # Already negative
         'Debt_Balance': [debt_balance[-1]],  # Final balance
         # Cost section
         'Land_Cost': [land_cost.sum()],
@@ -354,6 +352,8 @@ def generate_balance_sheet_schedules(
         'PAT': [pat.sum()],
         # Cash flow section
         'Cash_Inflow_Presales': [cash_inflow_presales.sum()],
+        'Debt_Disbursement': [debt_disbursement.sum()],
+        'Debt_Repayment': [debt_repayment.sum()],  # Already negative
         'Cash_Outflow_Land': [cash_outflow_land.sum()],
         'Cash_Outflow_Construction': [cash_outflow_construction.sum()],
         'Cash_Outflow_Interest': [cash_outflow_interest.sum()],
