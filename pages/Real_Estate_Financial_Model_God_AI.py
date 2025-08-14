@@ -1582,49 +1582,60 @@ class RealEstateFinancialModel:
                         # New format has different field names
                         if 'revenue_recognition' in year_data:
                             # New format from comprehensive_financial_statements
-                            # Get revenue
-                            revenue_amount = year_data.get('revenue_recognition', 0)
+                            # Values are in raw VND, convert to billions
+                            
+                            # Get revenue (convert to billions)
+                            revenue_amount = year_data.get('revenue_recognition', 0) / 1e9
                             project_revenue_by_year[year] += revenue_amount
                             project_revenue_breakdown[project_name][year] = revenue_amount
                             
-                            # Get COGS - directly available in new format
-                            project_cogs = year_data.get('cogs', 0)  # Should be negative
+                            # Get COGS - directly available in new format (convert to billions, ensure negative)
+                            cogs_raw = year_data.get('cogs', 0) / 1e9
+                            project_cogs = -abs(cogs_raw) if cogs_raw != 0 else 0  # Ensure negative
                             project_cogs_breakdown[project_name][year] = project_cogs
                             project_cogs_by_year[year] += project_cogs
                             
-                            # Get land cost separately for breakdown
-                            land_cost = year_data.get('land_cost', 0)
+                            # Get land cost separately for breakdown (convert to billions)
+                            land_cost = year_data.get('land_cost', 0) / 1e9
                             project_land_breakdown[project_name][year] = land_cost
                             
-                            # Get SG&A - should be negative
-                            sga_amount = year_data.get('sga_expense', 0)
+                            # Get SG&A - ensure negative (convert to billions)
+                            sga_raw = year_data.get('sga_expense', 0) / 1e9
+                            sga_amount = -abs(sga_raw) if sga_raw != 0 else 0  # Ensure negative
                             project_sga_breakdown[project_name][year] = sga_amount
                             
-                            # Get Interest expense from P&L
-                            interest_amount = year_data.get('interest_expense_cash', 0)
+                            # Get Interest expense from P&L - ensure negative (convert to billions)
+                            interest_raw = year_data.get('interest_expense_cash', 0) / 1e9
+                            interest_amount = -abs(interest_raw) if interest_raw != 0 else 0  # Ensure negative
                             project_interest_breakdown[project_name][year] = interest_amount
                         else:
                             # Old format from pnl_schedule
+                            # Old format values are already in billions VND
                             # Get revenue
                             revenue_amount = year_data.get('revenue', 0)
                             project_revenue_by_year[year] += revenue_amount
                             project_revenue_breakdown[project_name][year] = revenue_amount
                             
-                            # Get COGS (construction + land) - these should be negative values
+                            # Get COGS (construction + land) - ensure negative
                             construction_cost = year_data.get('construction_cost', 0)
                             land_cost = year_data.get('land_cost', 0)
-                            project_cogs = construction_cost + land_cost  # Both should be negative
+                            # Ensure both are negative before adding
+                            construction_cost = -abs(construction_cost) if construction_cost != 0 else 0
+                            land_cost = -abs(land_cost) if land_cost != 0 else 0
+                            project_cogs = construction_cost + land_cost  # Both negative
                             
                             project_cogs_breakdown[project_name][year] = project_cogs
                             project_cogs_by_year[year] += project_cogs
                             project_land_breakdown[project_name][year] = land_cost
                             
-                            # Get SG&A - should be negative
-                            sga_amount = year_data.get('sga', 0)
+                            # Get SG&A - ensure negative
+                            sga_raw = year_data.get('sga', 0)
+                            sga_amount = -abs(sga_raw) if sga_raw != 0 else 0
                             project_sga_breakdown[project_name][year] = sga_amount
                             
-                            # Get Interest expense - should be negative/positive based on calculation
-                            interest_amount = year_data.get('interest_expense', 0)
+                            # Get Interest expense - ensure negative
+                            interest_raw = year_data.get('interest_expense', 0)
+                            interest_amount = -abs(interest_raw) if interest_raw != 0 else 0
                             project_interest_breakdown[project_name][year] = interest_amount
                     else:
                         # No data for this year
@@ -1674,9 +1685,9 @@ class RealEstateFinancialModel:
             # Display data source indicator if we have projects
             if projects_using_new_format > 0 or projects_using_old_format > 0:
                 if projects_using_new_format > 0:
-                    st.success(f"✅ {projects_using_new_format} project(s) using Comprehensive Financial Statements from MongoDB")
+                    st.success(f"✅ {projects_using_new_format} project(s) using Comprehensive Financial Statements from MongoDB (values converted to Billion VND)")
                 if projects_using_old_format > 0:
-                    st.info(f"ℹ️ {projects_using_old_format} project(s) using legacy P&L schedule format")
+                    st.info(f"ℹ️ {projects_using_old_format} project(s) using legacy P&L schedule format (already in Billion VND)")
             
             # Project breakdown data is now incorporated into Total Revenue Forecast table
             
