@@ -1603,14 +1603,14 @@ class ProjectPipelineRealEstateTab:
                     # Presales and Revenue section
                     'Presales': 'Presales',
                     'Customer_Prepayment_Balance': 'Customer Prepayment Balance',
-                    'Revenue_Recognition': 'Revenue Recognition',
                     # P&L section
-                    'COGS': 'Cost of Goods Sold',
+                    'Revenue_Recognition': 'Revenue (P&L)',
+                    'COGS': 'COGS (P&L)',
                     'SGA_Expense': 'SG&A Expense (P&L)',
                     'Interest_Expense_Cash': 'Interest Expense (P&L)',
-                    'PBT': 'PBT',
-                    'Tax': 'Tax',
-                    'PAT': 'PAT',
+                    'PBT': 'PBT (P&L)',
+                    'Tax': 'Tax (P&L)',
+                    'PAT': 'PAT (P&L)',
                     # Cash flow section
                     'Cash_Inflow_Presales': 'Cash Inflow (Presales)',
                     'Cash_Outflow_Land': 'Cash Outflow (Land)',
@@ -1626,7 +1626,7 @@ class ProjectPipelineRealEstateTab:
                 
                 # Adjust P&L expense values to display as negative
                 for idx in display_df.index:
-                    if idx in ['Cost of Goods Sold', 'SG&A Expense (P&L)', 'Interest Expense (P&L)', 'Tax']:
+                    if idx in ['COGS (P&L)', 'SG&A Expense (P&L)', 'Interest Expense (P&L)', 'Tax (P&L)']:
                         for col in display_df.columns:
                             if isinstance(display_df.loc[idx, col], (int, float)) and display_df.loc[idx, col] > 0:
                                 display_df.loc[idx, col] = -display_df.loc[idx, col]
@@ -1647,12 +1647,12 @@ class ProjectPipelineRealEstateTab:
                         # Inventory section - light green
                         elif row_name in ['Inventory Addition', 'Inventory Balance']:
                             colors.append('background-color: #E8F5E9')
-                        # Presales and Revenue section - light purple
-                        elif row_name in ['Presales', 'Customer Prepayment Balance', 'Revenue Recognition']:
+                        # Presales and Customer Prepayment section - light purple
+                        elif row_name in ['Presales', 'Customer Prepayment Balance']:
                             colors.append('background-color: #F3E5F5')
-                        # P&L section - light yellow
-                        elif row_name in ['Cost of Goods Sold', 'SG&A Expense (P&L)', 
-                                        'Interest Expense (P&L)', 'PBT', 'Tax', 'PAT']:
+                        # P&L section - light yellow (all P&L items grouped together)
+                        elif row_name in ['Revenue (P&L)', 'COGS (P&L)', 'SG&A Expense (P&L)', 
+                                        'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']:
                             colors.append('background-color: #FFF9C4')
                         # Cash flow section - light orange
                         else:
