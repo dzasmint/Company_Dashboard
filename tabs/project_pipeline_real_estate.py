@@ -1621,14 +1621,50 @@ class ProjectPipelineRealEstateTab:
                 display_df.index = display_df.index.map(lambda x: index_labels.get(x, x))
                 display_df.index.name = 'Balance Sheet Item'
                 
+                # Adjust P&L expense values to display as negative
+                for idx in display_df.index:
+                    if idx in ['COGS', 'SGA_Expense', 'Interest_Expense_Cash', 'Tax']:
+                        for col in display_df.columns:
+                            if isinstance(display_df.loc[idx, col], (int, float)) and display_df.loc[idx, col] > 0:
+                                display_df.loc[idx, col] = -display_df.loc[idx, col]
+                
+                # Apply alternating background colors for sections
+                def highlight_sections(s):
+                    """Apply background colors to different sections"""
+                    colors = []
+                    for idx in s.index:
+                        row_name = index_labels.get(idx, idx)
+                        
+                        # Debt section - light blue
+                        if row_name in ['Debt Disbursement (Inflow)', 'Debt Repayment (Outflow)', 'Debt Balance']:
+                            colors.append('background-color: #E3F2FD')
+                        # Cost section - light gray
+                        elif row_name in ['Land Cost', 'Construction Cost', 'Interest Capitalized']:
+                            colors.append('background-color: #F5F5F5')
+                        # Inventory section - light green
+                        elif row_name in ['Inventory Addition', 'Inventory Balance']:
+                            colors.append('background-color: #E8F5E9')
+                        # P&L section - light yellow
+                        elif row_name in ['Revenue Recognition', 'Cost of Goods Sold', 'SG&A Expense (P&L)', 
+                                        'Interest Expense (P&L)', 'PBT', 'Tax', 'PAT']:
+                            colors.append('background-color: #FFF9C4')
+                        # Cash flow section - light orange
+                        else:
+                            colors.append('background-color: #FFE0B2')
+                    
+                    return colors
+                
                 # Create format dictionary for all year columns
                 format_dict = {col: "{:.1f}" for col in display_df.columns}
                 
-                # Display the balance sheet schedules
+                # Apply styling
+                styled_df = display_df.style.apply(highlight_sections, axis=0).format(format_dict)
+                
+                # Display the styled dataframe
                 st.dataframe(
-                    display_df.style.format(format_dict),
+                    styled_df,
                     use_container_width=True,
-                    height=500
+                    height=600
                 )
                 
                 # Store results in session state for potential export
