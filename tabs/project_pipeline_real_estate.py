@@ -1602,10 +1602,6 @@ class ProjectPipelineRealEstateTab:
         presales_dist = edited.get('presales_distribution', {})  # Fix: use presales_distribution
         revenue_dist = edited.get('revenue_distribution', {})  # This is for revenue recognition
         
-        # Display key balance sheet parameters
-        st.info("📈 **Balance Sheet Parameters** (derived from project data)")
-        
-        
         # Auto-calculate balance sheet analysis
         # Check if we have minimum required data to run analysis
         if total_revenue > 0 and (total_const_cost > 0 or total_land_cost > 0):
