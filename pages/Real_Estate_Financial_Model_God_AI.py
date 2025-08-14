@@ -1789,7 +1789,7 @@ class RealEstateFinancialModel:
             
             # Section 3: COGS Table
             st.markdown("---")
-            st.subheader("💰 Cost of Goods Sold (COGS)")
+            st.subheader("Cost of Goods Sold (COGS)")
             
             # Create COGS table with rows as cost sources and columns as years
             cogs_rows = []
@@ -2103,9 +2103,9 @@ class RealEstateFinancialModel:
             # Create DataFrame for SG&A (for internal use only, not displayed)
             sga_df = pd.DataFrame(sga_rows)
             
-            # Section 5: Comprehensive P&L with Interest Expense
+            # Section 5: Consolidated P&L with Interest Expense
             st.markdown("---")
-            st.subheader("💰 Comprehensive P&L Statement")
+            st.subheader("Consolidated P&L Statement")
             
             # Calculate interest expense for all projects
             project_interest_by_year = {}
@@ -2572,9 +2572,9 @@ class RealEstateFinancialModel:
                 avg_pat_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
                 st.metric("Avg PAT Margin", f"{avg_pat_margin:.1f}%")
             
-            # Section 6: Comprehensive Balance Sheet Statement
+            # Section 6: Consolidated Balance Sheet Statement
             st.markdown("---")
-            st.subheader("📊 Comprehensive Balance Sheet Statement")
+            st.subheader("Consolidated Balance Sheet Statement")
             
             # Initialize balance sheet items
             bs_rows = []
