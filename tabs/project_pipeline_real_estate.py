@@ -1623,7 +1623,7 @@ class ProjectPipelineRealEstateTab:
                 
                 # Adjust P&L expense values to display as negative
                 for idx in display_df.index:
-                    if idx in ['COGS', 'SGA_Expense', 'Interest_Expense_Cash', 'Tax']:
+                    if idx in ['Cost of Goods Sold', 'SG&A Expense (P&L)', 'Interest Expense (P&L)', 'Tax']:
                         for col in display_df.columns:
                             if isinstance(display_df.loc[idx, col], (int, float)) and display_df.loc[idx, col] > 0:
                                 display_df.loc[idx, col] = -display_df.loc[idx, col]
