@@ -1815,79 +1815,58 @@ class ProjectPipelineRealEstateTab:
         # Calculate RNAV if requested
         if st.button("Calculate RNAV", key="calc_rnav"):
             try:
+                # Check if Balance Sheet Analysis is available
+                if 'project_bs_analysis_results' not in st.session_state:
+                    st.error("⚠️ Please wait for Balance Sheet Analysis to complete before calculating RNAV")
+                    return
+                
+                bs_df = st.session_state['project_bs_analysis_results']
                 current_year = datetime.now().year
-                project_start = min(
-                    edited.get('construction_start_year', current_year),
-                    edited.get('sale_start_year', current_year),
-                    edited.get('land_payment_year', current_year),
-                    current_year
-                )
                 
-                # Use balance sheet data if available for tax expense
-                tax_expense = []
-                if 'project_bs_analysis_results' in st.session_state:
-                    bs_df = st.session_state['project_bs_analysis_results']
-                    # Extract tax expense from balance sheet (already calculated)
-                    for year in range(int(project_start), int(edited.get('project_completion_year', current_year + 3)) + 1):
-                        year_data = bs_df[bs_df["Year"] == year]
-                        if not year_data.empty:
-                            tax_value = -float(year_data["Tax"].iloc[0])/1e9  # Convert to billions and negative for expense
-                        else:
-                            tax_value = 0.0
-                        tax_expense.append(tax_value)
-                else:
-                    # Simple tax calculation if balance sheet not available
-                    # Tax is 20% of PBT, spread over revenue recognition period
-                    revenue_years = edited.get('project_completion_year', current_year + 3) - edited.get('revenue_booking_start_year', current_year + 1) + 1
-                    annual_tax = (pbt * 0.2) / revenue_years / 1e9  # Convert to billions
-                    for year in range(int(project_start), int(edited.get('project_completion_year', current_year + 3)) + 1):
-                        if year >= edited.get('revenue_booking_start_year', current_year + 1):
-                            tax_expense.append(-annual_tax)  # Negative for expense
-                        else:
-                            tax_expense.append(0.0)
+                # Extract cash flows from Balance Sheet Analysis for RNAV calculation
+                # We need: presales inflows, construction outflows, land outflows, SG&A outflows, and tax outflows
                 
-                # Generate schedules for RNAV calculation (cash flows)
-                presales_dist = edited.get('presales_distribution', {})
-                if not isinstance(presales_dist, dict):
-                    presales_dist = {}
-                selling_progress = selling_progress_schedule_custom(
-                    total_revenue/1e9,
-                    int(project_start),
-                    int(current_year),
-                    int(edited.get('sale_start_year', current_year)),
-                    int(edited.get('sales_years', 3)),
-                    int(edited.get('project_completion_year', current_year + 3)),
-                    presales_dist  # Pass custom distribution
-                )
+                # Determine project timeline from balance sheet
+                years_df = bs_df[bs_df['Year'] != 'Total']
+                project_years = sorted([int(y) for y in years_df['Year'].values])
+                project_start = project_years[0] if project_years else current_year
+                project_end = project_years[-1] if project_years else current_year + 3
                 
-                construction_payment = construction_payment_schedule(
-                    -total_const_cost/1e9,
-                    int(project_start),
-                    int(current_year),
-                    int(edited.get('construction_start_year', current_year)),
-                    int(edited.get('construction_years', 3)),
-                    int(edited.get('project_completion_year', current_year + 3))
-                )
+                # Initialize arrays for RNAV calculation (in billions VND)
+                selling_progress = []  # Cash inflow from presales
+                construction_payment = []  # Cash outflow for construction
+                land_payment = []  # Cash outflow for land
+                sga_payment = []  # Cash outflow for SG&A
+                tax_expense = []  # Cash outflow for tax
                 
-                land_payment = land_use_right_payment_schedule_single_year(
-                    -total_land_cost/1e9,
-                    int(project_start),
-                    int(current_year),
-                    int(edited.get('land_payment_year', current_year)),
-                    int(edited.get('project_completion_year', current_year + 3))
-                )
+                # Extract cash flows for each year
+                for year in range(project_start, project_end + 1):
+                    year_data = bs_df[bs_df["Year"] == year]
+                    
+                    if not year_data.empty:
+                        # Presales cash inflow (positive)
+                        selling_progress.append(float(year_data["Cash_Inflow_Presales"].iloc[0]) / 1e9)
+                        
+                        # Construction cash outflow (should be negative)
+                        construction_payment.append(float(year_data["Cash_Outflow_Construction"].iloc[0]) / 1e9)
+                        
+                        # Land cash outflow (should be negative)
+                        land_payment.append(float(year_data["Cash_Outflow_Land"].iloc[0]) / 1e9)
+                        
+                        # SG&A cash outflow (should be negative)
+                        sga_payment.append(float(year_data["Cash_Outflow_SGA"].iloc[0]) / 1e9)
+                        
+                        # Tax cash outflow (should be negative)
+                        tax_expense.append(float(year_data["Cash_Outflow_Tax"].iloc[0]) / 1e9)
+                    else:
+                        # Year not in balance sheet data
+                        selling_progress.append(0.0)
+                        construction_payment.append(0.0)
+                        land_payment.append(0.0)
+                        sga_payment.append(0.0)
+                        tax_expense.append(0.0)
                 
-                sga_payment = sga_payment_schedule_custom(
-                    -total_sga/1e9,
-                    int(project_start),
-                    int(current_year),
-                    int(edited.get('sale_start_year', current_year)),
-                    int(edited.get('sales_years', 3)),
-                    int(edited.get('project_completion_year', current_year + 3)),
-                    presales_dist  # SG&A follows sales distribution
-                )
-                
-                # Calculate RNAV (no P&L generation)
+                # Calculate RNAV using extracted cash flows
                 df_rnav = RNAV_Calculation(
                     selling_progress,
                     construction_payment,
