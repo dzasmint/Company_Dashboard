@@ -1691,18 +1691,10 @@ class ProjectPipelineRealEstateTab:
                 bs_items = [item for item in bs_items if item in display_df.index]
                 bs_df = display_df.loc[bs_items].copy()
                 
-                # Create column configuration for consistent width across all tables
-                # Calculate column widths based on number of years
-                num_years = len(display_df.columns)
-                col_width = max(100, min(150, 900 // num_years))  # Dynamic width based on years
-                
-                column_config = {}
-                for col in display_df.columns:
-                    column_config[col] = st.column_config.NumberColumn(
-                        col,
-                        width=col_width,
-                        format="%.1f"
-                    )
+                # Update index names for each dataframe
+                pnl_df.index.name = 'Profit & Loss Item'
+                cashflow_df.index.name = 'Cash Flow Item'
+                # Balance Sheet keeps the original name
                 
                 # Display Balance Sheet table
                 st.subheader("📊 Balance Sheet")
@@ -1712,8 +1704,7 @@ class ProjectPipelineRealEstateTab:
                 st.dataframe(
                     styled_bs_df,
                     use_container_width=True,
-                    height=300,
-                    column_config=column_config
+                    height=300
                 )
                 
                 # Display P&L table
@@ -1729,8 +1720,7 @@ class ProjectPipelineRealEstateTab:
                 st.dataframe(
                     styled_pnl_df,
                     use_container_width=True,
-                    height=250,
-                    column_config=column_config
+                    height=250
                 )
                 
                 # Display Cash Flow table
@@ -1746,8 +1736,7 @@ class ProjectPipelineRealEstateTab:
                 st.dataframe(
                     styled_cashflow_df,
                     use_container_width=True,
-                    height=300,
-                    column_config=column_config
+                    height=300
                 )
                 
                 # Store results in session state for potential export
