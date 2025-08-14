@@ -1528,23 +1528,6 @@ class ProjectPipelineRealEstateTab:
         # Display key balance sheet parameters
         st.info("📈 **Balance Sheet Parameters** (derived from project data)")
         
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Debt", f"{total_debt/1e9:,.1f}B VND")
-            # Calculate actual debt percentage
-            total_project_cost = total_const_cost + total_land_cost
-            if total_project_cost > 0:
-                actual_debt_pct = (total_debt / total_project_cost) * 100
-                st.caption(f"Debt/Project: {actual_debt_pct:.0f}%")
-            else:
-                st.caption("Debt/Project: N/A")
-        with col2:
-            st.metric("Cost of Debt", f"{cost_of_debt*100:.1f}%")
-            st.caption(f"Repayment: Year {debt_repayment_start}")
-        with col3:
-            st.metric("Construction Period", f"{const_start}-{const_end}")
-        with col4:
-            st.metric("Revenue Recognition", f"{revenue_booking_start}-{revenue_booking_end}")
         
         # Auto-calculate balance sheet analysis
         # Check if we have minimum required data to run analysis
@@ -1761,6 +1744,56 @@ class ProjectPipelineRealEstateTab:
             # Show info message when insufficient data
             st.info("ℹ️ Balance sheet analysis will be generated automatically once project parameters are configured (revenue and construction/land costs required)")
         
+        # Display Project Summary Table
+        st.subheader("📊 Project Financial Summary")
+        
+        # Calculate financial metrics
+        total_project_cost = total_const_cost + total_land_cost
+        actual_debt_pct = (total_debt / total_project_cost * 100) if total_project_cost > 0 else 0
+        pbt = total_revenue - total_const_cost - total_land_cost - total_sga
+        pat = pbt * 0.8  # 20% tax
+        
+        # Create summary data
+        summary_data = {
+            "Metric": [
+                "Total Revenue",
+                "Total Construction Cost",
+                "Total Land Cost",
+                "Total SG&A",
+                "Estimated PBT",
+                "Estimated PAT",
+                "Total Debt",
+                "Debt/Project Ratio",
+                "Cost of Debt",
+                "Construction Period",
+                "Revenue Recognition",
+                "Debt Repayment Year"
+            ],
+            "Value": [
+                f"{total_revenue/1e9:,.1f}B VND",
+                f"{total_const_cost/1e9:,.1f}B VND",
+                f"{total_land_cost/1e9:,.1f}B VND",
+                f"{total_sga/1e9:,.1f}B VND",
+                f"{pbt/1e9:,.1f}B VND",
+                f"{pat/1e9:,.1f}B VND",
+                f"{total_debt/1e9:,.1f}B VND",
+                f"{actual_debt_pct:.0f}%",
+                f"{cost_of_debt*100:.1f}%",
+                f"{const_start}-{const_end}",
+                f"{revenue_booking_start}-{revenue_booking_end}",
+                f"Year {debt_repayment_start}"
+            ]
+        }
+        
+        # Display as DataFrame
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(
+            summary_df,
+            use_container_width=True,
+            hide_index=True,
+            height=450
+        )
+        
         st.markdown("---")
     
     def render_project_financial_analysis(self, project_data):
@@ -1794,23 +1827,9 @@ class ProjectPipelineRealEstateTab:
         sga_pct = float(edited.get('sga_percentage', 0.08) or 0.08)
         total_sga = total_revenue * sga_pct
         
-        # Display key metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Total Revenue", f"{total_revenue/1e9:,.1f}B VND")
-            st.metric("Total Construction Cost", f"{total_const_cost/1e9:,.1f}B VND")
-        
-        with col2:
-            st.metric("Total Land Cost", f"{total_land_cost/1e9:,.1f}B VND")
-            st.metric("Total SG&A", f"{total_sga/1e9:,.1f}B VND")
-        
-        with col3:
-            pbt = total_revenue - total_const_cost - total_land_cost - total_sga
-            pat = pbt * 0.8  # 20% tax
-            st.metric("Estimated PBT", f"{pbt/1e9:,.1f}B VND")
-            st.metric("Estimated PAT", f"{pat/1e9:,.1f}B VND")
-        
+        # Calculate PBT and PAT for RNAV calculation
+        pbt = total_revenue - total_const_cost - total_land_cost - total_sga
+        pat = pbt * 0.8  # 20% tax
         
         # Calculate RNAV if requested
         if st.button("Calculate RNAV", key="calc_rnav"):
