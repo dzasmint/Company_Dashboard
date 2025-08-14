@@ -2136,12 +2136,12 @@ class ProjectPipelineRealEstateTab:
                                         # Cash Flow items
                                         'cash_inflow_presales': float(row['Cash_Inflow_Presales']),
                                         'debt_disbursement': float(row['Debt_Disbursement']),
-                                        'debt_repayment': float(row['Debt_Repayment']),
-                                        'cash_outflow_land': float(row['Cash_Outflow_Land']),
-                                        'cash_outflow_construction': float(row['Cash_Outflow_Construction']),
-                                        'cash_outflow_interest': float(row['Cash_Outflow_Interest']),
-                                        'cash_outflow_sga': float(row['Cash_Outflow_SGA']),
-                                        'cash_outflow_tax': float(row['Cash_Outflow_Tax']),
+                                        'debt_repayment': -abs(float(row['Debt_Repayment'])) if float(row['Debt_Repayment']) != 0 else 0,  # Ensure negative
+                                        'cash_outflow_land': -abs(float(row['Cash_Outflow_Land'])) if float(row['Cash_Outflow_Land']) != 0 else 0,  # Ensure negative
+                                        'cash_outflow_construction': -abs(float(row['Cash_Outflow_Construction'])) if float(row['Cash_Outflow_Construction']) != 0 else 0,  # Ensure negative
+                                        'cash_outflow_interest': -abs(float(row['Cash_Outflow_Interest'])) if float(row['Cash_Outflow_Interest']) != 0 else 0,  # Ensure negative
+                                        'cash_outflow_sga': -abs(float(row['Cash_Outflow_SGA'])) if float(row['Cash_Outflow_SGA']) != 0 else 0,  # Ensure negative
+                                        'cash_outflow_tax': -abs(float(row['Cash_Outflow_Tax'])) if float(row['Cash_Outflow_Tax']) != 0 else 0,  # Ensure negative
                                         'cash_balance_change': float(row['Cash_Balance_Change'])
                                     }
                                     print(f"DEBUG: Successfully processed year {year_str}")
