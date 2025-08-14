@@ -1558,40 +1558,74 @@ class RealEstateFinancialModel:
                         project_sga_breakdown[project_name] = {}
                         project_interest_breakdown[project_name] = {}
                     
-                    # Get P&L schedule from MongoDB - contains all financial data
-                    pnl_schedule = project.get('pnl_schedule', {})
+                    # First try to get data from comprehensive_financial_statements (new format)
+                    financial_statements = project.get('comprehensive_financial_statements', {})
+                    
+                    # Track which data source we're using
+                    using_new_format = bool(financial_statements)
+                    
+                    # Fallback to pnl_schedule if comprehensive_financial_statements not available
+                    if not financial_statements:
+                        financial_statements = project.get('pnl_schedule', {})
                     
                     # Ensure schedule is a dictionary
-                    if not isinstance(pnl_schedule, dict):
-                        pnl_schedule = {}
+                    if not isinstance(financial_statements, dict):
+                        financial_statements = {}
                     
                     # Add to yearly totals
                     year_str = str(year)
                     
-                    if year_str in pnl_schedule:
-                        year_pnl = pnl_schedule[year_str]
+                    if year_str in financial_statements:
+                        year_data = financial_statements[year_str]
                         
-                        # Get revenue
-                        revenue_amount = year_pnl.get('revenue', 0)
-                        project_revenue_by_year[year] += revenue_amount
-                        project_revenue_breakdown[project_name][year] = revenue_amount
-                        
-                        # Get COGS (construction + land) - these should be negative values
-                        construction_cost = year_pnl.get('construction_cost', 0)
-                        land_cost = year_pnl.get('land_cost', 0)
-                        project_cogs = construction_cost + land_cost  # Both should be negative
-                        
-                        project_cogs_breakdown[project_name][year] = project_cogs
-                        project_cogs_by_year[year] += project_cogs
-                        project_land_breakdown[project_name][year] = land_cost
-                        
-                        # Get SG&A - should be negative
-                        sga_amount = year_pnl.get('sga', 0)
-                        project_sga_breakdown[project_name][year] = sga_amount
-                        
-                        # Get Interest expense - should be negative/positive based on calculation
-                        interest_amount = year_pnl.get('interest_expense', 0)
-                        project_interest_breakdown[project_name][year] = interest_amount
+                        # Handle both new format (comprehensive_financial_statements) and old format (pnl_schedule)
+                        # New format has different field names
+                        if 'revenue_recognition' in year_data:
+                            # New format from comprehensive_financial_statements
+                            # Get revenue
+                            revenue_amount = year_data.get('revenue_recognition', 0)
+                            project_revenue_by_year[year] += revenue_amount
+                            project_revenue_breakdown[project_name][year] = revenue_amount
+                            
+                            # Get COGS - directly available in new format
+                            project_cogs = year_data.get('cogs', 0)  # Should be negative
+                            project_cogs_breakdown[project_name][year] = project_cogs
+                            project_cogs_by_year[year] += project_cogs
+                            
+                            # Get land cost separately for breakdown
+                            land_cost = year_data.get('land_cost', 0)
+                            project_land_breakdown[project_name][year] = land_cost
+                            
+                            # Get SG&A - should be negative
+                            sga_amount = year_data.get('sga_expense', 0)
+                            project_sga_breakdown[project_name][year] = sga_amount
+                            
+                            # Get Interest expense from P&L
+                            interest_amount = year_data.get('interest_expense_cash', 0)
+                            project_interest_breakdown[project_name][year] = interest_amount
+                        else:
+                            # Old format from pnl_schedule
+                            # Get revenue
+                            revenue_amount = year_data.get('revenue', 0)
+                            project_revenue_by_year[year] += revenue_amount
+                            project_revenue_breakdown[project_name][year] = revenue_amount
+                            
+                            # Get COGS (construction + land) - these should be negative values
+                            construction_cost = year_data.get('construction_cost', 0)
+                            land_cost = year_data.get('land_cost', 0)
+                            project_cogs = construction_cost + land_cost  # Both should be negative
+                            
+                            project_cogs_breakdown[project_name][year] = project_cogs
+                            project_cogs_by_year[year] += project_cogs
+                            project_land_breakdown[project_name][year] = land_cost
+                            
+                            # Get SG&A - should be negative
+                            sga_amount = year_data.get('sga', 0)
+                            project_sga_breakdown[project_name][year] = sga_amount
+                            
+                            # Get Interest expense - should be negative/positive based on calculation
+                            interest_amount = year_data.get('interest_expense', 0)
+                            project_interest_breakdown[project_name][year] = interest_amount
                     else:
                         # No data for this year
                         project_revenue_breakdown[project_name][year] = 0
