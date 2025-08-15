@@ -1144,14 +1144,18 @@ class ProjectPipelineRealEstateTab:
         assumptions = load_assumptions_from_mongodb(company_ticker)
         
         # Helper function to get assumption value
-        # Note: Assumptions are stored as decimal/float values (e.g., 0.12 for 12%)
-        def get_assumption_value(assumptions, name, default_decimal):
+        # Note: Assumptions are stored with Category, Type, Item, Value fields
+        def get_assumption_value(assumptions, item_name, default_decimal):
             if assumptions:
                 for assumption in assumptions:
-                    if assumption.get('name') == name:
+                    # Check if this is a Financial category entry with the matching Item name
+                    if (assumption.get('Category') == 'Financial' and 
+                        assumption.get('Item') == item_name):
                         try:
-                            # Value is already stored as decimal (e.g., 0.12 for 12%)
-                            return float(assumption.get('value', default_decimal))
+                            # Value is stored in percentage (e.g., 12 for 12%), convert to decimal
+                            value = float(assumption.get('Value', 0))
+                            # Convert percentage to decimal (12 -> 0.12)
+                            return value / 100
                         except (ValueError, TypeError):
                             return default_decimal
             return default_decimal
@@ -1162,7 +1166,7 @@ class ProjectPipelineRealEstateTab:
             st.markdown("**WACC Rate (%)**")
         with col2:
             # Get WACC from assumptions
-            wacc_decimal = get_assumption_value(assumptions, 'WACC', 0.12)
+            wacc_decimal = get_assumption_value(assumptions, 'WACC', 0.0)
             wacc_percentage = wacc_decimal * 100
             
             # Display as disabled text input
@@ -1181,8 +1185,9 @@ class ProjectPipelineRealEstateTab:
         with col1:
             st.markdown("**SG&A (% of Revenue)**")
         with col2:
-            # Get SG&A from assumptions
-            sga_decimal = get_assumption_value(assumptions, 'SG&A % of Revenue', 0.08)
+            # Get SG&A from assumptions (default 0 to show missing assumptions)
+            # Note: SG&A is typically a Business Segment metric, not Financial
+            sga_decimal = 0.0  # Default 0 to indicate missing assumptions
             sga_percentage = sga_decimal * 100
             
             # Display as disabled text input
@@ -1202,7 +1207,7 @@ class ProjectPipelineRealEstateTab:
             st.markdown("**Debt Financing (% of project)**")
         with col2:
             # Get debt financing from assumptions (stored as percentage like others)
-            debt_financing_decimal = get_assumption_value(assumptions, 'Debt Financing %', 0.30)
+            debt_financing_decimal = get_assumption_value(assumptions, 'Debt Financing %', 0.0)
             debt_financing_percentage = debt_financing_decimal * 100
             
             # Display as disabled text input
@@ -1222,7 +1227,7 @@ class ProjectPipelineRealEstateTab:
             st.markdown("**Cost of Debt (%)**")
         with col2:
             # Get cost of debt from assumptions
-            cost_of_debt_decimal = get_assumption_value(assumptions, 'Cost of Debt', 0.08)
+            cost_of_debt_decimal = get_assumption_value(assumptions, 'Cost of Debts', 0.0)
             cost_of_debt_percentage = cost_of_debt_decimal * 100
             
             # Display as disabled text input

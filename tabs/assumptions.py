@@ -263,14 +263,14 @@ class AssumptionsTab:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("🔄 Load Defaults", use_container_width=True):
+            if st.button("Load Defaults", use_container_width=True):
                 if 'model_assumptions' not in st.session_state:
                     st.session_state.model_assumptions = {}
                 st.session_state.model_assumptions[selected_ticker] = self._get_default_assumptions()
                 st.rerun()
         
         with col2:
-            if st.button("💾 Save to Database", use_container_width=True):
+            if st.button("Save to Database", use_container_width=True):
                 try:
                     from utils.mongodb_utils import save_assumptions_to_mongodb
                     result = save_assumptions_to_mongodb(selected_ticker, edited_df.to_dict('records'))
@@ -282,7 +282,7 @@ class AssumptionsTab:
                     st.error(f"Error saving: {str(e)}")
         
         with col3:
-            if st.button("🔁 Reload from Database", use_container_width=True):
+            if st.button("Reload from Database", use_container_width=True):
                 from utils.mongodb_utils import load_assumptions_from_mongodb
                 
                 # Force reload from MongoDB
@@ -441,9 +441,9 @@ class AssumptionsTab:
             
             # Prepare data for MongoDB
             assumptions_data = {
-                'wacc': financial_data.get('wacc', 0.12),
-                'debt_financing_pct': financial_data.get('debt_financing_pct', 0.30),
-                'tax_rate': financial_data.get('tax_rate', 0.20),
+                'wacc': financial_data.get('wacc', 0.0),
+                'debt_financing_pct': financial_data.get('debt_financing_pct', 0.0),
+                'tax_rate': financial_data.get('tax_rate', 0.0),
                 'revenue_streams': revenue_streams,
                 'custom_assumptions': custom_assumptions
             }
@@ -532,7 +532,7 @@ class AssumptionsTab:
         
         if not business_segments.empty:
             st.markdown("---")
-            st.subheader("📋 Business Segments Summary")
+            st.subheader("Business Segments Summary")
             
             # Group by segment and display summary
             segments_grouped = business_segments.groupby('Item')
