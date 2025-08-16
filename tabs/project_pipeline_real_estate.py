@@ -560,124 +560,8 @@ class ProjectPipelineRealEstateTab:
                         # Also store raw response for reference
                         st.session_state[f"ai_raw_response_{project_name}"] = response
                         
-                        # Display summary in full width expander
-                        with st.expander("AI Research Summary", expanded=True):
-                            # Show basic info if available in full width
-                            if parsed_info.get("basic_info"):
-                                st.info(f"**Project Description:** {parsed_info['basic_info']}")
-                            
-                            # Show confidence level if available
-                            if parsed_info.get("confidence"):
-                                st.caption(f"**Confidence Level:** {parsed_info['confidence']}")
-                            
-                            # Show analysis method if available
-                            if parsed_info.get("analysis_method"):
-                                st.caption(f"**Analysis Method:** {parsed_info['analysis_method']}")
-                            
-                            # Show sources if available
-                            if parsed_info.get("sources"):
-                                st.caption(f"**Sources:** {parsed_info['sources']}")
-                            
-                            st.info("💡 AI suggestions are displayed below each input field. Review and modify values as needed before saving.")
-                            
-                            # Create a table for suggested values comparison
-                            suggestions = []
-                            
-                            # Map parsed fields to project parameters
-                            if parsed_info.get("location"):
-                                suggestions.append({
-                                    "Parameter": "Location",
-                                    "AI Suggestion": str(parsed_info["location"]),
-                                    "Current Value": str(project_data.get('location', 'N/A'))
-                                })
-                            
-                            if parsed_info.get("total_units"):
-                                try:
-                                    ai_units = float(parsed_info['total_units'])
-                                    suggestions.append({
-                                        "Parameter": "Total Units",
-                                        "AI Suggestion": f"{ai_units:,.0f}",
-                                        "Current Value": f"{float(project_data.get('total_units', 0)):,.0f}"
-                                    })
-                                except (ValueError, TypeError):
-                                    suggestions.append({
-                                        "Parameter": "Total Units",
-                                        "AI Suggestion": str(parsed_info['total_units']),
-                                        "Current Value": str(project_data.get('total_units', 0))
-                                    })
-                            
-                            if parsed_info.get("total_area_sqm"):
-                                try:
-                                    ai_area = float(parsed_info['total_area_sqm'])
-                                    suggestions.append({
-                                        "Parameter": "Gross Floor Area (sqm)",
-                                        "AI Suggestion": f"{ai_area:,.0f}",
-                                        "Current Value": f"{float(project_data.get('gross_floor_area', 0)):,.0f}"
-                                    })
-                                except (ValueError, TypeError):
-                                    suggestions.append({
-                                        "Parameter": "Gross Floor Area (sqm)",
-                                        "AI Suggestion": str(parsed_info['total_area_sqm']),
-                                        "Current Value": str(project_data.get('gross_floor_area', 0))
-                                    })
-                            
-                            if parsed_info.get("land_area_sqm"):
-                                try:
-                                    ai_land = float(parsed_info['land_area_sqm'])
-                                    suggestions.append({
-                                        "Parameter": "Land Area (sqm)",
-                                        "AI Suggestion": f"{ai_land:,.0f}",
-                                        "Current Value": f"{float(project_data.get('land_area', 0)):,.0f}"
-                                    })
-                                except (ValueError, TypeError):
-                                    suggestions.append({
-                                        "Parameter": "Land Area (sqm)",
-                                        "AI Suggestion": str(parsed_info['land_area_sqm']),
-                                        "Current Value": str(project_data.get('land_area', 0))
-                                    })
-                            
-                            if parsed_info.get("avg_selling_price_per_sqm"):
-                                try:
-                                    ai_price = float(parsed_info['avg_selling_price_per_sqm'])
-                                    suggestions.append({
-                                        "Parameter": "Avg Selling Price (M VND/sqm)",
-                                        "AI Suggestion": f"{ai_price:,.0f}",
-                                        "Current Value": f"{float(project_data.get('average_selling_price', 0)):,.0f}"
-                                    })
-                                except (ValueError, TypeError):
-                                    suggestions.append({
-                                        "Parameter": "Avg Selling Price (M VND/sqm)",
-                                        "AI Suggestion": str(parsed_info['avg_selling_price_per_sqm']),
-                                        "Current Value": str(project_data.get('average_selling_price', 0))
-                                    })
-                            
-                            if parsed_info.get("construction_cost_per_sqm"):
-                                try:
-                                    ai_cost = float(parsed_info['construction_cost_per_sqm'])
-                                    suggestions.append({
-                                        "Parameter": "Construction Cost (M VND/sqm)",
-                                        "AI Suggestion": f"{ai_cost:,.0f}",
-                                        "Current Value": f"{float(project_data.get('construction_cost_per_sqm', 0)):,.0f}"
-                                    })
-                                except (ValueError, TypeError):
-                                    suggestions.append({
-                                        "Parameter": "Construction Cost (M VND/sqm)",
-                                        "AI Suggestion": str(parsed_info['construction_cost_per_sqm']),
-                                        "Current Value": str(project_data.get('construction_cost_per_sqm', 0))
-                                    })
-                            
-                            if parsed_info.get("project_duration"):
-                                suggestions.append({
-                                    "Parameter": "Construction Years",
-                                    "AI Suggestion": parsed_info["project_duration"],
-                                    "Current Value": project_data.get('construction_years', 'N/A')
-                                })
-                            
-                            if suggestions:
-                                df_suggestions = pd.DataFrame(suggestions)
-                                st.dataframe(df_suggestions, use_container_width=True)
-                            else:
-                                st.warning("No specific parameter suggestions found. The AI may need more specific information about this project.")
+                        # Now display the summary using the dedicated method
+                        self.display_ai_research_summary(project_name, project_data)
                     else:
                         st.error("❌ Could not parse AI response. Please try again.")
                 else:
@@ -685,6 +569,137 @@ class ProjectPipelineRealEstateTab:
                     
             except Exception as e:
                 st.error(f"❌ Error during AI research: {str(e)}")
+    
+    def display_ai_research_summary(self, project_name, project_data):
+        """Display AI Research Summary in full width"""
+        parsed_info = st.session_state.get(f"ai_suggestions_{project_name}", {})
+        
+        if not parsed_info:
+            return
+        
+        # Display summary without any container constraints - use full width
+        st.markdown("---")
+        st.markdown("### 🤖 AI Research Summary")
+        
+        # Show basic info if available in full width
+        if parsed_info.get("basic_info"):
+            st.info(f"**Project Description:** {parsed_info['basic_info']}")
+        
+        # Display metadata in columns for better layout
+        meta_cols = st.columns(3)
+        
+        with meta_cols[0]:
+            if parsed_info.get("confidence"):
+                st.metric("Confidence Level", parsed_info['confidence'])
+        
+        with meta_cols[1]:
+            if parsed_info.get("analysis_method"):
+                st.metric("Analysis Method", parsed_info['analysis_method'])
+        
+        with meta_cols[2]:
+            if parsed_info.get("sources"):
+                st.metric("Data Sources", parsed_info['sources'])
+        
+        st.info("💡 AI suggestions are displayed below. Review and modify values as needed before saving.")
+        
+        # Create a table for suggested values comparison
+        suggestions = []
+        
+        # Map parsed fields to project parameters
+        if parsed_info.get("location"):
+            suggestions.append({
+                "Parameter": "Location",
+                "AI Suggestion": str(parsed_info["location"]),
+                "Current Value": str(project_data.get('location', 'N/A'))
+            })
+        
+        if parsed_info.get("total_units"):
+            try:
+                ai_units = float(parsed_info['total_units'])
+                suggestions.append({
+                    "Parameter": "Total Units",
+                    "AI Suggestion": f"{ai_units:,.0f}",
+                    "Current Value": f"{float(project_data.get('total_units', 0)):,.0f}"
+                })
+            except (ValueError, TypeError):
+                suggestions.append({
+                    "Parameter": "Total Units",
+                    "AI Suggestion": str(parsed_info['total_units']),
+                    "Current Value": str(project_data.get('total_units', 0))
+                })
+        
+        if parsed_info.get("total_area_sqm"):
+            try:
+                ai_area = float(parsed_info['total_area_sqm'])
+                suggestions.append({
+                    "Parameter": "Gross Floor Area (sqm)",
+                    "AI Suggestion": f"{ai_area:,.0f}",
+                    "Current Value": f"{float(project_data.get('gross_floor_area', 0)):,.0f}"
+                })
+            except (ValueError, TypeError):
+                suggestions.append({
+                    "Parameter": "Gross Floor Area (sqm)",
+                    "AI Suggestion": str(parsed_info['total_area_sqm']),
+                    "Current Value": str(project_data.get('gross_floor_area', 0))
+                })
+        
+        if parsed_info.get("land_area_sqm"):
+            try:
+                ai_land = float(parsed_info['land_area_sqm'])
+                suggestions.append({
+                    "Parameter": "Land Area (sqm)",
+                    "AI Suggestion": f"{ai_land:,.0f}",
+                    "Current Value": f"{float(project_data.get('land_area', 0)):,.0f}"
+                })
+            except (ValueError, TypeError):
+                suggestions.append({
+                    "Parameter": "Land Area (sqm)",
+                    "AI Suggestion": str(parsed_info['land_area_sqm']),
+                    "Current Value": str(project_data.get('land_area', 0))
+                })
+        
+        if parsed_info.get("avg_selling_price_per_sqm"):
+            try:
+                ai_price = float(parsed_info['avg_selling_price_per_sqm'])
+                suggestions.append({
+                    "Parameter": "Avg Selling Price (M VND/sqm)",
+                    "AI Suggestion": f"{ai_price:,.0f}",
+                    "Current Value": f"{float(project_data.get('average_selling_price', 0)):,.0f}"
+                })
+            except (ValueError, TypeError):
+                suggestions.append({
+                    "Parameter": "Avg Selling Price (M VND/sqm)",
+                    "AI Suggestion": str(parsed_info['avg_selling_price_per_sqm']),
+                    "Current Value": str(project_data.get('average_selling_price', 0))
+                })
+        
+        if parsed_info.get("construction_cost_per_sqm"):
+            try:
+                ai_cost = float(parsed_info['construction_cost_per_sqm'])
+                suggestions.append({
+                    "Parameter": "Construction Cost (M VND/sqm)",
+                    "AI Suggestion": f"{ai_cost:,.0f}",
+                    "Current Value": f"{float(project_data.get('construction_cost_per_sqm', 0)):,.0f}"
+                })
+            except (ValueError, TypeError):
+                suggestions.append({
+                    "Parameter": "Construction Cost (M VND/sqm)",
+                    "AI Suggestion": str(parsed_info['construction_cost_per_sqm']),
+                    "Current Value": str(project_data.get('construction_cost_per_sqm', 0))
+                })
+        
+        if parsed_info.get("project_duration"):
+            suggestions.append({
+                "Parameter": "Construction Years",
+                "AI Suggestion": parsed_info["project_duration"],
+                "Current Value": project_data.get('construction_years', 'N/A')
+            })
+        
+        if suggestions:
+            df_suggestions = pd.DataFrame(suggestions)
+            st.dataframe(df_suggestions, use_container_width=True)
+        else:
+            st.warning("No specific parameter suggestions found. The AI may need more specific information about this project.")
     
     def render_individual_project_editor(self, project_name, df_projects):
         """Render editor for individual project with revenue/presales distribution"""
@@ -716,7 +731,16 @@ class ProjectPipelineRealEstateTab:
         col_ai, col_space = st.columns([2, 3])
         with col_ai:
             if st.button("AI Suggest Parameters", key=f"ai_suggest_{project_name}", type="primary"):
-                self.get_ai_project_suggestions(project_name, project_data)
+                st.session_state[f"show_ai_research_{project_name}"] = True
+                st.session_state[f"pending_ai_research_{project_name}"] = True
+        
+        # Display AI Research Summary outside of columns for full width
+        if st.session_state.get(f"pending_ai_research_{project_name}", False):
+            self.get_ai_project_suggestions(project_name, project_data)
+            st.session_state[f"pending_ai_research_{project_name}"] = False
+        elif st.session_state.get(f"ai_suggestions_{project_name}"):
+            # Display previously generated AI suggestions
+            self.display_ai_research_summary(project_name, project_data)
         
         # Check if we're switching to a different project
         if 'current_editing_project' not in st.session_state:

@@ -345,35 +345,42 @@ def get_project_data(company_ticker, project_name):
     return project_data.iloc[0].to_dict()
 
 def save_assumptions_to_mongodb(company_ticker, assumptions_data):
-    """Save business segment assumptions to MongoDB"""
+    """Save business segment assumptions to MongoDB CompanyForecast collection"""
     try:
         client = init_mongodb_connection()
         if client is None:
             return {"success": False, "message": "Failed to connect to MongoDB"}
         
-        db = client["real_estate_db"]
-        collection = db["business_assumptions"]
+        # Use VietnamStocks database and CompanyForecast collection
+        db = client['VietnamStocks']
+        collection = db['CompanyForecast']
         
-        # Create document
-        document = {
-            "company_ticker": company_ticker,
-            "assumptions": assumptions_data,
-            "last_updated": datetime.datetime.now()
-        }
-        
-        # Check if assumptions exist for this company
-        existing = collection.find_one({"company_ticker": company_ticker})
+        # Check if document exists for this ticker
+        existing = collection.find_one({"ticker": company_ticker})
         
         if existing:
-            # Update existing document
-            result = collection.replace_one(
-                {"_id": existing["_id"]}, 
-                document
+            # Update existing document - add assumptions to it
+            result = collection.update_one(
+                {"ticker": company_ticker},
+                {
+                    "$set": {
+                        "assumptions": assumptions_data,
+                        "assumptions_updated": datetime.datetime.now()
+                    }
+                }
             )
             if result.modified_count > 0:
                 return {"success": True, "message": "Assumptions updated successfully"}
         else:
-            # Insert new document
+            # Create new document with assumptions
+            document = {
+                "ticker": company_ticker,
+                "assumptions": assumptions_data,
+                "assumptions_updated": datetime.datetime.now(),
+                "last_updated": datetime.datetime.now(),
+                "forecast_years": [],
+                "forecast_data": {}
+            }
             result = collection.insert_one(document)
             if result.inserted_id:
                 return {"success": True, "message": "Assumptions saved successfully"}
@@ -384,19 +391,20 @@ def save_assumptions_to_mongodb(company_ticker, assumptions_data):
         return {"success": False, "message": str(e)}
 
 def load_assumptions_from_mongodb(company_ticker):
-    """Load business segment assumptions from MongoDB"""
+    """Load business segment assumptions from MongoDB CompanyForecast collection"""
     try:
         client = init_mongodb_connection()
         if client is None:
             return None
         
-        db = client["real_estate_db"]
-        collection = db["business_assumptions"]
+        # Use VietnamStocks database and CompanyForecast collection
+        db = client['VietnamStocks']
+        collection = db['CompanyForecast']
         
-        # Find assumptions for the company
-        document = collection.find_one({"company_ticker": company_ticker})
+        # Find document for this ticker
+        document = collection.find_one({"ticker": company_ticker})
         
-        if document:
+        if document and "assumptions" in document:
             return document.get("assumptions", [])
         
         return None

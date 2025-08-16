@@ -1616,6 +1616,10 @@ class ModelForecastTab:
             for _, project in df_projects.iterrows():
                 financial_statements = project.get('comprehensive_financial_statements', {})
                 project_name = project.get('project_name', 'Unknown')
+                
+                # Ensure financial_statements is a dictionary
+                if not isinstance(financial_statements, dict):
+                    financial_statements = {}
             
                 # Track previous year values for this project to calculate changes
                 prev_debt = 0
@@ -1699,6 +1703,10 @@ class ModelForecastTab:
             for _, project in df_projects.iterrows():
                 project_name = project.get('project_name', 'Unknown')
                 financial_statements = project.get('comprehensive_financial_statements', {})
+                
+                # Ensure financial_statements is a dictionary
+                if not isinstance(financial_statements, dict):
+                    financial_statements = {}
             
                 # Initialize project breakdown
                 debt_breakdown[project_name] = {hist_col: 0}
@@ -2021,6 +2029,10 @@ class ModelForecastTab:
             for _, project in df_projects.iterrows():
                 project_name = project.get('project_name', 'Unknown')
                 financial_statements = project.get('comprehensive_financial_statements', {})
+                
+                # Ensure financial_statements is a dictionary
+                if not isinstance(financial_statements, dict):
+                    financial_statements = {}
             
                 # Initialize project breakdown
                 if project_name not in presales_cf_breakdown:

@@ -1384,9 +1384,31 @@ class RealEstateFinancialModel:
             
             # Display consensus estimates
             st.markdown("**Consensus Estimates:**")
-            consensus_df = pd.DataFrame(insights.get('consensus', {}))
-            if not consensus_df.empty:
-                st.dataframe(consensus_df, use_container_width=True)
+            consensus = insights.get('consensus', {})
+            if consensus:
+                # Display each consensus metric separately to handle different array lengths
+                if 'revenue_forecasts' in consensus:
+                    revenue_data = consensus['revenue_forecasts']
+                    years = [f"Year {i+1}" for i in range(len(revenue_data))]
+                    revenue_df = pd.DataFrame({'Year': years, 'Revenue Forecast (B VND)': revenue_data})
+                    st.write("Revenue Forecasts:")
+                    st.dataframe(revenue_df, use_container_width=True)
+                
+                if 'eps_forecasts' in consensus:
+                    eps_data = consensus['eps_forecasts']
+                    years = [f"Year {i+1}" for i in range(len(eps_data))]
+                    eps_df = pd.DataFrame({'Year': years, 'EPS Forecast': eps_data})
+                    st.write("EPS Forecasts:")
+                    st.dataframe(eps_df, use_container_width=True)
+                
+                if 'target_prices' in consensus:
+                    target_data = consensus['target_prices']
+                    brokers = [f"Broker {i+1}" for i in range(len(target_data))]
+                    target_df = pd.DataFrame({'Broker': brokers, 'Target Price': target_data})
+                    st.write("Target Prices:")
+                    st.dataframe(target_df, use_container_width=True)
+            else:
+                st.info("No consensus estimates available")
             
             # Display key risks and opportunities
             col1, col2 = st.columns(2)
