@@ -23,16 +23,134 @@ class ValuationTab:
         if st.session_state.project_data is not None and isinstance(st.session_state.project_data, pd.DataFrame) and not st.session_state.project_data.empty:
             if 'rnav_value' in st.session_state.project_data.columns:
                 total_rnav = st.session_state.project_data['rnav_value'].sum()
-                st.metric("Total RNAV", f"{total_rnav/1e9:,.0f}B VND")
                 
-                # Show project-level RNAV breakdown
-                project_rnav = st.session_state.project_data[['project_name', 'rnav_value']].copy()
-                project_rnav['rnav_value'] = project_rnav['rnav_value'] / 1e9  # Convert to billions
-                project_rnav = project_rnav.sort_values('rnav_value', ascending=False)
+                # Create comprehensive valuation table
+                valuation_rows = []
                 
+                # Add individual project rows
+                for _, project in st.session_state.project_data.iterrows():
+                    valuation_rows.append({
+                        'Item': f"  {project['project_name']}",
+                        'Value (B VND)': project['rnav_value'] / 1e9
+                    })
+                
+                # Add Sub-total row for RNAV
+                valuation_rows.append({
+                    'Item': 'SUB-TOTAL RNAV',
+                    'Value (B VND)': total_rnav / 1e9
+                })
+                
+                # Load balance sheet items from FA_A_processed.csv
+                cash_equivalent = 0
+                short_term_investment = 0
+                short_term_debt = 0
+                long_term_debt = 0
+                
+                # Get selected ticker
+                selected_ticker = st.session_state.get('selected_company', None)
+                
+                if selected_ticker:
+                    try:
+                        # Load financial data
+                        import os
+                        fa_path = os.path.join('data', 'FA_A_processed.csv')
+                        if os.path.exists(fa_path):
+                            fa_df = pd.read_csv(fa_path)
+                            
+                            # Filter for selected ticker
+                            ticker_data = fa_df[fa_df['TICKER'] == selected_ticker]
+                            
+                            if not ticker_data.empty:
+                                # Get the latest year available for this ticker
+                                latest_date = ticker_data['DATE'].max()
+                                
+                                # Filter for latest year data
+                                latest_data = ticker_data[ticker_data['DATE'] == latest_date]
+                                
+                                # Helper function to get value for a specific keycode
+                                def get_balance_sheet_value(keycode, default=0):
+                                    row = latest_data[latest_data['KEYCODE'] == keycode]
+                                    if not row.empty:
+                                        value = row['VALUE'].values[0]
+                                        # Convert to billions if value exists and is not NaN
+                                        if pd.notna(value):
+                                            return value / 1e9  # Convert from VND to billions VND
+                                    return default
+                                
+                                # Load balance sheet items using correct keycodes from FA_A_processed.csv
+                                # Cash and Cash_Equivalent are separate, so we combine them
+                                cash = get_balance_sheet_value('Cash', 0)
+                                cash_equiv = get_balance_sheet_value('Cash_Equivalent', 0)
+                                cash_equivalent = cash + cash_equiv  # Combine cash and cash equivalents
+                                
+                                # For short-term investment, we'll use 0 as it's not available in the data
+                                # or could be part of other current assets
+                                short_term_investment = 0  # Not available in this dataset
+                                
+                                # Use the correct keycodes: ST_Debt and LT_Debt
+                                short_term_debt = get_balance_sheet_value('ST_Debt', 0)
+                                long_term_debt = get_balance_sheet_value('LT_Debt', 0)
+                    
+                    except Exception as e:
+                        st.warning(f"Could not load balance sheet data: {str(e)}")
+                        # Keep default values of 0
+                
+                valuation_rows.append({
+                    'Item': 'Cash & Equivalent',
+                    'Value (B VND)': cash_equivalent
+                })
+                
+                valuation_rows.append({
+                    'Item': 'Short-term Investment',
+                    'Value (B VND)': short_term_investment
+                })
+                
+                valuation_rows.append({
+                    'Item': 'Short-term Debt',
+                    'Value (B VND)': -short_term_debt  # Display as negative
+                })
+                
+                valuation_rows.append({
+                    'Item': 'Long-term Debt',
+                    'Value (B VND)': -long_term_debt  # Display as negative
+                })
+                
+                # Add separator
+                valuation_rows.append({
+                    'Item': '',
+                    'Value (B VND)': None
+                })
+                
+                # Calculate Total Equity
+                # Since debt values are already negative, we add them directly
+                total_equity = (total_rnav / 1e9) + cash_equivalent + short_term_investment + (-short_term_debt) + (-long_term_debt)
+                
+                valuation_rows.append({
+                    'Item': 'TOTAL EQUITY',
+                    'Value (B VND)': total_equity
+                })
+                
+                # Create DataFrame
+                valuation_df = pd.DataFrame(valuation_rows)
+                
+                # Display metrics
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total RNAV", f"{total_rnav/1e9:,.0f}B VND")
+                with col2:
+                    st.metric("Total Equity", f"{total_equity:,.0f}B VND")
+                
+                # Display the comprehensive table
                 st.dataframe(
-                    project_rnav.style.format({'rnav_value': '{:,.0f}B'}),
-                    use_container_width=True
+                    valuation_df.style.format(
+                        {'Value (B VND)': lambda x: f'{x:,.0f}B' if pd.notna(x) else ''},
+                        na_rep=''
+                    ).applymap(
+                        lambda x: 'font-weight: bold' if isinstance(x, str) and ('SUB-TOTAL' in x or 'TOTAL EQUITY' in x) else '',
+                        subset=['Item']
+                    ),
+                    use_container_width=True,
+                    hide_index=True
                 )
             else:
                 st.info("RNAV values not available in project data")

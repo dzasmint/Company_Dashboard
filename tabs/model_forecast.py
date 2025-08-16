@@ -871,7 +871,13 @@ class ModelForecastTab:
         
             # Section 5: Consolidated P&L with Interest Expense
             st.markdown("---")
-            st.subheader("Consolidated P&L Statement")
+            
+            # Add toggle for comparison mode
+            col_header, col_toggle = st.columns([3, 1])
+            with col_header:
+                st.subheader("Consolidated P&L Statement")
+            with col_toggle:
+                compare_mode = st.toggle("Compare with previous forecast", value=False, key="pnl_compare_toggle")
         
             # Calculate interest expense for all projects
             project_interest_by_year = {}
@@ -1234,13 +1240,13 @@ class ModelForecastTab:
             # Create DataFrame
             pnl_df = pd.DataFrame(pnl_rows)
         
-            # Load saved forecast for comparison BEFORE displaying table
+            # Load saved forecast for comparison BEFORE displaying table (only if compare mode is on)
             from utils.mongodb_utils import load_company_forecast
-            saved_forecast = load_company_forecast(selected_ticker)
+            saved_forecast = load_company_forecast(selected_ticker) if compare_mode else {}
         
             # Create a mapping of P&L items to their saved values
             saved_values_map = {}
-            if saved_forecast:
+            if saved_forecast and compare_mode:
                 for year_str in saved_forecast.keys():
                     if year_str not in saved_values_map:
                         saved_values_map[year_str] = {}
@@ -1274,19 +1280,20 @@ class ModelForecastTab:
             display_df = pnl_df.copy()
             changed_cells = []  # Track cells that have changed for styling
         
-            # Add change indicators to values
-            for idx, row in pnl_df.iterrows():
-                item = row['P&L Item']
-                for year in years:
-                    year_str = str(year)
-                    if year_str in saved_values_map and item in saved_values_map[year_str]:
-                        current_val = row[year_str]
-                        saved_val = saved_values_map[year_str][item]
-                    
-                        if saved_val is not None and abs(current_val - saved_val) > 0.01:
-                            # Format as "new (old)" for changed values with thousand comma separation
-                            display_df.at[idx, year_str] = f"{current_val:,.0f}\n({saved_val:,.0f})"
-                            changed_cells.append((idx, year_str))
+            # Add change indicators to values (only if compare_mode is on)
+            if compare_mode:
+                for idx, row in pnl_df.iterrows():
+                    item = row['P&L Item']
+                    for year in years:
+                        year_str = str(year)
+                        if year_str in saved_values_map and item in saved_values_map[year_str]:
+                            current_val = row[year_str]
+                            saved_val = saved_values_map[year_str][item]
+                        
+                            if saved_val is not None and abs(current_val - saved_val) > 0.01:
+                                # Format as "new (old)" for changed values with thousand comma separation
+                                display_df.at[idx, year_str] = f"{current_val:,.0f}\n({saved_val:,.0f})"
+                                changed_cells.append((idx, year_str))
         
             # Style function to highlight key rows and changed cells
             def style_pnl_table(df_style):
@@ -1331,7 +1338,7 @@ class ModelForecastTab:
                     return f"{val:,.0f}"
         
             st.write("**Consolidated P&L Statement (Billion VND)**")
-            if changed_cells:
+            if compare_mode and changed_cells:
                 st.caption("🟢 Green cells indicate changes from saved forecast (showing: current value / saved value)")
         
             # Define column configuration for consistent width
