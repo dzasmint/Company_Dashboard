@@ -263,10 +263,48 @@ class AssumptionsTab:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("Load Defaults", use_container_width=True):
+            if st.button("Add Defaults", use_container_width=True):
                 if 'model_assumptions' not in st.session_state:
                     st.session_state.model_assumptions = {}
-                st.session_state.model_assumptions[selected_ticker] = self._get_default_assumptions()
+                
+                # Get current assumptions
+                current_assumptions = st.session_state.model_assumptions.get(selected_ticker, [])
+                if not isinstance(current_assumptions, list):
+                    current_assumptions = edited_df.to_dict('records') if edited_df is not None else []
+                
+                # Define the 5 default financial rows
+                default_financial_rows = [
+                    {"Category": "Financial", "Type": "N/A", "Item": "WACC", "Value": 12.0, "Unit": "%"},
+                    {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 30.0, "Unit": "%"},
+                    {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"},
+                    {"Category": "Financial", "Type": "N/A", "Item": "Cost of Debts", "Value": 8.0, "Unit": "%"},
+                    {"Category": "Financial", "Type": "N/A", "Item": "SG&A % of Revenue", "Value": 8.0, "Unit": "%"}
+                ]
+                
+                # Check which defaults are missing and add them
+                added_count = 0
+                for default_row in default_financial_rows:
+                    # Check if this item already exists
+                    exists = False
+                    for existing_row in current_assumptions:
+                        if (existing_row.get('Category') == default_row['Category'] and 
+                            existing_row.get('Item') == default_row['Item']):
+                            exists = True
+                            break
+                    
+                    # Add if it doesn't exist
+                    if not exists:
+                        current_assumptions.append(default_row)
+                        added_count += 1
+                
+                # Update session state
+                st.session_state.model_assumptions[selected_ticker] = current_assumptions
+                
+                if added_count > 0:
+                    st.success(f"✅ Added {added_count} default financial assumption(s)")
+                else:
+                    st.info("ℹ️ All default financial assumptions already exist")
+                
                 st.rerun()
         
         with col2:

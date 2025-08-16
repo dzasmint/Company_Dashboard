@@ -1,5 +1,9 @@
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import numpy as np
+import os
 
 
 class ValuationTab:
@@ -10,7 +14,7 @@ class ValuationTab:
     
     def render(self):
         """Render simplified valuation analysis based on RNAV and revenue forecasts"""
-        st.header("Valuation Analysis")
+        #st.header("Valuation Analysis")
         
         # RNAV Valuation
         st.subheader("RNAV Valuation")
@@ -34,3 +38,239 @@ class ValuationTab:
                 st.info("RNAV values not available in project data")
         else:
             st.info("Sync project data to calculate RNAV")
+        
+        # Add separator
+        st.markdown("---")
+        
+        # Valuation Metrics Section
+        st.subheader("Historical Valuation Metrics")
+        
+        # Get selected ticker
+        selected_ticker = st.session_state.get('selected_company', None)
+        
+        if selected_ticker:
+            # Load valuation data
+            valuation_data = self.load_valuation_data(selected_ticker)
+            
+            if valuation_data is not None and not valuation_data.empty:
+                self.render_valuation_charts(valuation_data, selected_ticker)
+            else:
+                st.info(f"No valuation data available for {selected_ticker}")
+        else:
+            st.info("Please select a company from the sidebar to view valuation metrics")
+    
+    def load_valuation_data(self, ticker):
+        """Load valuation data from Val_processed.csv for selected ticker"""
+        try:
+            # Load the CSV file
+            csv_path = os.path.join('data', 'Val_processed.csv')
+            if not os.path.exists(csv_path):
+                st.error(f"Valuation data file not found: {csv_path}")
+                return None
+            
+            # Read CSV
+            df = pd.read_csv(csv_path)
+            
+            # Filter for selected ticker
+            ticker_data = df[df['TICKER'] == ticker].copy()
+            
+            if ticker_data.empty:
+                return None
+            
+            # Convert TRADE_DATE to datetime
+            ticker_data['TRADE_DATE'] = pd.to_datetime(ticker_data['TRADE_DATE'])
+            
+            # Sort by date
+            ticker_data = ticker_data.sort_values('TRADE_DATE')
+            
+            # Remove rows where all metrics are NaN
+            metrics = ['P/E', 'P/B', 'P/S', 'EV/EBITDA']
+            ticker_data = ticker_data.dropna(subset=metrics, how='all')
+            
+            return ticker_data
+            
+        except Exception as e:
+            st.error(f"Error loading valuation data: {str(e)}")
+            return None
+    
+    def render_valuation_charts(self, data, ticker):
+        """Render valuation metric charts with standard deviation bands"""
+        
+        # Define metrics to plot
+        metrics = [
+            ('P/E', 'Price to Earnings'),
+            ('P/B', 'Price to Book'),
+            ('P/S', 'Price to Sales'),
+            ('EV/EBITDA', 'EV/EBITDA')
+        ]
+        
+        # Create subplots
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=[title for _, title in metrics],
+            vertical_spacing=0.12,
+            horizontal_spacing=0.1
+        )
+        
+        # Define positions for subplots
+        positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
+        
+        for (metric, title), (row, col) in zip(metrics, positions):
+            if metric not in data.columns:
+                continue
+            
+            # Get metric data
+            metric_data = data[['TRADE_DATE', metric]].dropna()
+            
+            if metric_data.empty:
+                continue
+            
+            x = metric_data['TRADE_DATE']
+            y = metric_data[metric]
+            
+            # Calculate statistics
+            mean = y.mean()
+            std = y.std()
+            
+            # Main line
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=y,
+                    mode='lines',
+                    name=metric,
+                    line=dict(color='blue', width=2),
+                    showlegend=False
+                ),
+                row=row, col=col
+            )
+            
+            # Mean line
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=[mean] * len(x),
+                    mode='lines',
+                    name=f'Mean',
+                    line=dict(color='green', width=1, dash='dash'),
+                    showlegend=False
+                ),
+                row=row, col=col
+            )
+            
+            # +1 std line
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=[mean + std] * len(x),
+                    mode='lines',
+                    name='+1σ',
+                    line=dict(color='orange', width=1, dash='dot'),
+                    showlegend=False
+                ),
+                row=row, col=col
+            )
+            
+            # -1 std line
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=[mean - std] * len(x),
+                    mode='lines',
+                    name='-1σ',
+                    line=dict(color='orange', width=1, dash='dot'),
+                    showlegend=False
+                ),
+                row=row, col=col
+            )
+            
+            # +2 std line
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=[mean + 2*std] * len(x),
+                    mode='lines',
+                    name='+2σ',
+                    line=dict(color='red', width=1, dash='dot'),
+                    showlegend=False
+                ),
+                row=row, col=col
+            )
+            
+            # -2 std line
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=[mean - 2*std] * len(x),
+                    mode='lines',
+                    name='-2σ',
+                    line=dict(color='red', width=1, dash='dot'),
+                    showlegend=False
+                ),
+                row=row, col=col
+            )
+            
+            # Add latest value annotation
+            if len(y) > 0:
+                latest_value = y.iloc[-1]
+                latest_date = x.iloc[-1]
+                
+                fig.add_annotation(
+                    x=latest_date,
+                    y=latest_value,
+                    text=f"{latest_value:.2f}",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=1,
+                    arrowcolor="black",
+                    ax=-30,
+                    ay=-30,
+                    row=row, col=col
+                )
+        
+        # Update layout
+        fig.update_layout(
+            height=700,
+            title_text=f"Valuation Metrics for {ticker}",
+            showlegend=True,
+            hovermode='x unified'
+        )
+        
+        # Update x and y axes
+        fig.update_xaxes(title_text="Date", row=2, col=1)
+        fig.update_xaxes(title_text="Date", row=2, col=2)
+        
+        # Display the figure
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Add statistics summary
+        st.subheader("Valuation Statistics")
+        
+        stats_data = []
+        for metric, title in metrics:
+            if metric in data.columns:
+                metric_data = data[metric].dropna()
+                if not metric_data.empty:
+                    stats_data.append({
+                        'Metric': title,
+                        'Current': metric_data.iloc[-1] if len(metric_data) > 0 else np.nan,
+                        'Mean': metric_data.mean(),
+                        'Std Dev': metric_data.std(),
+                        'Min': metric_data.min(),
+                        'Max': metric_data.max(),
+                        'Current vs Mean': f"{((metric_data.iloc[-1] / metric_data.mean() - 1) * 100):.1f}%" if len(metric_data) > 0 else "N/A"
+                    })
+        
+        if stats_data:
+            stats_df = pd.DataFrame(stats_data)
+            st.dataframe(
+                stats_df.style.format({
+                    'Current': '{:.2f}',
+                    'Mean': '{:.2f}',
+                    'Std Dev': '{:.2f}',
+                    'Min': '{:.2f}',
+                    'Max': '{:.2f}'
+                }),
+                use_container_width=True
+            )

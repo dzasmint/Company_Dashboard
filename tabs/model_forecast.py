@@ -6,7 +6,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import json
 import os
-from utils.mongodb_utils import load_assumptions_from_mongodb, save_consolidated_financials
+from utils.mongodb_utils import load_assumptions_from_mongodb
 from tabs.balance_sheet_analysis import BalanceSheetAnalysisTab
 
 
@@ -181,9 +181,9 @@ class ModelForecastTab:
                 st.session_state.base_year_revenues[segment_name] = base_year_revenue
             
                 segment_metrics[segment_name] = {
-                    'revenue_growth': stream.get('revenue_growth', 0.1),
-                    'gross_margin': stream.get('gross_margin', 0.3),
-                    'sga_percentage': stream.get('sga_percentage', 0.2),
+                    'revenue_growth': stream.get('revenue_growth', 0.0),
+                    'gross_margin': stream.get('gross_margin', 0.0),
+                    'sga_percentage': stream.get('sga_percentage', 0.0),
                     'base_year_revenue': base_year_revenue
                 }
     
@@ -894,8 +894,10 @@ class ModelForecastTab:
             # Calculate SG&A expenses
             sga_by_year = {}
             for year in years:
-                # SG&A for projects (typically 8% of project revenue)
-                project_sga = project_revenue_by_year[year] * 0.08
+                # SG&A for projects - should come from project data, not hardcoded
+                # Use the actual SG&A from project breakdown if available
+                project_sga = sum(project_sga_breakdown.get(project, {}).get(year, 0) 
+                                for project in project_sga_breakdown.keys())
             
                 # SG&A for other segments
                 other_sga = 0
@@ -903,7 +905,7 @@ class ModelForecastTab:
                     if segment_name in segment_metrics:
                         sga_pct = segment_metrics[segment_name]['sga_percentage']
                     else:
-                        sga_pct = 0.0  # Default 15%
+                        sga_pct = 0.0  # Default 0%
                 
                     # Calculate segment revenue for the year
                     base_revenue = st.session_state.base_year_revenues[segment_name]
@@ -1282,8 +1284,8 @@ class ModelForecastTab:
                         saved_val = saved_values_map[year_str][item]
                     
                         if saved_val is not None and abs(current_val - saved_val) > 0.01:
-                            # Format as "new (old)" for changed values
-                            display_df.at[idx, year_str] = f"{current_val:.1f}\n({saved_val:.1f})"
+                            # Format as "new (old)" for changed values with thousand comma separation
+                            display_df.at[idx, year_str] = f"{current_val:,.0f}\n({saved_val:,.0f})"
                             changed_cells.append((idx, year_str))
         
             # Style function to highlight key rows and changed cells
@@ -2397,8 +2399,22 @@ class ModelForecastTab:
                     # Apply deep conversion to entire consolidated_data to ensure all numpy types are converted
                     consolidated_data = convert_to_native(consolidated_data)
                     
-                    # Save consolidated financial statements
-                    result = save_consolidated_financials(consolidated_data)
+                    # Save all three financial statements to CompanyForecast collection
+                    from utils.mongodb_utils import save_company_forecast
+                    
+                    # Extract all financial statements data for CompanyForecast collection
+                    forecast_data = {}
+                    for year_str, year_data in consolidated_data['financial_statements'].items():
+                        forecast_data[year_str] = {
+                            'pnl': year_data.get('pnl', {}),
+                            'balance_sheet': year_data.get('balance_sheet', {}),
+                            'cash_flow': year_data.get('cash_flow', {}),
+                            'business_segments': year_data.get('business_segments', {}),
+                            'project_breakdown': year_data.get('project_breakdown', {})
+                        }
+                    
+                    # Save to CompanyForecast collection
+                    result = save_company_forecast(selected_ticker, forecast_data)
                     if result['success']:
                         st.success(f"✅ {result['message']}")
                         # Store in session state for reference
@@ -2406,380 +2422,11 @@ class ModelForecastTab:
                     else:
                         st.error(f"❌ {result['message']}")
         
-            st.info("💡 This saves all three consolidated financial statements (P&L, Balance Sheet, Cash Flow) to the database for reporting and analysis.")
+            st.info("💡 This saves all three consolidated financial statements (P&L, Balance Sheet, Cash Flow) to the CompanyForecast collection in MongoDB for reporting and analysis.")
         
         else:
             st.info("No project data available. Please add projects in the Project Pipeline tab.")
-
-
-    def render_project_pipeline_forecast(self):
-        """Render forecast specifically from real estate projects"""
-        st.subheader("🏗️ Real Estate Project Pipeline Forecast")
     
-        if st.session_state.project_data is None or (isinstance(st.session_state.project_data, pd.DataFrame) and st.session_state.project_data.empty):
-            st.info("No project data available. Please sync project data from the sidebar.")
-            return
-    
-        # Generate revenue forecast from projects
-        revenue_forecast = self.generate_revenue_forecast()
-        df_projects = st.session_state.project_data
-        years = revenue_forecast['years']
-        current_year = datetime.now().year
-    
-        # Initialize aggregated revenue and project breakdown
-        total_revenue_by_year = [0] * len(years)
-        project_revenue_matrix = {}  # Store revenue by project and year
-    
-        # Aggregate revenue from all projects
-        for _, project in df_projects.iterrows():
-            project_name = project.get('project_name', 'Unknown')
-            project_revenue_matrix[project_name] = [0] * len(years)
-        
-            # Get revenue schedule
-            revenue_schedule = project.get('revenue_schedule', {})
-        
-            # If no saved schedule, calculate it
-            if not isinstance(revenue_schedule, dict) or not revenue_schedule:
-                # Calculate on the fly
-                nsa = float(project.get('net_sellable_area', 0) or 0)
-                asp = float(project.get('average_selling_price', 0) or 0)
-                total_revenue = nsa * asp / 1e9  # Convert to billions
-            
-                revenue_dist = project.get('revenue_distribution', {})
-                if not isinstance(revenue_dist, dict):
-                    revenue_dist = {}
-            
-                revenue_start = int(project.get('revenue_booking_start_year', current_year))
-                project_end = int(project.get('project_completion_year', current_year + 3))
-            
-                # If no distribution, create even split
-                if not revenue_dist:
-                    booking_years = list(range(revenue_start, project_end + 1))
-                    if booking_years:
-                        even_pct = 100.0 / len(booking_years)
-                        for year in booking_years:
-                            revenue_dist[str(year)] = even_pct
-            
-                # Create schedule
-                revenue_schedule = {}
-                for year in range(revenue_start, project_end + 1):
-                    year_str = str(year)
-                    year_pct = revenue_dist.get(year_str, 0) / 100.0
-                    revenue_schedule[year_str] = total_revenue * year_pct
-        
-            # Add to yearly totals and project matrix
-            for i, year in enumerate(years):
-                year_str = str(year)
-                if year_str in revenue_schedule:
-                    revenue_amount = revenue_schedule[year_str]
-                    total_revenue_by_year[i] += revenue_amount
-                    project_revenue_matrix[project_name][i] = revenue_amount
-    
-        # Create stacked bar chart showing breakdown by project
-        fig = go.Figure()
-    
-        # Define colors for projects
-        colors = px.colors.qualitative.Plotly + px.colors.qualitative.Set1 + px.colors.qualitative.Set2
-    
-        # Add a bar for each project
-        for idx, (project_name, revenues) in enumerate(project_revenue_matrix.items()):
-            # Only add projects that have revenue
-            if sum(revenues) > 0:
-                fig.add_trace(go.Bar(
-                    x=years,
-                    y=revenues,
-                    name=project_name,
-                    marker_color=colors[idx % len(colors)],
-                    text=[f'{v:.0f}B' if v > 0 else '' for v in revenues],
-                    textposition='inside',
-                    hovertemplate='%{y:.1f}B VND<extra></extra>'
-                ))
-    
-        # Add total revenue line
-        fig.add_trace(go.Scatter(
-            x=years,
-            y=total_revenue_by_year,
-            name='Total Revenue',
-            mode='lines+markers+text',
-            line=dict(color='red', width=3),
-            marker=dict(size=8),
-            text=[f'{v:.0f}B' for v in total_revenue_by_year],
-            textposition='top center',
-            yaxis='y2',
-            hovertemplate='Total: %{y:.1f}B VND<extra></extra>'
-        ))
-    
-        fig.update_layout(
-            title="Revenue Forecast by Project (Billion VND)",
-            xaxis_title="Year",
-            yaxis=dict(title="Revenue (B VND)", side='left'),
-            yaxis2=dict(title="Total Revenue (B VND)", overlaying='y', side='right'),
-            barmode='stack',
-            height=600,
-            hovermode='x unified',
-            legend=dict(
-                orientation="v",
-                yanchor="top",
-                y=1,
-                xanchor="left",
-                x=1.1
-            )
-        )
-    
-        st.plotly_chart(fig, use_container_width=True)
-    
-        # Show project summary table
-        st.write("**Project Revenue Summary (Billion VND)**")
-        summary_data = []
-        for project_name, revenues in project_revenue_matrix.items():
-            if sum(revenues) > 0:
-                summary_data.append({
-                    'Project': project_name,
-                    'Total Revenue': sum(revenues),
-                    'Peak Year': years[revenues.index(max(revenues))],
-                    'Peak Revenue': max(revenues)
-                })
-    
-        if summary_data:
-            summary_df = pd.DataFrame(summary_data)
-            summary_df = summary_df.sort_values('Total Revenue', ascending=False)
-            st.dataframe(summary_df.style.format({'Total Revenue': '{:,.0f}', 'Peak Revenue': '{:,.0f}'}), use_container_width=True)
-
-    def render_other_segments_forecast(self):
-        """Render forecast for selected non-real estate segments"""
-        st.subheader("💼 Other Business Segments Forecast")
-    
-        # Get only selected revenue streams
-        if 'selected_streams_data' in st.session_state:
-            revenue_streams = st.session_state.selected_streams_data
-        else:
-            revenue_streams = st.session_state.comprehensive_model.get('revenue_streams', [])
-    
-        non_real_estate = [s for s in revenue_streams if 'real estate' not in s.get('segment_name', '').lower()]
-    
-        if not non_real_estate:
-            st.info("No other business segments identified")
-            return
-    
-        current_year = datetime.now().year
-        forecast_years = st.session_state.get('forecast_years', 5)
-        years = list(range(current_year, current_year + forecast_years + 1))
-    
-        # Create forecast for each non-real estate segment
-        fig = go.Figure()
-    
-        for stream in non_real_estate:
-            segment_name = stream.get('segment_name', 'Unknown')
-            base_revenue = stream.get('revenue_2023', 0) or stream.get('revenue_2022', 0)
-        
-            # Get dynamic assumptions
-            if 'dynamic_assumptions' in st.session_state and segment_name in st.session_state.dynamic_assumptions:
-                growth_rate = st.session_state.dynamic_assumptions[segment_name]['revenue_growth'] / 100
-            else:
-                growth_rate = stream.get('growth_rate', 0.10)
-        
-            # Calculate forecast
-            forecast = []
-            for i in range(len(years)):
-                revenue = base_revenue * ((1 + growth_rate) ** (i + 1))
-                forecast.append(revenue / 1e9)
-        
-            fig.add_trace(go.Scatter(
-                x=years,
-                y=forecast,
-                name=segment_name,
-                mode='lines+markers',
-                line=dict(width=2),
-                marker=dict(size=8)
-            ))
-    
-        fig.update_layout(
-            title="Other Business Segments Revenue Forecast",
-            xaxis_title="Year",
-            yaxis_title="Revenue (Billion VND)",
-            height=400,
-            hovermode='x unified'
-        )
-    
-        st.plotly_chart(fig, use_container_width=True)
-    
-        # Show segment details
-        st.write("**Segment Growth Assumptions:**")
-    
-        cols = st.columns(len(non_real_estate) if len(non_real_estate) <= 4 else 4)
-        for i, stream in enumerate(non_real_estate):
-            segment_name = stream.get('segment_name', 'Unknown')
-            col_idx = i % len(cols)
-        
-            with cols[col_idx]:
-                if 'dynamic_assumptions' in st.session_state and segment_name in st.session_state.dynamic_assumptions:
-                    growth = st.session_state.dynamic_assumptions[segment_name]['revenue_growth']
-                    margin = st.session_state.dynamic_assumptions[segment_name]['gross_margin']
-                else:
-                    growth = stream.get('growth_rate', 0.10) * 100
-                    margin = stream.get('gross_margin', 0.25) * 100
-            
-                st.metric(segment_name, f"{growth:.1f}% growth", f"{margin:.1f}% margin")
-
-    def render_consolidated_forecast(self):
-        """Render consolidated P&L forecast combining all segments"""
-        st.subheader("Consolidated Financial Forecast")
-    
-        current_year = datetime.now().year
-        forecast_years = st.session_state.get('forecast_years', 5)
-        years = list(range(current_year, current_year + forecast_years + 1))
-    
-        # Initialize P&L structure
-        pnl_data = []
-    
-        # Calculate revenue for each year
-        for year in years:
-            year_data = {'Year': year}
-        
-            # Real Estate revenue from projects (only if selected)
-            real_estate_selected = any('real estate' in s.get('segment_name', '').lower() 
-                                      for s in st.session_state.get('selected_streams_data', []))
-        
-            if real_estate_selected:
-                re_revenue = self.calculate_real_estate_revenue_for_year(year)
-                year_data['Real Estate Revenue'] = re_revenue / 1e9
-            else:
-                year_data['Real Estate Revenue'] = 0
-        
-            # Other segments revenue
-            other_revenue = 0
-            # Get only selected revenue streams
-            if 'selected_streams_data' in st.session_state:
-                revenue_streams = st.session_state.selected_streams_data
-            else:
-                revenue_streams = st.session_state.comprehensive_model.get('revenue_streams', [])
-        
-            for stream in revenue_streams:
-                if 'real estate' not in stream.get('segment_name', '').lower():
-                    segment_name = stream.get('segment_name')
-                    base_revenue = stream.get('revenue_2023', 0) or stream.get('revenue_2022', 0)
-                
-                    if 'dynamic_assumptions' in st.session_state and segment_name in st.session_state.dynamic_assumptions:
-                        growth_rate = st.session_state.dynamic_assumptions[segment_name]['revenue_growth'] / 100
-                    else:
-                        growth_rate = stream.get('growth_rate', 0.10)
-                
-                    year_idx = year - current_year
-                    segment_revenue = base_revenue * ((1 + growth_rate) ** (year_idx + 1))
-                    other_revenue += segment_revenue
-        
-            year_data['Other Segments Revenue'] = other_revenue / 1e9
-            year_data['Total Revenue'] = year_data['Real Estate Revenue'] + year_data['Other Segments Revenue']
-        
-            # Calculate costs and margins
-            # Use weighted average margins
-            re_margin = 0.30  # Default real estate margin
-            other_margin = 0.20  # Default other segments margin
-        
-            if year_data['Total Revenue'] > 0:
-                weighted_margin = (year_data['Real Estate Revenue'] * re_margin + 
-                                 year_data['Other Segments Revenue'] * other_margin) / year_data['Total Revenue']
-            else:
-                weighted_margin = 0.25
-        
-            year_data['Gross Profit'] = year_data['Total Revenue'] * weighted_margin
-            year_data['Operating Expenses'] = year_data['Total Revenue'] * st.session_state.assumptions['costs']['sga_pct'] / 100
-            year_data['EBIT'] = year_data['Gross Profit'] - year_data['Operating Expenses']
-            year_data['Tax'] = max(0, year_data['EBIT'] * st.session_state.assumptions['costs']['tax_rate'] / 100)
-            year_data['Net Profit'] = year_data['EBIT'] - year_data['Tax']
-        
-            pnl_data.append(year_data)
-    
-        # Create DataFrame
-        pnl_df = pd.DataFrame(pnl_data)
-        pnl_df.set_index('Year', inplace=True)
-    
-        # Display table
-        st.write("**Consolidated P&L Forecast (Billion VND)**")
-        st.dataframe(pnl_df.style.format("{:,.0f}"), use_container_width=True)
-    
-        # Create waterfall chart for revenue composition
-        fig = go.Figure()
-    
-        # Add bars for each revenue component
-        fig.add_trace(go.Bar(
-            name='Real Estate',
-            x=years,
-            y=pnl_df['Real Estate Revenue'],
-            marker_color='lightblue'
-        ))
-    
-        fig.add_trace(go.Bar(
-            name='Other Segments',
-            x=years,
-            y=pnl_df['Other Segments Revenue'],
-            marker_color='lightgreen'
-        ))
-    
-        # Add profit line
-        fig.add_trace(go.Scatter(
-            name='Net Profit',
-            x=years,
-            y=pnl_df['Net Profit'],
-            mode='lines+markers',
-            line=dict(color='darkgreen', width=3),
-            yaxis='y2'
-        ))
-    
-        fig.update_layout(
-            title="Revenue Composition and Profitability",
-            xaxis_title="Year",
-            yaxis=dict(title="Revenue (Billion VND)"),
-            yaxis2=dict(title="Net Profit (Billion VND)", overlaying='y', side='right'),
-            barmode='stack',
-            height=500
-        )
-    
-        st.plotly_chart(fig, use_container_width=True)
-    
-        # Show key metrics
-        st.write("**Key Financial Metrics**")
-    
-        col1, col2, col3, col4 = st.columns(4)
-    
-        with col1:
-            avg_margin = pnl_df['Net Profit'].sum() / pnl_df['Total Revenue'].sum() * 100
-            st.metric("Avg Net Margin", f"{avg_margin:.1f}%")
-    
-        with col2:
-            revenue_cagr = (pnl_df['Total Revenue'].iloc[-1] / pnl_df['Total Revenue'].iloc[0]) ** (1/forecast_years) - 1
-            st.metric("Revenue CAGR", f"{revenue_cagr*100:.1f}%")
-    
-        with col3:
-            profit_cagr = (pnl_df['Net Profit'].iloc[-1] / pnl_df['Net Profit'].iloc[0]) ** (1/forecast_years) - 1 if pnl_df['Net Profit'].iloc[0] > 0 else 0
-            st.metric("Profit CAGR", f"{profit_cagr*100:.1f}%")
-    
-        with col4:
-            peak_profit = pnl_df['Net Profit'].max()
-            st.metric("Peak Net Profit", f"{peak_profit:.0f}B VND")
-
-    def calculate_real_estate_revenue_for_year(self, year):
-        """Calculate real estate revenue for a specific year from projects"""
-        if st.session_state.project_data is None or st.session_state.project_data.empty:
-            return 0
-    
-        total_revenue = 0
-    
-        for _, project in st.session_state.project_data.iterrows():
-            revenue_schedule = project.get('revenue_schedule', {})
-            year_str = str(year)
-        
-            if year_str in revenue_schedule:
-                total_revenue += revenue_schedule[year_str] * 1e9  # Convert from billions
-    
-        return total_revenue
-
-    def display_project_revenue_forecast(self):
-        """Display revenue forecast specifically from projects"""
-        # This is the existing project forecast logic
-        # Can reuse most of the existing code
-        pass
-
     def generate_revenue_forecast(self):
         """Generate revenue forecast from project pipeline"""
         current_year = datetime.now().year
@@ -2806,209 +2453,7 @@ class ModelForecastTab:
         # If no project data, forecast remains with zero values
     
         return forecast
-
-    def display_aggregated_pnl_forecast(self):
-        """Display aggregated P&L forecast from all projects"""
-        if st.session_state.project_data is None or st.session_state.project_data.empty:
-            st.info("No project data available for P&L aggregation")
-            return
     
-        # Get tax rate from assumptions - default to 0 if not set
-        selected_ticker = st.session_state.get('selected_company', None)
-        tax_rate = 0.0  # Default
-        if selected_ticker:
-            from utils.mongodb_utils import load_assumptions_from_mongodb
-            assumptions_list = load_assumptions_from_mongodb(selected_ticker)
-            company_assumptions = self._convert_assumptions_to_dict(assumptions_list) if assumptions_list else {}
-            tax_rate = company_assumptions.get('tax_rate', 0.0)
-    
-        df_projects = st.session_state.project_data
-        current_year = datetime.now().year
-        forecast_years = st.session_state.forecast_years
-        years = list(range(current_year, current_year + forecast_years + 1))
-    
-        # Initialize aggregated data
-        aggregated_data = {
-            'Year': years,
-            'Revenue': [0] * len(years),
-            'Construction Cost': [0] * len(years),
-            'Land Cost': [0] * len(years),
-            'SG&A': [0] * len(years),
-            'EBITDA': [0] * len(years),
-            'PBT': [0] * len(years),
-            'Tax': [0] * len(years),
-            'PAT': [0] * len(years)
-        }
-    
-        # Dictionary to store project-level details
-        project_details = {year: [] for year in years}
-    
-        # Aggregate schedules from all projects
-        for _, project in df_projects.iterrows():
-            project_name = project.get('project_name', 'Unknown')
-        
-            # Get schedules from project data
-            revenue_schedule = project.get('revenue_schedule', {})
-            construction_schedule = project.get('construction_schedule', {})
-            land_schedule = project.get('land_schedule', {})
-            sga_schedule = project.get('sga_schedule', {})
-        
-            # Ensure schedules are dictionaries
-            if not isinstance(revenue_schedule, dict):
-                revenue_schedule = {}
-            if not isinstance(construction_schedule, dict):
-                construction_schedule = {}
-            if not isinstance(land_schedule, dict):
-                land_schedule = {}
-            if not isinstance(sga_schedule, dict):
-                sga_schedule = {}
-        
-            # If schedules are empty, calculate them on-the-fly
-            if not revenue_schedule:
-                # Calculate total values
-                nsa = float(project.get('net_sellable_area', 0) or 0)
-                asp = float(project.get('average_selling_price', 0) or 0)
-                gfa = float(project.get('gross_floor_area', 0) or 0)
-                land_area = float(project.get('land_area', 0) or 0)
-                const_cost = float(project.get('construction_cost_per_sqm', 0) or 0)
-                land_cost = float(project.get('land_cost_per_sqm', 0) or 0)
-            
-                total_revenue = nsa * asp / 1e9  # Convert to billions
-                total_const_cost = gfa * const_cost / 1e9
-                total_land_cost = land_area * land_cost / 1e9
-                sga_pct = float(project.get('sga_percentage', 0.08) or 0.08)
-                total_sga = total_revenue * sga_pct
-            
-                # Get revenue distribution
-                revenue_dist = project.get('revenue_distribution', {})
-                if not isinstance(revenue_dist, dict):
-                    revenue_dist = {}
-            
-                # Calculate schedules based on distribution
-                revenue_start = int(project.get('revenue_booking_start_year', current_year))
-                project_end = int(project.get('project_completion_year', current_year + 3))
-            
-                # If no distribution, create even split
-                if not revenue_dist:
-                    booking_years = list(range(revenue_start, project_end + 1))
-                    if booking_years:
-                        even_pct = 100.0 / len(booking_years)
-                        for year in booking_years:
-                            revenue_dist[str(year)] = even_pct
-            
-                # Calculate schedules
-                for year in range(revenue_start, project_end + 1):
-                    year_str = str(year)
-                    year_pct = revenue_dist.get(year_str, 0) / 100.0
-                    revenue_schedule[year_str] = total_revenue * year_pct
-                    construction_schedule[year_str] = total_const_cost * year_pct
-                    land_schedule[year_str] = total_land_cost * year_pct
-                    sga_schedule[year_str] = total_sga * year_pct
-        
-            # Aggregate for each year
-            for i, year in enumerate(years):
-                year_str = str(year)
-            
-                # Get values for this year (already in billions)
-                year_revenue = revenue_schedule.get(year_str, 0)
-                year_construction = construction_schedule.get(year_str, 0)
-                year_land = land_schedule.get(year_str, 0)
-                year_sga = sga_schedule.get(year_str, 0)
-            
-                # Add to aggregated totals
-                aggregated_data['Revenue'][i] += year_revenue
-                aggregated_data['Construction Cost'][i] += year_construction
-                aggregated_data['Land Cost'][i] += year_land
-                aggregated_data['SG&A'][i] += year_sga
-            
-                # Store project details if there's any activity
-                if year_revenue > 0 or year_construction > 0 or year_land > 0:
-                    project_details[year].append({
-                        'Project': project_name,
-                        'Revenue': year_revenue,
-                        'Construction': year_construction,
-                        'Land': year_land,
-                        'SG&A': year_sga
-                    })
-    
-        # Calculate EBITDA, PBT, Tax, PAT
-        for i in range(len(years)):
-            aggregated_data['EBITDA'][i] = (aggregated_data['Revenue'][i] - 
-                                            aggregated_data['Construction Cost'][i] - 
-                                            aggregated_data['Land Cost'][i] - 
-                                            aggregated_data['SG&A'][i])
-            aggregated_data['PBT'][i] = aggregated_data['EBITDA'][i]  # No interest for now
-            aggregated_data['Tax'][i] = max(0, aggregated_data['PBT'][i] * tax_rate)
-            aggregated_data['PAT'][i] = aggregated_data['PBT'][i] - aggregated_data['Tax'][i]
-    
-        # Create DataFrame
-        df_pnl = pd.DataFrame(aggregated_data)
-    
-        # Display aggregated P&L table
-        st.dataframe(
-            df_pnl.style.format({
-                'Year': '{:.0f}',
-                'Revenue': '{:,.1f}B',
-                'Construction Cost': '{:,.1f}B',
-                'Land Cost': '{:,.1f}B',
-                'SG&A': '{:,.1f}B',
-                'EBITDA': '{:,.1f}B',
-                'PBT': '{:,.1f}B',
-                'Tax': '{:,.1f}B',
-                'PAT': '{:,.1f}B'
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-    
-        # Show breakdown by project
-        with st.expander("View Project-by-Project Breakdown"):
-            selected_year = st.selectbox(
-                "Select Year for Breakdown:",
-                years,
-                index=0,
-                key="pnl_year_selector"
-            )
-        
-            if selected_year in project_details and project_details[selected_year]:
-                df_breakdown = pd.DataFrame(project_details[selected_year])
-            
-                # Add totals row
-                totals = {
-                    'Project': 'TOTAL',
-                    'Revenue': df_breakdown['Revenue'].sum(),
-                    'Construction': df_breakdown['Construction'].sum(),
-                    'Land': df_breakdown['Land'].sum(),
-                    'SG&A': df_breakdown['SG&A'].sum()
-                }
-                df_breakdown = pd.concat([df_breakdown, pd.DataFrame([totals])], ignore_index=True)
-            
-                st.dataframe(
-                    df_breakdown.style.format({
-                        'Revenue': '{:,.1f}B',
-                        'Construction': '{:,.1f}B',
-                        'Land': '{:,.1f}B',
-                        'SG&A': '{:,.1f}B'
-                    }).applymap(
-                        lambda x: 'font-weight: bold' if x == 'TOTAL' else '',
-                        subset=['Project']
-                    ),
-                    use_container_width=True,
-                    hide_index=True
-                )
-            
-                # Pie chart for revenue contribution
-                df_pie = df_breakdown[df_breakdown['Project'] != 'TOTAL']
-                if not df_pie.empty and df_pie['Revenue'].sum() > 0:
-                    fig = px.pie(
-                        values=df_pie['Revenue'],
-                        names=df_pie['Project'],
-                        title=f"Revenue Contribution by Project - {selected_year}"
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info(f"No project activity scheduled for {selected_year}")
-
     def calculate_project_based_revenue(self, forecast):
         """Calculate revenue forecast based on actual project details"""
         df_projects = st.session_state.project_data

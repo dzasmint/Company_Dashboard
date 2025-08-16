@@ -329,10 +329,20 @@ class ProjectPipelineRealEstateTab:
             )
         
         with col4:
+            # Get SG&A from assumptions if available
+            from utils.mongodb_utils import load_assumptions_from_mongodb
+            assumptions = load_assumptions_from_mongodb(st.session_state.get('selected_company', ''))
+            default_sga = 0.0
+            if assumptions:
+                for assumption in assumptions:
+                    if assumption.get('Category') == 'Financial' and assumption.get('Item') == 'SG&A % of Revenue':
+                        default_sga = float(assumption.get('Value', 0))
+                        break
+            
             sga_percentage = st.number_input(
                 "SG&A (% of Revenue)",
                 min_value=0.0,
-                value=8.0,
+                value=default_sga,
                 step=0.1,
                 key="new_project_sga"
             )
@@ -1185,9 +1195,8 @@ class ProjectPipelineRealEstateTab:
         with col1:
             st.markdown("**SG&A (% of Revenue)**")
         with col2:
-            # Get SG&A from assumptions (default 0 to show missing assumptions)
-            # Note: SG&A is typically a Business Segment metric, not Financial
-            sga_decimal = 0.0  # Default 0 to indicate missing assumptions
+            # Get SG&A from assumptions - company-wide SG&A stored as Financial category
+            sga_decimal = get_assumption_value(assumptions, 'SG&A % of Revenue', 0.0)
             sga_percentage = sga_decimal * 100
             
             # Display as disabled text input
@@ -1459,7 +1468,7 @@ class ProjectPipelineRealEstateTab:
     def render_project_balance_sheet_analysis(self, project_data):
         """Render comprehensive financial statements forecast using project data"""
         # First display Project Financial Summary
-        st.subheader("📊 Project Financial Summary")
+        st.subheader("Project Financial Summary")
         
         # Get edited project data
         edited = st.session_state.edited_project
@@ -1475,7 +1484,7 @@ class ProjectPipelineRealEstateTab:
         total_revenue = nsa * asp
         total_const_cost = gfa * const_cost
         total_land_cost = land_area * land_cost
-        sga_pct = float(edited.get('sga_percentage', 0.08) or 0.08)
+        sga_pct = float(edited.get('sga_percentage', 0.0) or 0.0)
         total_sga = total_revenue * sga_pct
         
         # Get debt and financial parameters
@@ -1537,7 +1546,7 @@ class ProjectPipelineRealEstateTab:
         st.markdown("---")
         
         # Now display Comprehensive Financial Statements Forecast
-        st.subheader("📊 Comprehensive Financial Statements Forecast")
+        st.subheader("Comprehensive Financial Statements Forecast")
         
         # Import balance sheet manager
         import sys
@@ -1560,7 +1569,7 @@ class ProjectPipelineRealEstateTab:
         total_revenue = nsa * asp
         total_const_cost = gfa * const_cost
         total_land_cost = land_area * land_cost
-        sga_pct = float(edited.get('sga_percentage', 0.08) or 0.08)
+        sga_pct = float(edited.get('sga_percentage', 0.0) or 0.0)
         total_sga = total_revenue * sga_pct  # Calculate total SG&A
         
         # Get timeline parameters
@@ -1768,7 +1777,7 @@ class ProjectPipelineRealEstateTab:
                 """, unsafe_allow_html=True)
                 
                 # Display Balance Sheet table
-                st.subheader("📊 Balance Sheet")
+                st.subheader("Balance Sheet")
                 
                 # Apply styling to balance sheet
                 styled_bs_df = bs_df.style.apply(highlight_sections, axis=0).format(format_dict).set_properties(**{'text-align': 'left'}, subset=pd.IndexSlice[:, :])
@@ -1779,7 +1788,7 @@ class ProjectPipelineRealEstateTab:
                 )
                 
                 # Display P&L table
-                st.subheader("💰 Profit & Loss Statement")
+                st.subheader("Profit & Loss Statement")
                 
                 # Apply yellow background to P&L table
                 def highlight_pnl(df):
@@ -1795,7 +1804,7 @@ class ProjectPipelineRealEstateTab:
                 )
                 
                 # Display Cash Flow table
-                st.subheader("💵 Cash Flow Statement")
+                st.subheader("Cash Flow Statement")
                 
                 # Apply orange background to cash flow table
                 def highlight_cashflow(df):
@@ -1847,7 +1856,7 @@ class ProjectPipelineRealEstateTab:
         total_revenue = nsa * asp
         total_const_cost = gfa * const_cost
         total_land_cost = land_area * land_cost
-        sga_pct = float(edited.get('sga_percentage', 0.08) or 0.08)
+        sga_pct = float(edited.get('sga_percentage', 0.0) or 0.0)
         total_sga = total_revenue * sga_pct
         
         # Calculate PBT and PAT for RNAV calculation
@@ -1962,7 +1971,7 @@ class ProjectPipelineRealEstateTab:
                 st.session_state['last_calculated_rnav'] = rnav_value_float
                 
                 # Display RNAV Schedule (transposed with years as columns)
-                st.subheader("📊 RNAV Calculation Details")
+                st.subheader("RNAV Calculation Details")
                 
                 # Prepare dataframe for transposition
                 # Separate the Total RNAV row
@@ -2053,7 +2062,7 @@ class ProjectPipelineRealEstateTab:
                 changes.append(f"{key}: Modified")
         
         if changes:
-            st.info(f"🔄 {len(changes)} changes detected:")
+            st.info(f"{len(changes)} changes detected:")
             with st.expander("View changes"):
                 for change in changes[:20]:  # Limit to 20 changes
                     st.write(f"- {change}")
@@ -2069,7 +2078,7 @@ class ProjectPipelineRealEstateTab:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 Save Changes to MongoDB", type="primary"):
+            if st.button("Save Changes to MongoDB", type="primary"):
                 try:
                     # Calculate financial metrics before saving
                     nsa = edited.get('net_sellable_area', 0)
@@ -2082,7 +2091,7 @@ class ProjectPipelineRealEstateTab:
                     total_revenue = float(nsa) * float(asp)
                     total_const_cost = float(gfa) * float(const_cost)
                     total_land_cost = float(land_area) * float(land_cost)
-                    sga_pct = float(edited.get('sga_percentage', 0.08))
+                    sga_pct = float(edited.get('sga_percentage', 0.0))
                     total_sga = total_revenue * sga_pct
                     pbt = total_revenue - total_const_cost - total_land_cost - total_sga
                     pat = pbt * 0.8
@@ -2100,7 +2109,7 @@ class ProjectPipelineRealEstateTab:
                         bs_df = st.session_state['project_bs_analysis_results']
                         
                         # Debug: Show DataFrame info
-                        st.info(f"📊 Found Financial Statements DataFrame with {len(bs_df)} rows")
+                        st.info(f"Found Financial Statements DataFrame with {len(bs_df)} rows")
                         print(f"DEBUG: DataFrame shape: {bs_df.shape}")
                         print(f"DEBUG: DataFrame columns: {list(bs_df.columns)}")
                         
