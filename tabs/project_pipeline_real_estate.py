@@ -579,7 +579,7 @@ class ProjectPipelineRealEstateTab:
         
         # Display summary without any container constraints - use full width
         st.markdown("---")
-        st.markdown("### 🤖 AI Research Summary")
+        st.markdown("### AI Research Summary")
         
         # Show basic info if available in full width
         if parsed_info.get("basic_info"):

@@ -53,6 +53,8 @@ def get_project_basic_info_perplexity(project_name: str, api_key: str, model: st
 - Full project name and alternative names
 - Developer/owner company
 - Exact location (district, city, address if available)
+- Google Maps searchable address (street name, number if available, district, city)
+- GPS coordinates (latitude, longitude) if available from project website or maps
 - Project type (apartment, villa, mixed-use, etc.)
 - Current status (planning, under construction, completed, selling)
 - Launch year and completion timeline
@@ -128,6 +130,10 @@ Gross Floor Area: [NUMBER ONLY - total m²]
 Construction Cost per sqm: [NUMBER ONLY - VND per m² for construction]
 Land Area: [NUMBER ONLY - total land area in m²]
 Land Cost per sqm: [NUMBER ONLY - VND per m² for land]
+
+Google Maps Location: [EXACT location that can be searched on Google Maps - include street address, district, city. Example: "123 Nguyen Van Linh, District 7, Ho Chi Minh City" or "Thu Thiem Peninsula, District 2, Ho Chi Minh City"]
+Latitude: [Decimal latitude if available, e.g., 10.7769]
+Longitude: [Decimal longitude if available, e.g., 106.7009]
 
 Sources: [List your sources - web results, comparable projects, or "Market analysis based on area comps"]
 Confidence: [High/Medium/Low - based on data availability]
@@ -284,6 +290,20 @@ def parse_perplexity_response(response_text):
             r"Land Cost:\s*([0-9,\.]+)",
             r"Land Price per sqm:\s*([0-9,\.]+)"
         ],
+        "google_maps_location": [
+            r"Google Maps Location:\s*(.*?)(?=Latitude:|Longitude:|Sources:|Confidence:|$)",
+            r"Google Location:\s*(.*?)(?=Latitude:|Longitude:|Sources:|Confidence:|$)",
+            r"Maps Location:\s*(.*?)(?=Latitude:|Longitude:|Sources:|Confidence:|$)"
+        ],
+        "latitude": [
+            r"Latitude:\s*([-]?[0-9]+\.?[0-9]*)",
+            r"Lat:\s*([-]?[0-9]+\.?[0-9]*)"
+        ],
+        "longitude": [
+            r"Longitude:\s*([-]?[0-9]+\.?[0-9]*)",
+            r"Lng:\s*([-]?[0-9]+\.?[0-9]*)",
+            r"Long:\s*([-]?[0-9]+\.?[0-9]*)"
+        ],
         "sources": [
             r"Sources:\s*(.*?)(?=Confidence:|Analysis Method:|$)",
             r"Source:\s*(.*?)(?=Confidence:|Analysis Method:|$)"
@@ -309,9 +329,12 @@ def parse_perplexity_response(response_text):
                 value = m.group(1).strip()
                 
                 # Clean up numeric values
-                if key not in ["basic_info", "sources", "confidence", "analysis_method"] and value:
-                    # Remove all non-numeric characters except dots
-                    cleaned_value = re.sub(r'[^\d\.]', '', value)
+                if key not in ["basic_info", "sources", "confidence", "analysis_method", "google_maps_location"] and value:
+                    # Remove all non-numeric characters except dots and minus sign for coordinates
+                    if key in ["latitude", "longitude"]:
+                        cleaned_value = re.sub(r'[^\d\.\-]', '', value)
+                    else:
+                        cleaned_value = re.sub(r'[^\d\.]', '', value)
                     # Handle multiple dots (keep only the first one)
                     if cleaned_value.count('.') > 1:
                         parts = cleaned_value.split('.')
@@ -320,7 +343,21 @@ def parse_perplexity_response(response_text):
                     cleaned_value = cleaned_value.rstrip('.')
                     value = cleaned_value
                 
-                result[key] = value
+                # Map field names to what the display function expects
+                field_mapping = {
+                    "gfa": "total_area_sqm",
+                    "land_area": "land_area_sqm", 
+                    "asp": "avg_selling_price_per_sqm",
+                    "average_unit_size": "average_unit_size",
+                    "land_cost_per_sqm": "land_cost_per_sqm",
+                    "google_maps_location": "google_maps_location",
+                    "latitude": "latitude",
+                    "longitude": "longitude"
+                }
+                
+                # Use mapped name if available, otherwise use original key
+                mapped_key = field_mapping.get(key, key)
+                result[mapped_key] = value
                 found = True
                 break
     
