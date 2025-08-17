@@ -2028,20 +2028,25 @@ class ProjectPipelineRealEstateTab:
                 }
                 df_transposed.index = df_transposed.index.map(lambda x: index_labels.get(x, x))
                 
-                # Format for display - all values in billions VND except Discount Factor
-                format_dict = {}
-                for col in df_transposed.columns:
-                    format_dict[col] = "{:,.1f}"
+                # Format for display - all values as integers with comma separator except Discount Factor
+                def format_rnav_value(val, row_name):
+                    """Format RNAV values based on row type"""
+                    if row_name == 'Discount Factor':
+                        return f"{val:.4f}"
+                    else:
+                        # Format as integer with comma separator
+                        return f"{int(val):,}"
                 
-                # Apply special formatting for Discount Factor row if it exists
-                if 'Discount Factor' in df_transposed.index:
-                    # Create a styled dataframe
-                    styled_df = df_transposed.style.format(format_dict)
-                    # Override format for Discount Factor row
-                    for col in df_transposed.columns:
-                        styled_df = styled_df.format({col: "{:.4f}"}, subset=(['Discount Factor'], [col]))
-                else:
-                    styled_df = df_transposed.style.format(format_dict)
+                # Create a styled dataframe with custom formatting
+                styled_df = df_transposed.style
+                
+                # Apply formatting for each cell based on row
+                for col in df_transposed.columns:
+                    for row in df_transposed.index:
+                        if row == 'Discount Factor':
+                            styled_df = styled_df.format({col: "{:.4f}"}, subset=([row], [col]))
+                        else:
+                            styled_df = styled_df.format({col: lambda x: f"{int(x):,}"}, subset=([row], [col]))
                 
                 # Display the transposed table
                 st.dataframe(styled_df, use_container_width=True)

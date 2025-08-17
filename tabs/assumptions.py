@@ -15,7 +15,7 @@ class AssumptionsTab:
     
     def render(self):
         """Render enhanced assumptions interface with business segment support"""
-        st.header("Model Assumptions")
+        # st.header("Model Assumptions")
         
         # Import MongoDB utilities
         from utils.mongodb_utils import get_company_assumptions, save_company_assumptions

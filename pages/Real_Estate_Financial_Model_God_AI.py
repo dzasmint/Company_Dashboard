@@ -667,7 +667,7 @@ class RealEstateFinancialModel:
             elif abs(val) < 1:
                 return f"{val:.2f}"  # Keep decimal for percentages
             else:
-                return f"{val:,.0f}"
+                return f"{int(val):,}"  # Integer with comma separator
         
         # Apply formatting
         styled_pnl = pnl_df.style.format(format_pnl_value)

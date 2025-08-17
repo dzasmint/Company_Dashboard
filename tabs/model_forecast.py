@@ -1330,12 +1330,13 @@ class ModelForecastTab:
             
                 return styles
         
-            # Format function for proper display
+            # Format function for proper display with integer formatting
             def format_pnl_values(val):
                 if isinstance(val, str) and '\n' in val:
                     return val  # Already formatted with old value
                 else:
-                    return f"{val:,.0f}"
+                    # Format as integer with comma thousand separator
+                    return f"{int(val):,}"
         
             st.write("**Consolidated P&L Statement (Billion VND)**")
             if compare_mode and changed_cells:
@@ -1958,7 +1959,7 @@ class ModelForecastTab:
         
             st.dataframe(
                 bs_df.style
-                .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
+                .format(lambda x: f"{int(x):,}", subset=[hist_col] + [str(y) for y in years])
                 .apply(style_bs_table, axis=1),
                 use_container_width=True,
                 column_config=bs_column_config,
@@ -2259,7 +2260,7 @@ class ModelForecastTab:
                 style_cf_table,
                 subset=[str(y) for y in years]
             ).format(
-                {str(y): lambda x: f"{x:,.0f}" if pd.notna(x) and x != 0 else "-" 
+                {str(y): lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 else "-" 
                  for y in years},
                 na_rep="-"
             )
