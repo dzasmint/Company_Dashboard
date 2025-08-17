@@ -45,6 +45,7 @@ class ValuationTab:
                 short_term_investment = 0
                 short_term_debt = 0
                 long_term_debt = 0
+                outstanding_shares = 0
                 
                 # Get selected ticker
                 selected_ticker = st.session_state.get('selected_company', None)
@@ -78,18 +79,28 @@ class ValuationTab:
                                     return default
                                 
                                 # Load balance sheet items using correct keycodes from FA_A_processed.csv
-                                # Cash and Cash_Equivalent are separate, so we combine them
-                                cash = get_balance_sheet_value('Cash', 0)
-                                cash_equiv = get_balance_sheet_value('Cash_Equivalent', 0)
-                                cash_equivalent = cash + cash_equiv  # Combine cash and cash equivalents
+                                # Only load Cash_Equivalent field as requested
+                                cash_equivalent = get_balance_sheet_value('Cash_Equivalent', 0)
                                 
-                                # For short-term investment, we'll use 0 as it's not available in the data
-                                # or could be part of other current assets
-                                short_term_investment = 0  # Not available in this dataset
+                                # Load short-term investment using the correct keycode
+                                short_term_investment = get_balance_sheet_value('Short_Investment', 0)
                                 
                                 # Use the correct keycodes: ST_Debt and LT_Debt
                                 short_term_debt = get_balance_sheet_value('ST_Debt', 0)
                                 long_term_debt = get_balance_sheet_value('LT_Debt', 0)
+                                
+                                # Load Outstanding Shares (OS) - the value in CSV is actual number of shares
+                                # get_balance_sheet_value divides by 1e9, but OS is already in shares not VND
+                                # So we need to get the raw value differently
+                                os_row = latest_data[latest_data['KEYCODE'] == 'OS']
+                                if not os_row.empty:
+                                    os_value = os_row['VALUE'].values[0]
+                                    if pd.notna(os_value):
+                                        outstanding_shares = os_value / 1e6  # Convert to millions for display
+                                    else:
+                                        outstanding_shares = 0
+                                else:
+                                    outstanding_shares = 0
                     
                     except Exception as e:
                         st.warning(f"Could not load balance sheet data: {str(e)}")
@@ -130,6 +141,19 @@ class ValuationTab:
                     'Value (B VND)': total_equity
                 })
                 
+                # Add Outstanding Shares row
+                valuation_rows.append({
+                    'Item': 'Total Outstanding Shares (millions)',
+                    'Value (B VND)': outstanding_shares  # Display in millions
+                })
+                
+                # Calculate and add RNAV per share
+                rnav_per_share = (total_equity * 1e9 / (outstanding_shares * 1e6)) if outstanding_shares > 0 else 0
+                valuation_rows.append({
+                    'Item': 'RNAV/share (VND)',
+                    'Value (B VND)': rnav_per_share  # This will be formatted differently
+                })
+                
                 # Create DataFrame
                 valuation_df = pd.DataFrame(valuation_rows)
                 
@@ -140,13 +164,32 @@ class ValuationTab:
                 with col2:
                     st.metric("Total Equity", f"{total_equity:,.0f}B VND")
                 
-                # Display the comprehensive table
+                # Create formatted values column
+                formatted_values = []
+                for idx, row in valuation_df.iterrows():
+                    val = row['Value (B VND)']
+                    item = row['Item']
+                    
+                    if pd.isna(val):
+                        formatted_values.append('')
+                    elif 'Outstanding Shares' in str(item):
+                        formatted_values.append(f'{val:,.0f}M')
+                    elif 'RNAV/share' in str(item):
+                        formatted_values.append(f'{val:,.0f}')
+                    else:
+                        formatted_values.append(f'{val:,.0f}B')
+                
+                # Add formatted column
+                valuation_df['Formatted Value'] = formatted_values
+                
+                # Display only Item and Formatted Value columns
+                display_df = valuation_df[['Item', 'Formatted Value']].copy()
+                display_df.columns = ['Item', 'Value']
+                
+                # Apply styling
                 st.dataframe(
-                    valuation_df.style.format(
-                        {'Value (B VND)': lambda x: f'{x:,.0f}B' if pd.notna(x) else ''},
-                        na_rep=''
-                    ).applymap(
-                        lambda x: 'font-weight: bold' if isinstance(x, str) and ('SUB-TOTAL' in x or 'TOTAL EQUITY' in x) else '',
+                    display_df.style.applymap(
+                        lambda x: 'font-weight: bold' if isinstance(x, str) and ('SUB-TOTAL' in x or 'TOTAL EQUITY' in x or 'RNAV/share' in x) else '',
                         subset=['Item']
                     ),
                     use_container_width=True,
