@@ -18,13 +18,23 @@ class ProjectPipelineRealEstateTab:
         
         df_projects = st.session_state.project_data
         
-        if df_projects is None or (isinstance(df_projects, pd.DataFrame) and df_projects.empty):
-            st.info("Click 'Sync Project Data' in the sidebar to load projects from MongoDB")
-            return
+        # Check if we have projects
+        has_projects = df_projects is not None and isinstance(df_projects, pd.DataFrame) and not df_projects.empty
+        
+        if not has_projects:
+            # Show message but still allow adding new projects
+            st.info("No existing projects found. You can create a new project or click 'Sync Project Data' in the sidebar to load projects from MongoDB.")
+            
+            # Initialize empty dataframe if needed
+            if df_projects is None:
+                df_projects = pd.DataFrame()
+                st.session_state.project_data = df_projects
         
         # Add project selector for individual project editing
-        
-        project_names = df_projects['project_name'].tolist()
+        if has_projects:
+            project_names = df_projects['project_name'].tolist()
+        else:
+            project_names = []
         
         # Add "Create New Project" option at the beginning
         project_options = ["All Projects (Overview)", "➕ Create New Project"] + project_names
@@ -50,6 +60,11 @@ class ProjectPipelineRealEstateTab:
         elif selected_project_name != "All Projects (Overview)":
             # Show individual project editor
             self.render_individual_project_editor(selected_project_name, df_projects)
+            return
+        
+        # Only show overview if we have projects
+        if not has_projects:
+            st.warning("No projects to display. Please create a new project using the '➕ Create New Project' option above.")
             return
         
         # Project summary metrics
@@ -491,6 +506,11 @@ class ProjectPipelineRealEstateTab:
                     # Filter for selected company if applicable
                     if st.session_state.selected_company:
                         df_projects = df_projects[df_projects['company_ticker'] == st.session_state.selected_company]
+                    
+                    # Ensure we have a DataFrame even if empty
+                    if df_projects is None or df_projects.empty:
+                        # Create DataFrame with the new project if load failed
+                        df_projects = pd.DataFrame([new_project_data])
                     
                     st.session_state.project_data = df_projects
                     
