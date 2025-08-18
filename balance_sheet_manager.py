@@ -151,12 +151,14 @@ def generate_balance_sheet_schedules(
                 debt_repayment[idx] = -annual_repayment  # Negative for outflow
     
     # 4. Calculate presales and convert to cash inflow schedule with tranche logic
-    # First record the presales bookings
+    # First record the presales bookings (contractual commitments)
+    # Note: presales[i] = booking amount (when sale is made)
+    #       cash_inflow_presales[i] = actual cash collection (follows tranche payment schedule)
     for year, amount in presales_schedule.items():
         if year in years:
             idx = years.index(year)
-            presales[idx] = amount  # Record presales booking
-            # SG&A follows presales schedule - calculated as % of presales
+            presales[idx] = amount  # Record presales booking (contractual amount)
+            # SG&A follows presales schedule - calculated as % of presales booking
             sga_amount = amount * sga_percentage
             sga_expense[idx] = sga_amount  # Hit P&L in the year it occurs
             cash_outflow_sga[idx] = -sga_amount  # Negative for cash outflow
@@ -303,15 +305,16 @@ def generate_balance_sheet_schedules(
             cogs[i] = 0
     
     # 8. Calculate customer prepayment balance
-    # Customer prepayment increases with presales and decreases with revenue recognition
+    # Customer prepayment increases with actual cash collection (not presales booking) and decreases with revenue recognition
     for i in range(n_years):
         if i == 0:
             previous_prepayment = 0
         else:
             previous_prepayment = customer_prepayment_balance[i-1]
         
-        # Add presales, subtract revenue recognized
-        customer_prepayment_balance[i] = previous_prepayment + presales[i] - revenue_recognition[i]
+        # Add actual cash collected (from tranche logic), subtract revenue recognized
+        # This reflects the actual cash received from customers
+        customer_prepayment_balance[i] = previous_prepayment + cash_inflow_presales[i] - revenue_recognition[i]
     
     # 9. Calculate P&L items (PBT, Tax, PAT)
     pbt = np.zeros(n_years)  # Profit before tax

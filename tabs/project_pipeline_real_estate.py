@@ -1480,6 +1480,7 @@ class ProjectPipelineRealEstateTab:
         
         # Now display Comprehensive Financial Statements Forecast
         st.subheader("Comprehensive Financial Statements Forecast")
+        st.info("💡 **Key Difference**: 'Presales (Bookings)' = contractual sales. 'Cash Inflow (Actual Collection)' = cash received (20% upfront, 80% distributed). Customer Prepayment Balance is based on actual cash received.")
         
         # Import balance sheet manager
         import sys
@@ -1603,7 +1604,7 @@ class ProjectPipelineRealEstateTab:
                     'Inventory_Addition': 'Inventory Addition',
                     'Inventory_Balance': 'Inventory Balance',
                     # Presales and Revenue section
-                    'Presales': 'Presales',
+                    'Presales': 'Presales (Bookings)',
                     'Customer_Prepayment_Balance': 'Customer Prepayment Balance',
                     # P&L section
                     'Revenue_Recognition': 'Revenue (P&L)',
@@ -1614,7 +1615,7 @@ class ProjectPipelineRealEstateTab:
                     'Tax': 'Tax (P&L)',
                     'PAT': 'PAT (P&L)',
                     # Cash flow section
-                    'Cash_Inflow_Presales': 'Cash Inflow (Presales)',
+                    'Cash_Inflow_Presales': 'Cash Inflow (Actual Collection)',
                     'Debt_Disbursement': 'Cash Inflow (Debt Disbursement)',
                     'Debt_Repayment': 'Cash Outflow (Debt Repayment)',
                     'Cash_Outflow_Land': 'Cash Outflow (Land)',
@@ -1674,7 +1675,7 @@ class ProjectPipelineRealEstateTab:
                             'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']
                 
                 # Cash flow items (Cash Balance included in both Balance Sheet and Cash Flow)
-                cashflow_items = ['Cash Inflow (Presales)', 'Cash Inflow (Debt Disbursement)',
+                cashflow_items = ['Cash Inflow (Actual Collection)', 'Cash Inflow (Debt Disbursement)',
                                  'Cash Outflow (Debt Repayment)', 'Cash Outflow (Land)',
                                  'Cash Outflow (Construction)', 'Cash Outflow (Interest)',
                                  'Cash Outflow (SG&A)', 'Cash Outflow (Tax)',
