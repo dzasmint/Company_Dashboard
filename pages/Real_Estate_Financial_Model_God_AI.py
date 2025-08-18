@@ -247,7 +247,8 @@ class RealEstateFinancialModel:
                 "Valuation",
                 "Research Insights",
                 "Export Model",
-                "God AI Assistant"
+                "God AI Assistant",
+                "Generate Report"
             ]
             
             # Initialize selected tab if not exists
@@ -320,6 +321,20 @@ class RealEstateFinancialModel:
             type="secondary"
         ):
             self.fetch_analyst_reports()
+        
+        # Generate Report button
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Report Generation")
+        
+        if st.sidebar.button(
+            "📄 Generate Report",
+            key="generate_report_btn",
+            use_container_width=True,
+            type="primary",
+            help="Generate quarterly or comprehensive reports"
+        ):
+            st.session_state.selected_re_tab = "Generate Report"
+            st.rerun()
             
     def load_project_data_from_mongodb(self, ticker):
         """Load project data from MongoDB for the selected ticker"""
@@ -581,6 +596,8 @@ class RealEstateFinancialModel:
             self.render_export_interface()
         elif selected_tab == tab_names[8]:  # God AI Assistant
             self.render_god_ai_assistant()
+        elif selected_tab == tab_names[9]:  # Generate Report
+            self.render_generate_report()
         
     
     def render_historical_analysis(self):
@@ -1584,6 +1601,17 @@ class RealEstateFinancialModel:
         )
         
         st.plotly_chart(fig, use_container_width=True)
+    
+    def render_generate_report(self):
+        """Render the report generation interface using ReportGenerationTab"""
+        from tabs.ReportGeneration import ReportGenerationTab
+        
+        # Initialize the report generation tab if not already done
+        if 'report_generation_tab' not in st.session_state:
+            st.session_state.report_generation_tab = ReportGenerationTab(parent=self)
+        
+        # Render the report generation tab
+        st.session_state.report_generation_tab.render()
     
     def render_god_ai_assistant(self):
         """Render the God AI Assistant interface"""
