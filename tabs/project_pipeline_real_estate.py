@@ -1277,9 +1277,13 @@ class ProjectPipelineRealEstateTab:
                 st.markdown("### 💰 Actual Cash Collection Schedule (with Tranche Logic)")
                 
                 # Get revenue booking end year
-                revenue_end = st.session_state.edited_project.get('revenue_booking_end_year',
-                                                                  project_data.get('revenue_booking_end_year', 
-                                                                  sales_end + 2))
+                # Use project_completion_year as the revenue booking end year
+                revenue_end = st.session_state.edited_project.get('project_completion_year',
+                                                                  project_data.get('project_completion_year'))
+                
+                if not revenue_end:
+                    st.error("⚠️ Project Completion Year is required to calculate cash collection schedule. Please set it in the Project Timeline section.")
+                    return
                 
                 # Calculate cash collection schedule
                 cash_collection = {}
