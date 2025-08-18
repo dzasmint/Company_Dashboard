@@ -1334,9 +1334,14 @@ class ModelForecastTab:
             def format_pnl_values(val):
                 if isinstance(val, str) and '\n' in val:
                     return val  # Already formatted with old value
+                elif pd.isna(val) or val is None:
+                    return "-"
                 else:
-                    # Format as integer with comma thousand separator
-                    return f"{int(val):,}"
+                    try:
+                        # Format as integer with comma thousand separator
+                        return f"{int(val):,}"
+                    except (ValueError, OverflowError):
+                        return f"{val:,.0f}"
         
             st.write("**Consolidated P&L Statement (Billion VND)**")
             if compare_mode and changed_cells:
@@ -1957,9 +1962,18 @@ class ModelForecastTab:
             for col in [hist_col] + [str(y) for y in years]:
                 bs_column_config[col] = st.column_config.NumberColumn(col, width='small')
         
+            # Format function to handle NaN values
+            def format_bs_value(x):
+                if pd.isna(x) or x is None:
+                    return "-"
+                try:
+                    return f"{int(x):,}"
+                except (ValueError, OverflowError):
+                    return f"{x:,.0f}"
+            
             st.dataframe(
                 bs_df.style
-                .format(lambda x: f"{int(x):,}", subset=[hist_col] + [str(y) for y in years])
+                .format(format_bs_value, subset=[hist_col] + [str(y) for y in years])
                 .apply(style_bs_table, axis=1),
                 use_container_width=True,
                 column_config=bs_column_config,
@@ -2260,7 +2274,7 @@ class ModelForecastTab:
                 style_cf_table,
                 subset=[str(y) for y in years]
             ).format(
-                {str(y): lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 else "-" 
+                {str(y): lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 and not pd.isna(x) else "-" 
                  for y in years},
                 na_rep="-"
             )
