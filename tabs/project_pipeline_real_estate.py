@@ -806,10 +806,10 @@ class ProjectPipelineRealEstateTab:
                     st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
         st.session_state.edited_project['land_cost_per_sqm'] = land_cost
         
-        # Total Debt field
+        # Total Debt field (in VND billions for user input)
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Total Debt (VND)**")
+            st.markdown("**Total Debt (VND bn)**")
         with col2:
             # Calculate default total debt if not present in MongoDB
             gfa = float(st.session_state.edited_project.get('gross_floor_area', 0) or 0)
@@ -828,38 +828,46 @@ class ProjectPipelineRealEstateTab:
             default_total_debt = total_project_cost * debt_financing_pct
             
             # Get existing total debt from project data or use calculated default
-            existing_total_debt = project_data.get('total_debt', default_total_debt)
+            existing_total_debt_raw = project_data.get('total_debt', default_total_debt)
+            
+            # Convert to billions for display
+            existing_total_debt_bn = existing_total_debt_raw / 1_000_000_000
+            default_total_debt_bn = default_total_debt / 1_000_000_000
             
             # Create detailed tooltip with calculation breakdown
             tooltip_text = (
                 f"Default Calculation:\n"
                 f"─────────────────────\n"
-                f"Construction Cost: {total_const_cost/1e9:,.1f}B VND\n"
-                f"  = GFA ({gfa:,.0f} m²) × Construction Cost ({const_cost_per_sqm/1e6:,.1f}M VND/m²)\n"
-                f"Land Cost: {total_land_cost_calc/1e9:,.1f}B VND\n"
-                f"  = Land Area ({land_area:,.0f} m²) × Land Cost ({land_cost_per_sqm/1e6:,.1f}M VND/m²)\n"
+                f"Construction Cost: {total_const_cost/1e9:,.1f} bn VND\n"
+                f"  = GFA ({gfa:,.0f} m²) × Construction Cost ({const_cost_per_sqm/1e6:,.1f} mn VND/m²)\n"
+                f"Land Cost: {total_land_cost_calc/1e9:,.1f} bn VND\n"
+                f"  = Land Area ({land_area:,.0f} m²) × Land Cost ({land_cost_per_sqm/1e6:,.1f} mn VND/m²)\n"
                 f"─────────────────────\n"
-                f"Total Project Cost: {total_project_cost/1e9:,.1f}B VND\n"
+                f"Total Project Cost: {total_project_cost/1e9:,.1f} bn VND\n"
                 f"Debt Financing: {debt_financing_pct*100:.0f}%\n"
                 f"─────────────────────\n"
-                f"Default Total Debt: {default_total_debt/1e9:,.1f}B VND\n"
-                f"  = {total_project_cost/1e9:,.1f}B × {debt_financing_pct*100:.0f}%"
+                f"Default Total Debt: {default_total_debt_bn:,.1f} bn VND\n"
+                f"  = {total_project_cost/1e9:,.1f} bn × {debt_financing_pct*100:.0f}%\n\n"
+                f"Enter debt amount in billions VND (e.g., 500 for 500 billion VND)"
             )
             
-            total_debt = st.number_input(
-                "Total Debt (VND)",
-                value=float(existing_total_debt),
+            total_debt_bn_input = st.number_input(
+                "Total Debt (VND bn)",
+                value=existing_total_debt_bn,
                 min_value=0.0,
-                step=1000000000.0,  # 1 billion VND steps
-                format="%.0f",
+                step=1.0,  # 1 billion VND steps
+                format="%.1f",
                 key="edit_total_debt",
                 label_visibility="collapsed",
                 help=tooltip_text
             )
             
+            # Convert back to raw VND for storage and calculations
+            total_debt = int(total_debt_bn_input * 1_000_000_000)
+            
             # Show the default calculation for reference
-            if abs(total_debt - default_total_debt) > 1:  # If user has modified from default
-                st.caption(f"📝 Default: {default_total_debt/1e9:,.1f}B VND (Construction + Land) × {debt_financing_pct*100:.0f}%")
+            if abs(total_debt_bn_input - default_total_debt_bn) > 0.1:  # If user has modified from default
+                st.caption(f"📝 Default: {default_total_debt_bn:,.1f} bn VND (Construction + Land) × {debt_financing_pct*100:.0f}%")
         st.session_state.edited_project['total_debt'] = total_debt
     
     def render_project_timeline(self, project_data):
