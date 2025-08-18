@@ -176,21 +176,30 @@ def generate_balance_sheet_schedules(
             remaining_amount = presale_amount * 0.8
             
             # Determine the collection period
+            # Collection should end by revenue_booking_end_year, not extend beyond it
             collection_start_year = year + 1
-            collection_end_year = revenue_booking_end_year if revenue_booking_end_year else year + 2
+            collection_end_year = min(revenue_booking_end_year, revenue_booking_end_year) if revenue_booking_end_year else year + 2
             
-            # Calculate number of years for remaining collection
-            collection_years = []
-            for col_year in range(collection_start_year, collection_end_year + 1):
-                if col_year in years:
-                    collection_years.append(col_year)
-            
-            if collection_years:
-                # Distribute remaining amount evenly
-                annual_collection = remaining_amount / len(collection_years)
-                for col_year in collection_years:
-                    col_idx = years.index(col_year)
-                    cash_inflow_presales[col_idx] += annual_collection
+            # If the presale year is already at or after revenue_booking_end_year, collect all in that year
+            if year >= revenue_booking_end_year:
+                # Collect all 100% in the presale year if it's at or after revenue end
+                cash_inflow_presales[presale_year_idx] = presale_amount
+            else:
+                # Calculate number of years for remaining collection (excluding the presale year)
+                collection_years = []
+                for col_year in range(collection_start_year, collection_end_year + 1):
+                    if col_year in years and col_year <= revenue_booking_end_year:
+                        collection_years.append(col_year)
+                
+                if collection_years:
+                    # Distribute remaining amount evenly
+                    annual_collection = remaining_amount / len(collection_years)
+                    for col_year in collection_years:
+                        col_idx = years.index(col_year)
+                        cash_inflow_presales[col_idx] += annual_collection
+                else:
+                    # If no collection years available, collect all remaining in the presale year
+                    cash_inflow_presales[presale_year_idx] += remaining_amount
     
     # 5. Calculate land cost payment (single year payment)
     if land_payment_year in years and total_land_cost > 0:

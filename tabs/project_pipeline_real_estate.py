@@ -1288,44 +1288,111 @@ class ProjectPipelineRealEstateTab:
                     presale_amount = total_revenue * year_pct / 100
                     
                     if presale_amount > 0:
-                        # 20% in first year
-                        if year not in cash_collection:
-                            cash_collection[year] = 0
-                        cash_collection[year] += presale_amount * 0.2
-                        
-                        # Remaining 80% distributed evenly
-                        remaining = presale_amount * 0.8
-                        collection_years = list(range(year + 1, min(revenue_end + 1, year + 10)))  # Cap at 10 years
-                        
-                        if collection_years:
-                            annual_collection = remaining / len(collection_years)
-                            for col_year in collection_years:
-                                if col_year not in cash_collection:
-                                    cash_collection[col_year] = 0
-                                cash_collection[col_year] += annual_collection
+                        # If presale year is at or after revenue end year, collect all 100% immediately
+                        if year >= revenue_end:
+                            if year not in cash_collection:
+                                cash_collection[year] = 0
+                            cash_collection[year] += presale_amount
+                        else:
+                            # 20% in first year
+                            if year not in cash_collection:
+                                cash_collection[year] = 0
+                            cash_collection[year] += presale_amount * 0.2
+                            
+                            # Remaining 80% distributed evenly until revenue_end (not beyond)
+                            remaining = presale_amount * 0.8
+                            # Collection period is from next year until revenue_end
+                            collection_years = list(range(year + 1, revenue_end + 1))
+                            
+                            if collection_years:
+                                annual_collection = remaining / len(collection_years)
+                                for col_year in collection_years:
+                                    if col_year not in cash_collection:
+                                        cash_collection[col_year] = 0
+                                    cash_collection[col_year] += annual_collection
+                            else:
+                                # If no collection years available, add remaining to presale year
+                                cash_collection[year] += remaining
                 
-                # Create cash collection table
-                cash_data = []
+                # Prepare data for visualization
                 all_years = sorted(set(years) | set(cash_collection.keys()))
-                for year in all_years:
-                    cash_data.append({
-                        "Year": year,
-                        "Presales Booking (Bn VND)": f"{total_revenue * distribution.get(str(year), 0) / 100:,.1f}",
-                        "Cash Collection (Bn VND)": f"{cash_collection.get(year, 0):,.1f}"
-                    })
+                presales_values = [total_revenue * distribution.get(str(y), 0) / 100 for y in all_years]
+                cash_values = [cash_collection.get(y, 0) for y in all_years]
                 
-                cash_df = pd.DataFrame(cash_data)
-                st.dataframe(cash_df, hide_index=True, use_container_width=True)
+                # Create interactive chart comparing presales booking vs cash collection
+                fig = go.Figure()
+                
+                # Add presales booking bars
+                fig.add_trace(go.Bar(
+                    name='Presales Booking',
+                    x=[str(y) for y in all_years],
+                    y=presales_values,
+                    text=[f"{val:.0f}B" if val > 0 else "" for val in presales_values],
+                    textposition='auto',
+                    marker_color='lightblue',
+                    offsetgroup=1
+                ))
+                
+                # Add cash collection bars
+                fig.add_trace(go.Bar(
+                    name='Cash Collection',
+                    x=[str(y) for y in all_years],
+                    y=cash_values,
+                    text=[f"{val:.0f}B" if val > 0 else "" for val in cash_values],
+                    textposition='auto',
+                    marker_color='lightgreen',
+                    offsetgroup=2
+                ))
+                
+                fig.update_layout(
+                    title="Presales Booking vs Actual Cash Collection (Tranche Logic)",
+                    xaxis_title="Year",
+                    yaxis_title="Amount (Billion VND)",
+                    barmode='group',
+                    height=400,
+                    showlegend=True,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    ),
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
                 
                 # Show totals
                 total_presales = sum(total_revenue * distribution.get(str(y), 0) / 100 for y in years)
                 total_cash = sum(cash_collection.values())
                 
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Total Presales Booking", f"{total_presales:,.1f} Bn VND")
                 with col2:
                     st.metric("Total Cash Collection", f"{total_cash:,.1f} Bn VND")
+                with col3:
+                    # Show collection efficiency
+                    if total_presales > 0:
+                        collection_pct = (total_cash / total_presales) * 100
+                        st.metric("Collection Rate", f"{collection_pct:.1f}%")
+                
+                # Optionally show detailed table
+                with st.expander("📊 View Detailed Cash Collection Table", expanded=False):
+                    cash_data = []
+                    for year in all_years:
+                        presale_val = total_revenue * distribution.get(str(year), 0) / 100
+                        cash_val = cash_collection.get(year, 0)
+                        cash_data.append({
+                            "Year": year,
+                            "Presales Booking": f"{presale_val:,.1f}" if presale_val > 0 else "-",
+                            "Cash Collection": f"{cash_val:,.1f}" if cash_val > 0 else "-",
+                            "Difference": f"{(cash_val - presale_val):+,.1f}" if (presale_val > 0 or cash_val > 0) else "-"
+                        })
+                    
+                    cash_df = pd.DataFrame(cash_data)
+                    st.dataframe(cash_df, hide_index=True, use_container_width=True)
     
     def render_project_balance_sheet_analysis(self, project_data):
         """Render comprehensive financial statements forecast using project data"""
