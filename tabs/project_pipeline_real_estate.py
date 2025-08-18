@@ -229,308 +229,48 @@ class ProjectPipelineRealEstateTab:
     
 
     def render_new_project_form(self):
-        """Render form for creating a brand new project"""
+        """Render form for creating a brand new project - reuses the existing project editor"""
         st.subheader("➕ Create New Project")
-        st.info("Enter details for your new project. All fields start empty for a fresh start.")
+        st.info("Enter details for your new project. All fields start with default values.")
         
-        # Initialize empty project data if not exists
-        if 'new_project_data' not in st.session_state:
-            st.session_state.new_project_data = {}
-        
-        # Basic Information Section
-        st.markdown("### Basic Information")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            project_name = st.text_input(
-                "Project Name *",
-                value="",
-                placeholder="Enter project name",
-                key="new_project_name"
-            )
-            
-            company_ticker = st.text_input(
-                "Company Ticker *",
-                value=st.session_state.selected_company if st.session_state.selected_company else "",
-                placeholder="e.g., VHM, NLG, KDH",
-                key="new_project_ticker"
-            )
-            
-            location = st.text_input(
-                "Location",
-                value="",
-                placeholder="e.g., Ho Chi Minh City",
-                key="new_project_location"
-            )
-            
-            project_ownership = st.number_input(
-                "Project Ownership (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=100.0,
-                step=0.1,
-                key="new_project_ownership"
-            )
-        
-        with col2:
-            total_units = st.number_input(
-                "Total Units",
-                min_value=0,
-                value=0,
-                step=1,
-                format="%d",
-                key="new_project_units"
-            )
-            
-            average_unit_size = st.number_input(
-                "Average Unit Size (sqm)",
-                min_value=0,
-                value=0,
-                step=1,
-                format="%d",
-                key="new_project_unit_size"
-            )
-            
-            land_area = st.number_input(
-                "Land Area (sqm)",
-                min_value=0,
-                value=0,
-                step=1,
-                format="%d",
-                key="new_project_land_area"
-            )
-            
-            gross_floor_area = st.number_input(
-                "Gross Floor Area (sqm)",
-                min_value=0,
-                value=0,
-                step=1,
-                format="%d",
-                key="new_project_gfa"
-            )
-        
-        st.markdown("---")
-        
-        # Financial Parameters Section
-        st.markdown("### Financial Parameters")
-        col3, col4 = st.columns(2)
-        
-        with col3:
-            average_selling_price = st.number_input(
-                "Average Selling Price (VND/sqm)",
-                min_value=0,
-                value=0,
-                step=1000000,
-                format="%d",
-                key="new_project_asp"
-            )
-            
-            construction_cost_per_sqm = st.number_input(
-                "Construction Cost (VND/sqm)",
-                min_value=0,
-                value=0,
-                step=1000000,
-                format="%d",
-                key="new_project_construction_cost"
-            )
-            
-            land_cost_per_sqm = st.number_input(
-                "Land Cost (VND/sqm)",
-                min_value=0,
-                value=0,
-                step=1000000,
-                format="%d",
-                key="new_project_land_cost"
-            )
-        
-        with col4:
-            # Get SG&A from assumptions if available
-            from utils.mongodb_utils import load_assumptions_from_mongodb
-            assumptions = load_assumptions_from_mongodb(st.session_state.get('selected_company', ''))
-            default_sga = 0.0
-            if assumptions:
-                for assumption in assumptions:
-                    if assumption.get('Category') == 'Financial' and assumption.get('Item') == 'SG&A % of Revenue':
-                        default_sga = float(assumption.get('Value', 0))
-                        break
-            
-            sga_percentage = st.number_input(
-                "SG&A (% of Revenue)",
-                min_value=0.0,
-                value=default_sga,
-                step=0.1,
-                key="new_project_sga"
-            )
-            
-            
-            wacc_rate = st.number_input(
-                "WACC (%)",
-                min_value=0.0,
-                max_value=30.0,
-                value=12.0,
-                step=0.1,
-                key="new_project_wacc"
-            )
-            
-            cost_of_debt = st.number_input(
-                "Cost of Debt (%)",
-                min_value=0.0,
-                step=0.1,
-                key="new_project_cost_of_debt"
-            )
-        
-        st.markdown("---")
-        
-        # Timeline Section
-        st.markdown("### Project Timeline")
+        # Create a new project template with default values
         current_year = datetime.now().year
-        col5, col6 = st.columns(2)
+        new_project_template = {
+            'project_name': 'New Project',
+            'company_ticker': st.session_state.get('selected_company', ''),
+            'location': '',
+            'total_units': 0,
+            'net_sellable_area': 0,
+            'gross_floor_area': 0,
+            'land_area': 0,
+            'average_selling_price': 0,
+            'construction_cost_per_sqm': 0,
+            'land_cost_per_sqm': 0,
+            'construction_start_year': current_year,
+            'project_completion_year': current_year + 3,
+            'revenue_booking_start_year': current_year + 1,
+            'revenue_booking_end_year': current_year + 4,
+            'construction_years': 3,
+            'sales_years': 4,
+            'project_ownership': 1.0,  # 100% ownership default
+            'revenue_distribution': {},
+            'presales_distribution': {},
+            'sga_percentage': 0.08,  # 8% default
+            'cost_of_debt': 0.08,  # 8% default
+            'wacc_rate': 0.11,  # 11% default
+            'total_construction_cost': 0,
+            'total_land_cost': 0,
+            'total_debt': 0,
+            'equity_investment': 0,
+            'rnav_value': 0,
+            'is_new_project': True  # Flag to indicate this is a new project
+        }
         
-        with col5:
-            construction_start_year = st.number_input(
-                "Construction Start Year",
-                value=current_year,
-                step=1,
-                key="new_project_construction_start"
-            )
-            
-            construction_years = st.number_input(
-                "Construction Duration (years)",
-                min_value=1,
-                value=3,
-                step=1,
-                key="new_project_construction_years"
-            )
-            
-            sale_start_year = st.number_input(
-                "Sales Start Year",
-                value=current_year,
-                step=1,
-                key="new_project_sale_start"
-            )
+        # Create a temporary DataFrame with this single project for the editor
+        temp_df = pd.DataFrame([new_project_template])
         
-        with col6:
-            sales_years = st.number_input(
-                "Sales Duration (years)",
-                min_value=1,
-                value=3,
-                step=1,
-                key="new_project_sales_years"
-            )
-            
-            revenue_booking_start_year = st.number_input(
-                "Revenue Booking Start Year",
-                value=current_year + 1,
-                step=1,
-                key="new_project_revenue_start"
-            )
-            
-            project_completion_year = st.number_input(
-                "Project Completion Year",
-                value=current_year + 3,
-                step=1,
-                key="new_project_completion"
-            )
-        
-        st.markdown("---")
-        
-        # Action Buttons
-        col_save, col_cancel = st.columns(2)
-        
-        with col_save:
-            if st.button("Save New Project", type="primary", use_container_width=True):
-                # Validate required fields
-                if not project_name:
-                    st.error("Project Name is required!")
-                    return
-                if not company_ticker:
-                    st.error("Company Ticker is required!")
-                    return
-                
-                # Calculate total costs and debt
-                total_construction_cost = gross_floor_area * construction_cost_per_sqm if gross_floor_area and construction_cost_per_sqm else 0
-                total_land_cost = land_area * land_cost_per_sqm if land_area and land_cost_per_sqm else 0
-                total_project_cost = total_construction_cost + total_land_cost
-                
-                # Calculate total debt using default 60% of project cost
-                calculated_total_debt = total_project_cost * 0.6
-                
-                # Prepare project data
-                new_project_data = {
-                    'project_name': project_name,
-                    'company_ticker': company_ticker.upper(),
-                    'location': location,
-                    'project_ownership': project_ownership / 100,  # Store as decimal
-                    'total_units': total_units,
-                    'average_unit_size': average_unit_size,
-                    'net_sellable_area': total_units * average_unit_size if total_units and average_unit_size else 0,
-                    'land_area': land_area,
-                    'gross_floor_area': gross_floor_area,
-                    'average_selling_price': average_selling_price,
-                    'construction_cost_per_sqm': construction_cost_per_sqm,
-                    'land_cost_per_sqm': land_cost_per_sqm,
-                    'total_debt': calculated_total_debt,  # Add total debt field
-                    'sga_percentage': sga_percentage / 100,  # Store as decimal
-                    'wacc_rate': wacc_rate / 100,  # Store as decimal
-                    'cost_of_debt': cost_of_debt / 100,  # Store as decimal
-                    'construction_start_year': construction_start_year,
-                    'construction_years': construction_years,
-                    'sale_start_year': sale_start_year,
-                    'sales_years': sales_years,
-                    'revenue_booking_start_year': revenue_booking_start_year,
-                    'project_completion_year': project_completion_year,
-                    'land_payment_year': construction_start_year,  # Default to construction start
-                    'revenue_distribution': {},  # Empty for new project
-                    'presales_distribution': {},  # Empty for new project
-                    'pnl_schedule': {},  # Empty for new project
-                }
-                
-                # Calculate total values
-                nsa = new_project_data['net_sellable_area']
-                new_project_data['total_revenue'] = (nsa * average_selling_price) / 1e9 if nsa and average_selling_price else 0
-                new_project_data['total_construction_cost'] = (gross_floor_area * construction_cost_per_sqm) / 1e9 if gross_floor_area and construction_cost_per_sqm else 0
-                new_project_data['total_land_cost'] = (land_area * land_cost_per_sqm) / 1e9 if land_area and land_cost_per_sqm else 0
-                new_project_data['total_sga_cost'] = new_project_data['total_revenue'] * (sga_percentage / 100) if new_project_data['total_revenue'] else 0
-                
-                # Save to MongoDB
-                from utils.mongodb_utils import save_project_to_mongodb
-                result = save_project_to_mongodb(new_project_data, project_name)
-                
-                if result['success']:
-                    st.success(f"✅ {result['message']}")
-                    
-                    # Refresh project data
-                    from utils.mongodb_utils import load_projects_data
-                    df_projects = load_projects_data()
-                    
-                    # Filter for selected company if applicable
-                    if st.session_state.selected_company:
-                        df_projects = df_projects[df_projects['company_ticker'] == st.session_state.selected_company]
-                    
-                    # Ensure we have a DataFrame even if empty
-                    if df_projects is None or df_projects.empty:
-                        # Create DataFrame with the new project if load failed
-                        df_projects = pd.DataFrame([new_project_data])
-                    
-                    st.session_state.project_data = df_projects
-                    
-                    # Clear the form by resetting session state
-                    if 'new_project_data' in st.session_state:
-                        del st.session_state.new_project_data
-                    
-                    # Switch to the newly created project
-                    st.session_state.selected_project_for_edit = project_name
-                    st.rerun()
-                else:
-                    st.error(f"❌ {result['message']}")
-        
-        with col_cancel:
-            if st.button("❌ Cancel", use_container_width=True):
-                # Clear form and go back to overview
-                if 'new_project_data' in st.session_state:
-                    del st.session_state.new_project_data
-                st.session_state.selected_project_for_edit = "All Projects (Overview)"
-                st.rerun()
+        # Use the existing project editor with the template
+        self.render_individual_project_editor('New Project', temp_df)
     
     def get_ai_project_suggestions(self, project_name, project_data):
         """Use Perplexity AI to research and suggest project parameters"""
@@ -2076,39 +1816,52 @@ class ProjectPipelineRealEstateTab:
     
     def render_project_save_interface(self, project_data):
         """Render interface to save project changes to MongoDB"""
-        st.subheader("Save Project Changes")
+        
+        # Check if this is a new project
+        is_new_project = project_data.get('is_new_project', False) or project_data.get('project_name') == 'New Project'
+        
+        if is_new_project:
+            st.subheader("Save New Project")
+        else:
+            st.subheader("Save Project Changes")
         
         # Show what has changed
         changes = []
         edited = st.session_state.edited_project
         
-        for key, value in edited.items():
-            try:
-                if key in project_data:
-                    old_value = project_data[key]
-                    if isinstance(value, dict):
-                        # For distribution dictionaries, check if they're different
-                        old_dict = old_value if isinstance(old_value, dict) else {}
-                        if value != old_dict:
-                            changes.append(f"{key}: Updated")
-                    elif isinstance(value, (int, float)):
-                        # Compare numeric values
-                        if isinstance(old_value, (int, float)):
-                            if abs(float(old_value) - float(value)) > 0.001:
+        # For new projects, just list the fields that have been filled
+        if is_new_project:
+            for key, value in edited.items():
+                if key not in ['is_new_project'] and value and value != 0:
+                    changes.append(f"{key}: {value}")
+        else:
+            for key, value in edited.items():
+                try:
+                    if key in project_data:
+                        old_value = project_data[key]
+                        if isinstance(value, dict):
+                            # For distribution dictionaries, check if they're different
+                            old_dict = old_value if isinstance(old_value, dict) else {}
+                            if value != old_dict:
+                                changes.append(f"{key}: Updated")
+                        elif isinstance(value, (int, float)):
+                            # Compare numeric values
+                            if isinstance(old_value, (int, float)):
+                                if abs(float(old_value) - float(value)) > 0.001:
+                                    changes.append(f"{key}: {old_value} → {value}")
+                            else:
+                                # Old value is not numeric, just note the change
                                 changes.append(f"{key}: {old_value} → {value}")
                         else:
-                            # Old value is not numeric, just note the change
-                            changes.append(f"{key}: {old_value} → {value}")
+                            # Compare other types (strings, etc.)
+                            if old_value != value:
+                                changes.append(f"{key}: {old_value} → {value}")
                     else:
-                        # Compare other types (strings, etc.)
-                        if old_value != value:
-                            changes.append(f"{key}: {old_value} → {value}")
-                else:
-                    if value:  # Only show if new value is not empty
-                        changes.append(f"{key}: New value = {value}")
-            except Exception as e:
-                # If any error in comparison, just note it as changed
-                changes.append(f"{key}: Modified")
+                        if value:  # Only show if new value is not empty
+                            changes.append(f"{key}: New value = {value}")
+                except Exception as e:
+                    # If any error in comparison, just note it as changed
+                    changes.append(f"{key}: Modified")
         
         if changes:
             st.info(f"{len(changes)} changes detected:")
@@ -2127,8 +1880,18 @@ class ProjectPipelineRealEstateTab:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("Save Changes to MongoDB", type="primary"):
+            button_label = "Create New Project" if is_new_project else "Save Changes to MongoDB"
+            if st.button(button_label, type="primary"):
                 try:
+                    # For new projects, validate the project name
+                    if is_new_project:
+                        if edited.get('project_name') == 'New Project' or not edited.get('project_name'):
+                            st.error("Please enter a unique project name (not 'New Project')")
+                            return
+                        if not edited.get('company_ticker'):
+                            st.error("Company ticker is required")
+                            return
+                    
                     # Calculate financial metrics before saving
                     nsa = edited.get('net_sellable_area', 0)
                     asp = edited.get('average_selling_price', 0)
@@ -2271,6 +2034,23 @@ class ProjectPipelineRealEstateTab:
                     
                     if result['success']:
                         st.success(result['message'])
+                        
+                        # For new projects, we need to refresh the project list and switch to the new project
+                        if is_new_project:
+                            # Refresh project data
+                            from utils.mongodb_utils import load_projects_data
+                            df_projects = load_projects_data()
+                            
+                            # Filter for selected company if applicable
+                            if st.session_state.selected_company:
+                                df_projects = df_projects[df_projects['company_ticker'] == st.session_state.selected_company]
+                            
+                            # Update session state with new project data
+                            st.session_state.project_data = df_projects
+                            
+                            # Switch to the newly created project
+                            st.session_state.selected_project_for_edit = edited.get('project_name')
+                        
                         # Clear editing state
                         if 'current_editing_project' in st.session_state:
                             del st.session_state.current_editing_project
@@ -2281,9 +2061,9 @@ class ProjectPipelineRealEstateTab:
                 except Exception as e:
                     st.error(f"Error saving project: {str(e)}")
         
-        # Delete button
+        # Delete button (only show for existing projects)
         with col2:
-            if st.button("🗑️ Delete from MongoDB", type="secondary", use_container_width=True):
+            if not is_new_project and st.button("🗑️ Delete from MongoDB", type="secondary", use_container_width=True):
                 # Add confirmation dialog
                 if 'confirm_delete' not in st.session_state:
                     st.session_state.confirm_delete = True
