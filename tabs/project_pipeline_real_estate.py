@@ -153,9 +153,23 @@ class ProjectPipelineRealEstateTab:
         if 'net_sellable_area' in display_df.columns:
             display_df['net_sellable_area'] = display_df['net_sellable_area'].apply(lambda x: f"{x:,.0f}")
         if 'average_selling_price' in display_df.columns:
-            display_df['average_selling_price'] = display_df['average_selling_price'].apply(lambda x: f"{x:,.0f}")
+            # Convert ASP to million VND for display
+            display_df['average_selling_price'] = display_df['average_selling_price'].apply(lambda x: f"{x/1_000_000:,.1f}")
         if 'rnav_value' in display_df.columns:
             display_df['rnav_value'] = display_df['rnav_value'].apply(lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A")
+        
+        # Rename columns for better display
+        column_rename = {
+            'project_name': 'Project Name',
+            'location': 'Location',
+            'total_units': 'Total Units',
+            'net_sellable_area': 'Net Sellable Area (m²)',
+            'average_selling_price': 'ASP (VND mn/m²)',
+            'construction_start_year': 'Construction Start',
+            'project_completion_year': 'Project Completion',
+            'rnav_value': 'RNAV Value'
+        }
+        display_df = display_df.rename(columns=column_rename)
         
         st.dataframe(display_df, use_container_width=True)
         
@@ -421,14 +435,15 @@ class ProjectPipelineRealEstateTab:
         if parsed_info.get("avg_selling_price_per_sqm"):
             try:
                 ai_price = float(parsed_info['avg_selling_price_per_sqm'])
+                current_price = float(project_data.get('average_selling_price', 0))
                 suggestions.append({
-                    "Parameter": "Avg Selling Price (M VND/sqm)",
-                    "AI Suggestion": f"{ai_price:,.0f}",
-                    "Current Value": f"{float(project_data.get('average_selling_price', 0)):,.0f}"
+                    "Parameter": "Avg Selling Price (mn VND/m²)",
+                    "AI Suggestion": f"{ai_price/1_000_000:,.1f}",
+                    "Current Value": f"{current_price/1_000_000:,.1f}"
                 })
             except (ValueError, TypeError):
                 suggestions.append({
-                    "Parameter": "Avg Selling Price (M VND/sqm)",
+                    "Parameter": "Avg Selling Price (mn VND/m²)",
                     "AI Suggestion": str(parsed_info['avg_selling_price_per_sqm']),
                     "Current Value": str(project_data.get('average_selling_price', 0))
                 })
@@ -436,14 +451,15 @@ class ProjectPipelineRealEstateTab:
         if parsed_info.get("construction_cost_per_sqm"):
             try:
                 ai_cost = float(parsed_info['construction_cost_per_sqm'])
+                current_cost = float(project_data.get('construction_cost_per_sqm', 0))
                 suggestions.append({
-                    "Parameter": "Construction Cost (M VND/sqm)",
-                    "AI Suggestion": f"{ai_cost:,.0f}",
-                    "Current Value": f"{float(project_data.get('construction_cost_per_sqm', 0)):,.0f}"
+                    "Parameter": "Construction Cost (mn VND/m²)",
+                    "AI Suggestion": f"{ai_cost/1_000_000:,.1f}",
+                    "Current Value": f"{current_cost/1_000_000:,.1f}"
                 })
             except (ValueError, TypeError):
                 suggestions.append({
-                    "Parameter": "Construction Cost (M VND/sqm)",
+                    "Parameter": "Construction Cost (mn VND/m²)",
                     "AI Suggestion": str(parsed_info['construction_cost_per_sqm']),
                     "Current Value": str(project_data.get('construction_cost_per_sqm', 0))
                 })
@@ -650,24 +666,34 @@ class ProjectPipelineRealEstateTab:
             )
         st.session_state.edited_project['net_sellable_area'] = nsa
         
-        # Average Selling Price
+        # Average Selling Price (in VND million per m2 for user input)
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Average Selling Price (VND/m²)**")
+            st.markdown("**Average Selling Price (VND mn/m²)**")
         with col2:
-            asp = st.number_input(
-                "Average Selling Price (VND/m²)",
-                value=int(project_data.get('average_selling_price', 0) or 0),
-                min_value=0,
-                step=1000000,
-                format="%d",
+            # Convert from raw VND to VND million for display
+            asp_raw = float(project_data.get('average_selling_price', 0) or 0)
+            asp_million = asp_raw / 1_000_000  # Convert to million VND
+            
+            asp_million_input = st.number_input(
+                "Average Selling Price (VND mn/m²)",
+                value=asp_million,
+                min_value=0.0,
+                step=1.0,
+                format="%.1f",
                 key="edit_asp",
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                help="Enter price in million VND per m² (e.g., 50.0 for 50 million VND/m²)"
             )
+            
+            # Convert back to raw VND for storage and calculations
+            asp = int(asp_million_input * 1_000_000)
+            
             if ai_suggestions.get("avg_selling_price_per_sqm"):
                 try:
                     ai_price = float(ai_suggestions['avg_selling_price_per_sqm'])
-                    st.caption(f"AI Suggestion: {ai_price:,.0f} VND/m²")
+                    ai_price_million = ai_price / 1_000_000
+                    st.caption(f"AI Suggestion: {ai_price_million:.1f} mn VND/m²")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['avg_selling_price_per_sqm']} VND/m²")
         st.session_state.edited_project['average_selling_price'] = asp
@@ -716,46 +742,66 @@ class ProjectPipelineRealEstateTab:
                     st.caption(f"AI Suggestion: {ai_suggestions['total_area_sqm']} m²")
         st.session_state.edited_project['gross_floor_area'] = gfa
         
-        # Construction Cost per sqm
+        # Construction Cost per sqm (in VND million per m2 for user input)
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Construction Cost (VND/m²)**")
+            st.markdown("**Construction Cost (VND mn/m²)**")
         with col2:
-            const_cost = st.number_input(
-                "Construction Cost (VND/m²)",
-                value=int(project_data.get('construction_cost_per_sqm', 0) or 0),
-                min_value=0,
-                step=1000000,
-                format="%d",
+            # Convert from raw VND to VND million for display
+            const_cost_raw = float(project_data.get('construction_cost_per_sqm', 0) or 0)
+            const_cost_million = const_cost_raw / 1_000_000  # Convert to million VND
+            
+            const_cost_million_input = st.number_input(
+                "Construction Cost (VND mn/m²)",
+                value=const_cost_million,
+                min_value=0.0,
+                step=1.0,
+                format="%.1f",
                 key="edit_const_cost",
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                help="Enter cost in million VND per m² (e.g., 15.0 for 15 million VND/m²)"
             )
+            
+            # Convert back to raw VND for storage and calculations
+            const_cost = int(const_cost_million_input * 1_000_000)
+            
             if ai_suggestions.get("construction_cost_per_sqm"):
                 try:
                     ai_const = float(ai_suggestions['construction_cost_per_sqm'])
-                    st.caption(f"AI Suggestion: {ai_const:,.0f} VND/m²")
+                    ai_const_million = ai_const / 1_000_000
+                    st.caption(f"AI Suggestion: {ai_const_million:.1f} mn VND/m²")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
         st.session_state.edited_project['construction_cost_per_sqm'] = const_cost
         
-        # Land Cost per sqm
+        # Land Cost per sqm (in VND million per m2 for user input)
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Land Cost (VND/m²)**")
+            st.markdown("**Land Cost (VND mn/m²)**")
         with col2:
-            land_cost = st.number_input(
-                "Land Cost (VND/m²)",
-                value=int(project_data.get('land_cost_per_sqm', 0) or 0),
-                min_value=0,
-                step=1000000,
-                format="%d",
+            # Convert from raw VND to VND million for display
+            land_cost_raw = float(project_data.get('land_cost_per_sqm', 0) or 0)
+            land_cost_million = land_cost_raw / 1_000_000  # Convert to million VND
+            
+            land_cost_million_input = st.number_input(
+                "Land Cost (VND mn/m²)",
+                value=land_cost_million,
+                min_value=0.0,
+                step=1.0,
+                format="%.1f",
                 key="edit_land_cost",
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                help="Enter cost in million VND per m² (e.g., 25.0 for 25 million VND/m²)"
             )
+            
+            # Convert back to raw VND for storage and calculations
+            land_cost = int(land_cost_million_input * 1_000_000)
+            
             if ai_suggestions.get("land_cost_per_sqm"):
                 try:
                     ai_land_cost = float(ai_suggestions['land_cost_per_sqm'])
-                    st.caption(f"AI Suggestion: {ai_land_cost:,.0f} VND/m²")
+                    ai_land_cost_million = ai_land_cost / 1_000_000
+                    st.caption(f"AI Suggestion: {ai_land_cost_million:.1f} mn VND/m²")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
         st.session_state.edited_project['land_cost_per_sqm'] = land_cost
