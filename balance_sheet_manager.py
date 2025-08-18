@@ -164,7 +164,10 @@ def generate_balance_sheet_schedules(
             cash_outflow_sga[idx] = -sga_amount  # Negative for cash outflow
     
     # Now calculate actual cash collection from presales using tranche logic
-    # For each presale, cash collection follows: 20% in year 1, remaining 80% evenly distributed until revenue_booking_end_year
+    # For each presale, cash collection follows: 20% in year 1, remaining 80% evenly distributed until construction completion
+    # Use debt_disbursement_end_year as construction end year
+    construction_end_year = debt_disbursement_end_year
+    
     for year, presale_amount in presales_schedule.items():
         if year in years and presale_amount > 0:
             presale_year_idx = years.index(year)
@@ -174,23 +177,24 @@ def generate_balance_sheet_schedules(
             first_tranche = presale_amount * 0.2
             cash_inflow_presales[presale_year_idx] += first_tranche
             
-            # Remaining 80% distributed evenly from next year until revenue_booking_end_year
+            # Remaining 80% distributed evenly from next year until construction completion
             remaining_amount = presale_amount * 0.8
             
             # Determine the collection period
-            # Collection should end by revenue_booking_end_year, not extend beyond it
+            # Collection should end by construction_end_year, not extend beyond it
             collection_start_year = year + 1
-            collection_end_year = min(revenue_booking_end_year, revenue_booking_end_year) if revenue_booking_end_year else year + 2
+            collection_end_year = construction_end_year
             
-            # If the presale year is already at or after revenue_booking_end_year, collect all in that year
-            if year >= revenue_booking_end_year:
-                # Collect all 100% in the presale year if it's at or after revenue end
-                cash_inflow_presales[presale_year_idx] = presale_amount
+            # If the presale year is already at or after construction_end_year, collect all in that year
+            if year >= construction_end_year:
+                # Collect all 100% in the presale year if it's at or after construction end
+                # Need to subtract the first tranche already added and then add full amount
+                cash_inflow_presales[presale_year_idx] = cash_inflow_presales[presale_year_idx] - first_tranche + presale_amount
             else:
                 # Calculate number of years for remaining collection (excluding the presale year)
                 collection_years = []
                 for col_year in range(collection_start_year, collection_end_year + 1):
-                    if col_year in years and col_year <= revenue_booking_end_year:
+                    if col_year in years and col_year <= construction_end_year:
                         collection_years.append(col_year)
                 
                 if collection_years:
@@ -448,7 +452,10 @@ def generate_simplified_balance_sheet_schedules(
     revenue_booking_end_year: int,
     presales_distribution: Optional[Dict[str, float]] = None,  # {year_str: percentage}
     revenue_distribution: Optional[Dict[str, float]] = None,  # {year_str: percentage} for revenue recognition
-    tax_rate: float = 0.2  # Default 20% tax rate
+    tax_rate: float = 0.2,  # Default 20% tax rate
+    price_increment_factor: float = 0.0,  # Annual price increment as decimal (e.g., 0.05 for 5%)
+    base_asp: float = None,  # Base average selling price
+    total_nsa: float = None  # Total net sellable area
 ) -> pd.DataFrame:
     """
     Simplified version that integrates with project pipeline calculations.
@@ -476,19 +483,33 @@ def generate_simplified_balance_sheet_schedules(
         DataFrame with balance sheet schedules
     """
     
-    # Generate presales schedule based on distribution
+    # Generate presales schedule based on distribution with price increment
     presales_schedule = {}
-    if presales_distribution:
-        for year in range(sales_start_year, sales_end_year + 1):
-            year_pct = presales_distribution.get(str(year), 0.0) / 100.0
-            presales_schedule[year] = total_revenue * year_pct
+    
+    # If price increment is provided and we have base ASP and NSA, calculate adjusted presales
+    if price_increment_factor > 0 and base_asp is not None and total_nsa is not None:
+        # Calculate presales with price increment for each year
+        sales_years_list = list(range(sales_start_year, sales_end_year + 1))
+        
+        if presales_distribution:
+            for i, year in enumerate(sales_years_list):
+                year_pct = presales_distribution.get(str(year), 0.0) / 100.0
+                year_nsa = total_nsa * year_pct
+                # Apply price increment: first year = base, subsequent years apply increment
+                year_asp = base_asp * (1 + price_increment_factor) ** i
+                presales_schedule[year] = year_nsa * year_asp
+        else:
+            # No fallback - require presales distribution
+            pass  # presales_schedule remains empty
     else:
-        # Even distribution
-        sales_years = sales_end_year - sales_start_year + 1
-        if sales_years > 0:
-            annual_sales = total_revenue / sales_years
+        # Fallback to original logic if no price increment
+        if presales_distribution:
             for year in range(sales_start_year, sales_end_year + 1):
-                presales_schedule[year] = annual_sales
+                year_pct = presales_distribution.get(str(year), 0.0) / 100.0
+                presales_schedule[year] = total_revenue * year_pct
+        else:
+            # No fallback - require presales distribution
+            pass  # presales_schedule remains empty
     
     # Convert revenue distribution from percentage strings to year integers with decimal values
     revenue_dist_converted = None

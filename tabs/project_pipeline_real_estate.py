@@ -12,6 +12,36 @@ class ProjectPipelineRealEstateTab:
     
     def __init__(self, parent):
         self.parent = parent
+    
+    def calculate_total_presales_booking(self, project_data):
+        """Calculate total presales booking with price increment.
+        This is the single source of truth for total revenue calculation.
+        Total Revenue = Total Presales Booking = Total Cash Collection
+        """
+        nsa = float(project_data.get('net_sellable_area', 0) or 0)
+        asp = float(project_data.get('average_selling_price', 0) or 0)
+        price_increment = float(project_data.get('price_increment_factor', 0) or 0)
+        presales_dist = project_data.get('presales_distribution', {})
+        
+        if not presales_dist:
+            return 0
+        
+        # Get presales timeline
+        presales_start = int(project_data.get('sale_start_year', 2025) or 2025)
+        sales_years = int(project_data.get('sales_years', 3) or 3)
+        presales_end = presales_start + sales_years - 1
+        years = list(range(presales_start, presales_end + 1))
+        
+        # Calculate total presales with price increment
+        total_presales = 0
+        for i, year in enumerate(years):
+            year_pct = presales_dist.get(str(year), 0) / 100
+            year_nsa = nsa * year_pct
+            # Apply price increment: first year = base, subsequent years apply increment
+            year_asp = asp * (1 + price_increment) ** i
+            total_presales += year_nsa * year_asp
+        
+        return total_presales / 1e9  # Return in billions
         
     def render(self):
         """Render project pipeline and timeline"""
@@ -213,10 +243,11 @@ class ProjectPipelineRealEstateTab:
             revenue_start = int(project.get('revenue_booking_start_year', current_year))
             project_end = int(project.get('project_completion_year', current_year + 3))
             
-            # Calculate total revenue
-            nsa = float(project.get('net_sellable_area', 0) or 0)
-            asp = float(project.get('average_selling_price', 0) or 0)
-            total_revenue = nsa * asp
+            # Calculate total revenue using consistent method
+            # Create a dict-like object for the calculation method
+            project_dict = dict(project)
+            total_revenue_billions = self.calculate_total_presales_booking(project_dict)
+            total_revenue = total_revenue_billions * 1e9  # Convert to raw value
             
             # Get revenue distribution
             revenue_dist = project.get('revenue_distribution', {})
@@ -258,6 +289,7 @@ class ProjectPipelineRealEstateTab:
             'gross_floor_area': 0,
             'land_area': 0,
             'average_selling_price': 0,
+            'price_increment_factor': 0,  # Annual price increment percentage
             'construction_cost_per_sqm': 0,
             'land_cost_per_sqm': 0,
             'construction_start_year': current_year,
@@ -698,6 +730,31 @@ class ProjectPipelineRealEstateTab:
                     st.caption(f"AI Suggestion: {ai_suggestions['avg_selling_price_per_sqm']} VND/m²")
         st.session_state.edited_project['average_selling_price'] = asp
         
+        # Price Annual Increment
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Price Annual Increment (%)**")
+        with col2:
+            # Load price_increment_factor from MongoDB (stored as decimal, e.g., 0.05 for 5%)
+            price_increment_raw = float(project_data.get('price_increment_factor', 0) or 0)
+            # Convert to percentage for display
+            price_increment_pct = price_increment_raw * 100
+            
+            price_increment_input = st.number_input(
+                "Price Annual Increment (%)",
+                value=price_increment_pct,
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                format="%.0f",
+                key="edit_price_increment",
+                label_visibility="collapsed",
+                help="Annual percentage increase in selling price (e.g., 5 for 5% annual increase)"
+            )
+            # Convert back to decimal for storage (e.g., 5% -> 0.05)
+            price_increment_decimal = price_increment_input / 100
+        st.session_state.edited_project['price_increment_factor'] = price_increment_decimal
+        
         # Land Area
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -1091,7 +1148,7 @@ class ProjectPipelineRealEstateTab:
     def render_revenue_distribution_editor(self, project_data):
         """Render revenue distribution editor with year-by-year percentages"""
         st.subheader("Revenue Distribution Schedule")
-        st.info("Enter percentage of total revenue to recognize in each year. Must sum to 100%.")
+        st.info("Enter percentage of total revenue to recognize in each year. Must sum to 100%. Revenue = Total Presales Booking.")
         
         # Get timeline parameters from edited project
         revenue_start = st.session_state.edited_project.get('revenue_booking_start_year', 
@@ -1115,12 +1172,12 @@ class ProjectPipelineRealEstateTab:
             for year in years:
                 existing_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
         
-        # Calculate totals for display
+        # Get the calculated total revenue (presales booking) from session state or calculate it
         edited = st.session_state.edited_project
-        total_units = float(edited.get('total_units', 0) or 0)
-        nsa = float(edited.get('net_sellable_area', 0) or 0)
-        asp = float(edited.get('average_selling_price', 0) or 0)
-        total_revenue = nsa * asp / 1e9  # Convert to billions
+        total_revenue = self.calculate_total_presales_booking(edited)
+        
+        # Display total revenue that will be distributed
+        st.metric("Total Revenue (from Presales Booking)", f"{total_revenue:.1f}B VND")
         
         cols = st.columns(min(len(years), 4))  # Max 4 columns
         
@@ -1138,11 +1195,9 @@ class ProjectPipelineRealEstateTab:
                 )
                 distribution[str(year)] = pct
                 
-                # Display calculated units and value
-                units_for_year = int(total_units * pct / 100)
-                value_for_year = total_revenue * pct / 100
-                st.caption(f"Units: {units_for_year:,}")
-                st.caption(f"Value: {value_for_year:.0f}B VND")
+                # Simply display the revenue amount for this year
+                year_revenue = total_revenue * pct / 100
+                st.caption(f"Revenue: {year_revenue:.1f}B VND")
         
         # Validate percentages
         total_pct = sum(distribution.values())
@@ -1170,13 +1225,7 @@ class ProjectPipelineRealEstateTab:
         if years:
             import plotly.graph_objects as go
             
-            # Calculate total revenue to show absolute values
-            edited = st.session_state.edited_project
-            nsa = float(edited.get('net_sellable_area', 0) or 0)
-            asp = float(edited.get('average_selling_price', 0) or 0)
-            total_revenue = nsa * asp / 1e9  # Convert to billions
-            
-            # Calculate absolute values for each year
+            # Simply use total revenue * percentage for each year
             absolute_values = [total_revenue * distribution.get(str(y), 0) / 100 for y in years]
             
             fig = go.Figure()
@@ -1199,29 +1248,6 @@ class ProjectPipelineRealEstateTab:
         """Render presales distribution editor with year-by-year percentages"""
         st.subheader("Presales Distribution Schedule")
         st.info("Enter percentage of total sales to achieve in each year. Must sum to 100%.")
-        
-        # Add explanation about cash collection tranche logic
-        with st.expander("💡 Cash Collection Schedule (Tranche Logic)", expanded=False):
-            st.markdown("""
-            **How presales cash collection works:**
-            
-            For each year's presales value, the actual cash collection follows a typical tranche payment structure:
-            - **20% collected in Year 1** (the year of presale)
-            - **Remaining 80% collected evenly** from Year 2 until the Revenue Booking End Year
-            
-            **Example:**
-            If you have presales of 5,000 Bn VND in 2025 and Revenue Booking End Year is 2027:
-            - 2025: 1,000 Bn VND collected (20% of 5,000)
-            - 2026: 2,000 Bn VND collected (40% of 5,000)
-            - 2027: 2,000 Bn VND collected (40% of 5,000)
-            
-            This tranche payment structure is automatically applied to:
-            - Cash Flow Statement calculations
-            - RNAV (Net Asset Value) calculations
-            - Working capital requirements
-            
-            Note: The presales values you enter below represent the **booking amounts**, not the cash collection schedule.
-            """)
         
         # Get timeline parameters from edited project
         sales_start = st.session_state.edited_project.get('sale_start_year',
@@ -1246,12 +1272,23 @@ class ProjectPipelineRealEstateTab:
             for year in years:
                 existing_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
         
-        # Calculate totals for display
+        # Calculate totals for display with price increment
         edited = st.session_state.edited_project
         total_units = float(edited.get('total_units', 0) or 0)
         nsa = float(edited.get('net_sellable_area', 0) or 0)
         asp = float(edited.get('average_selling_price', 0) or 0)
-        total_revenue = nsa * asp / 1e9  # Convert to billions
+        price_increment = float(edited.get('price_increment_factor', 0) or 0)  # As decimal
+        
+        # Calculate total presales using the helper method for consistency
+        total_presales = self.calculate_total_presales_booking(edited)
+        
+        # Display total presales
+        st.metric("Total Presales Booking", f"{total_presales:.1f}B VND")
+        
+        # Calculate adjusted ASP for each year (needed for display)
+        adjusted_asp_by_year = {}
+        for i, year in enumerate(years):
+            adjusted_asp_by_year[year] = asp * (1 + price_increment) ** i
         
         cols = st.columns(min(len(years), 4))  # Max 4 columns
         
@@ -1269,11 +1306,15 @@ class ProjectPipelineRealEstateTab:
                 )
                 distribution[str(year)] = pct
                 
-                # Display calculated units and value
+                # Display calculated units and value with adjusted ASP
                 units_for_year = int(total_units * pct / 100)
-                value_for_year = total_revenue * pct / 100
+                year_nsa = nsa * pct / 100
+                year_asp_adjusted = adjusted_asp_by_year[year]
+                year_presales = year_nsa * year_asp_adjusted / 1e9
                 st.caption(f"Units: {units_for_year:,}")
-                st.caption(f"Value: {value_for_year:.0f}B VND")
+                st.caption(f"Value: {year_presales:.0f}B VND")
+                if price_increment > 0:
+                    st.caption(f"ASP: {year_asp_adjusted/1e6:.1f}M VND/m²")
         
         # Validate percentages
         total_pct = sum(distribution.values())
@@ -1301,14 +1342,15 @@ class ProjectPipelineRealEstateTab:
         if years:
             import plotly.graph_objects as go
             
-            # Calculate total revenue to show absolute values for presales
-            edited = st.session_state.edited_project
-            nsa = float(edited.get('net_sellable_area', 0) or 0)
-            asp = float(edited.get('average_selling_price', 0) or 0)
-            total_revenue = nsa * asp / 1e9  # Convert to billions
-            
-            # Calculate absolute values for each year
-            absolute_values = [total_revenue * distribution.get(str(y), 0) / 100 for y in years]
+            # Calculate presales values with price increment for each year
+            # Must match the actual presales booking calculation
+            absolute_values = []
+            for i, year in enumerate(years):
+                year_pct = distribution.get(str(year), 0) / 100
+                year_nsa = nsa * year_pct
+                year_asp = asp * (1 + price_increment) ** i
+                year_value = year_nsa * year_asp / 1e9
+                absolute_values.append(year_value)
             
             fig = go.Figure()
             fig.add_trace(go.Bar(
@@ -1327,27 +1369,36 @@ class ProjectPipelineRealEstateTab:
             st.plotly_chart(fig, use_container_width=True)
             
             # Show cash collection schedule based on tranche logic
-            if abs(total_pct - 100.0) < 0.01 and total_revenue > 0:
+            if abs(total_pct - 100.0) < 0.01 and total_presales > 0:
                 st.markdown("### 💰 Actual Cash Collection Schedule (with Tranche Logic)")
                 
-                # Get revenue booking end year
-                # Use project_completion_year as the revenue booking end year
-                revenue_end = st.session_state.edited_project.get('project_completion_year',
-                                                                  project_data.get('project_completion_year'))
+                # Get construction end year
+                const_start = st.session_state.edited_project.get('construction_start_year',
+                                                                  project_data.get('construction_start_year', datetime.now().year))
+                const_years = st.session_state.edited_project.get('construction_years',
+                                                                   project_data.get('construction_years', 3))
                 
-                if not revenue_end:
-                    st.error("⚠️ Project Completion Year is required to calculate cash collection schedule. Please set it in the Project Timeline section.")
+                if not const_start or not const_years:
+                    st.error("⚠️ Construction Start Year and Construction Years are required to calculate cash collection schedule. Please set them in the Project Timeline section.")
                     return
                 
-                # Calculate cash collection schedule
+                # Calculate construction end year
+                construction_end = int(const_start) + int(const_years) - 1
+                
+                st.info(f"📍 Cash collection will be completed by construction end year: **{construction_end}**")
+                
+                # Calculate cash collection schedule with price increment
                 cash_collection = {}
-                for year in years:
-                    year_pct = distribution.get(str(year), 0)
-                    presale_amount = total_revenue * year_pct / 100
+                for i, year in enumerate(years):
+                    year_pct = distribution.get(str(year), 0) / 100
+                    year_nsa = nsa * year_pct
+                    # Apply price increment: first year = base, subsequent years apply increment
+                    year_asp = asp * (1 + price_increment) ** i
+                    presale_amount = year_nsa * year_asp / 1e9  # Already in billions
                     
                     if presale_amount > 0:
-                        # If presale year is at or after revenue end year, collect all 100% immediately
-                        if year >= revenue_end:
+                        # If presale year is at or after construction end year, collect all 100% immediately
+                        if year >= construction_end:
                             if year not in cash_collection:
                                 cash_collection[year] = 0
                             cash_collection[year] += presale_amount
@@ -1357,10 +1408,10 @@ class ProjectPipelineRealEstateTab:
                                 cash_collection[year] = 0
                             cash_collection[year] += presale_amount * 0.2
                             
-                            # Remaining 80% distributed evenly until revenue_end (not beyond)
+                            # Remaining 80% distributed evenly until construction_end (not beyond)
                             remaining = presale_amount * 0.8
-                            # Collection period is from next year until revenue_end
-                            collection_years = list(range(year + 1, revenue_end + 1))
+                            # Collection period is from next year until construction_end
+                            collection_years = list(range(year + 1, construction_end + 1))
                             
                             if collection_years:
                                 annual_collection = remaining / len(collection_years)
@@ -1372,9 +1423,23 @@ class ProjectPipelineRealEstateTab:
                                 # If no collection years available, add remaining to presale year
                                 cash_collection[year] += remaining
                 
-                # Prepare data for visualization
+                # Prepare data for visualization with price increment
                 all_years = sorted(set(years) | set(cash_collection.keys()))
-                presales_values = [total_revenue * distribution.get(str(y), 0) / 100 for y in all_years]
+                
+                # Calculate presales values with price increment for all years
+                presales_values = []
+                for y in all_years:
+                    if y in years:
+                        # Find the index of this year in the original years list
+                        year_idx = years.index(y)
+                        year_pct = distribution.get(str(y), 0) / 100
+                        year_nsa = nsa * year_pct
+                        # Apply price increment based on year index
+                        year_asp = asp * (1 + price_increment) ** year_idx
+                        year_value = year_nsa * year_asp / 1e9
+                        presales_values.append(year_value)
+                    else:
+                        presales_values.append(0)
                 cash_values = [cash_collection.get(y, 0) for y in all_years]
                 
                 # Create interactive chart comparing presales booking vs cash collection
@@ -1421,8 +1486,8 @@ class ProjectPipelineRealEstateTab:
                 
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Show totals
-                total_presales = sum(total_revenue * distribution.get(str(y), 0) / 100 for y in years)
+                # Show totals with price increment
+                total_presales = sum(presales_values)
                 total_cash = sum(cash_collection.values())
                 
                 col1, col2, col3 = st.columns(3)
@@ -1440,7 +1505,7 @@ class ProjectPipelineRealEstateTab:
                 with st.expander("📊 View Detailed Cash Collection Table", expanded=False):
                     cash_data = []
                     for year in all_years:
-                        presale_val = total_revenue * distribution.get(str(year), 0) / 100
+                        presale_val = total_presales * distribution.get(str(year), 0) / 100
                         cash_val = cash_collection.get(year, 0)
                         cash_data.append({
                             "Year": year,
@@ -1468,7 +1533,11 @@ class ProjectPipelineRealEstateTab:
         land_area = float(edited.get('land_area', 0) or 0)
         land_cost = float(edited.get('land_cost_per_sqm', 0) or 0)
         
-        total_revenue = nsa * asp
+        # Use the consistent calculation method for total revenue
+        # Total Revenue = Total Presales Booking = Total Cash Collection
+        total_revenue_billions = self.calculate_total_presales_booking(edited)
+        total_revenue = total_revenue_billions * 1e9  # Convert back to raw value for calculations
+            
         total_const_cost = gfa * const_cost
         total_land_cost = land_area * land_cost
         sga_pct = float(edited.get('sga_percentage', 0.0) or 0.0)
@@ -1483,9 +1552,9 @@ class ProjectPipelineRealEstateTab:
         const_years = int(edited.get('construction_years', 3) or 3)
         const_end = const_start + const_years - 1
         
+        # Revenue recognition period: from revenue_booking_start_year to project_completion_year
         revenue_booking_start = int(edited.get('revenue_booking_start_year', 2027) or 2027)
-        revenue_booking_years = int(edited.get('revenue_booking_years', 2) or 2)
-        revenue_booking_end = revenue_booking_start + revenue_booking_years - 1
+        revenue_booking_end = int(edited.get('project_completion_year', revenue_booking_start + 1) or revenue_booking_start + 1)
         
         debt_repayment_start = int(edited.get('debt_repayment_year', revenue_booking_end) or revenue_booking_end)
         
@@ -1552,9 +1621,12 @@ class ProjectPipelineRealEstateTab:
         land_area = float(edited.get('land_area', 0) or 0)
         const_cost = float(edited.get('construction_cost_per_sqm', 0) or 0)
         land_cost = float(edited.get('land_cost_per_sqm', 0) or 0)
+        price_increment = float(edited.get('price_increment_factor', 0) or 0)
         
-        # Calculate totals
-        total_revenue = nsa * asp
+        # Use the consistent calculation method for total revenue
+        # Total Revenue = Total Presales Booking = Total Cash Collection
+        total_revenue_billions = self.calculate_total_presales_booking(edited)
+        total_revenue = total_revenue_billions * 1e9  # Convert back to raw value for calculations
         total_const_cost = gfa * const_cost
         total_land_cost = land_area * land_cost
         sga_pct = float(edited.get('sga_percentage', 0.0) or 0.0)
@@ -1630,7 +1702,10 @@ class ProjectPipelineRealEstateTab:
                     revenue_booking_end_year=revenue_booking_end,
                     presales_distribution=presales_dist if presales_dist else None,
                     revenue_distribution=revenue_dist if revenue_dist else None,
-                    tax_rate=tax_rate
+                    tax_rate=tax_rate,
+                    price_increment_factor=price_increment,
+                    base_asp=asp,
+                    total_nsa=nsa
                 )
                 
                 # Format the dataframe for display - exclude Total row
@@ -1841,7 +1916,9 @@ class ProjectPipelineRealEstateTab:
         const_cost = float(edited.get('construction_cost_per_sqm', 0) or 0)
         land_cost = float(edited.get('land_cost_per_sqm', 0) or 0)
         
-        total_revenue = nsa * asp
+        # Use consistent calculation for total revenue
+        total_revenue_billions = self.calculate_total_presales_booking(edited)
+        total_revenue = total_revenue_billions * 1e9  # Convert to raw value
         total_const_cost = gfa * const_cost
         total_land_cost = land_area * land_cost
         sga_pct = float(edited.get('sga_percentage', 0.0) or 0.0)
@@ -2097,14 +2174,14 @@ class ProjectPipelineRealEstateTab:
                             return
                     
                     # Calculate financial metrics before saving
-                    nsa = edited.get('net_sellable_area', 0)
-                    asp = edited.get('average_selling_price', 0)
                     gfa = edited.get('gross_floor_area', 0)
                     land_area = edited.get('land_area', 0)
                     const_cost = edited.get('construction_cost_per_sqm', 0)
                     land_cost = edited.get('land_cost_per_sqm', 0)
                     
-                    total_revenue = float(nsa) * float(asp)
+                    # Use consistent calculation for total revenue
+                    total_revenue_billions = self.calculate_total_presales_booking(edited)
+                    total_revenue = total_revenue_billions * 1e9  # Convert to raw value
                     total_const_cost = float(gfa) * float(const_cost)
                     total_land_cost = float(land_area) * float(land_cost)
                     sga_pct = float(edited.get('sga_percentage', 0.0))
