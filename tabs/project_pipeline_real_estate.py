@@ -438,8 +438,8 @@ class ProjectPipelineRealEstateTab:
                 current_price = float(project_data.get('average_selling_price', 0))
                 suggestions.append({
                     "Parameter": "Avg Selling Price (mn VND/m²)",
-                    "AI Suggestion": f"{ai_price/1_000_000:,.1f}",
-                    "Current Value": f"{current_price/1_000_000:,.1f}"
+                    "AI Suggestion": f"{ai_price/1_000_000:,.0f}",
+                    "Current Value": f"{current_price/1_000_000:,.0f}"
                 })
             except (ValueError, TypeError):
                 suggestions.append({
@@ -454,8 +454,8 @@ class ProjectPipelineRealEstateTab:
                 current_cost = float(project_data.get('construction_cost_per_sqm', 0))
                 suggestions.append({
                     "Parameter": "Construction Cost (mn VND/m²)",
-                    "AI Suggestion": f"{ai_cost/1_000_000:,.1f}",
-                    "Current Value": f"{current_cost/1_000_000:,.1f}"
+                    "AI Suggestion": f"{ai_cost/1_000_000:,.0f}",
+                    "Current Value": f"{current_cost/1_000_000:,.0f}"
                 })
             except (ValueError, TypeError):
                 suggestions.append({
@@ -680,7 +680,7 @@ class ProjectPipelineRealEstateTab:
                 value=asp_million,
                 min_value=0.0,
                 step=1.0,
-                format="%.1f",
+                format="%.0f",
                 key="edit_asp",
                 label_visibility="collapsed",
                 help="Enter price in million VND per m² (e.g., 50.0 for 50 million VND/m²)"
@@ -756,7 +756,7 @@ class ProjectPipelineRealEstateTab:
                 value=const_cost_million,
                 min_value=0.0,
                 step=1.0,
-                format="%.1f",
+                format="%.0f",
                 key="edit_const_cost",
                 label_visibility="collapsed",
                 help="Enter cost in million VND per m² (e.g., 15.0 for 15 million VND/m²)"
@@ -769,7 +769,7 @@ class ProjectPipelineRealEstateTab:
                 try:
                     ai_const = float(ai_suggestions['construction_cost_per_sqm'])
                     ai_const_million = ai_const / 1_000_000
-                    st.caption(f"AI Suggestion: {ai_const_million:.1f} mn VND/m²")
+                    st.caption(f"AI Suggestion: {ai_const_million:.0f} mn VND/m²")
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
         st.session_state.edited_project['construction_cost_per_sqm'] = const_cost
@@ -788,7 +788,7 @@ class ProjectPipelineRealEstateTab:
                 value=land_cost_million,
                 min_value=0.0,
                 step=1.0,
-                format="%.1f",
+                format="%.0f",
                 key="edit_land_cost",
                 label_visibility="collapsed",
                 help="Enter cost in million VND per m² (e.g., 25.0 for 25 million VND/m²)"
