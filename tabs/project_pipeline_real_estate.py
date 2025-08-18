@@ -1604,7 +1604,7 @@ class ProjectPipelineRealEstateTab:
                     'Inventory_Addition': 'Inventory Addition',
                     'Inventory_Balance': 'Inventory Balance',
                     # Presales and Revenue section
-                    'Presales': 'Presales (Bookings)',
+                    'Cash_Inflow_Presales': 'Actual Presales Cash Collection',
                     'Customer_Prepayment_Balance': 'Customer Prepayment Balance',
                     # P&L section
                     'Revenue_Recognition': 'Revenue (P&L)',
@@ -1615,7 +1615,7 @@ class ProjectPipelineRealEstateTab:
                     'Tax': 'Tax (P&L)',
                     'PAT': 'PAT (P&L)',
                     # Cash flow section
-                    'Cash_Inflow_Presales': 'Cash Inflow (Actual Collection)',
+                    'Presales': 'Presales (Bookings)',  # Keep presales bookings with different label
                     'Debt_Disbursement': 'Cash Inflow (Debt Disbursement)',
                     'Debt_Repayment': 'Cash Outflow (Debt Repayment)',
                     'Cash_Outflow_Land': 'Cash Outflow (Land)',
@@ -1654,7 +1654,7 @@ class ProjectPipelineRealEstateTab:
                         elif item_name in ['Inventory Addition', 'Inventory Balance']:
                             colors.append('background-color: #E8F5E9')
                         # Presales and Customer Prepayment section - light purple
-                        elif item_name in ['Presales', 'Customer Prepayment Balance']:
+                        elif item_name in ['Actual Presales Cash Collection', 'Customer Prepayment Balance']:
                             colors.append('background-color: #F3E5F5')
                         # P&L section - light yellow (all P&L items grouped together)
                         elif item_name in ['Revenue (P&L)', 'COGS (P&L)', 'SG&A Expense (P&L)', 
@@ -1675,7 +1675,7 @@ class ProjectPipelineRealEstateTab:
                             'Interest Expense (P&L)', 'PBT (P&L)', 'Tax (P&L)', 'PAT (P&L)']
                 
                 # Cash flow items (Cash Balance included in both Balance Sheet and Cash Flow)
-                cashflow_items = ['Cash Inflow (Actual Collection)', 'Cash Inflow (Debt Disbursement)',
+                cashflow_items = ['Actual Presales Cash Collection', 'Cash Inflow (Debt Disbursement)',
                                  'Cash Outflow (Debt Repayment)', 'Cash Outflow (Land)',
                                  'Cash Outflow (Construction)', 'Cash Outflow (Interest)',
                                  'Cash Outflow (SG&A)', 'Cash Outflow (Tax)',
@@ -1688,7 +1688,7 @@ class ProjectPipelineRealEstateTab:
                 # Balance sheet items - explicitly define order including Cash Balance
                 bs_items = ['Debt Balance', 'Cash Balance', 'Land Cost', 'Construction Cost', 
                            'Interest Capitalized', 'Inventory Addition', 'Inventory Balance',
-                           'Presales', 'Customer Prepayment Balance']
+                           'Actual Presales Cash Collection', 'Customer Prepayment Balance']
                 # Filter to only include items that exist in display_df
                 bs_items = [item for item in bs_items if item in display_df.index]
                 bs_df = display_df.loc[bs_items].copy()
