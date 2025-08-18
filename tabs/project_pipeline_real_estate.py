@@ -1146,6 +1146,29 @@ class ProjectPipelineRealEstateTab:
         st.subheader("Presales Distribution Schedule")
         st.info("Enter percentage of total sales to achieve in each year. Must sum to 100%.")
         
+        # Add explanation about cash collection tranche logic
+        with st.expander("💡 Cash Collection Schedule (Tranche Logic)", expanded=False):
+            st.markdown("""
+            **How presales cash collection works:**
+            
+            For each year's presales value, the actual cash collection follows a typical tranche payment structure:
+            - **20% collected in Year 1** (the year of presale)
+            - **Remaining 80% collected evenly** from Year 2 until the Revenue Booking End Year
+            
+            **Example:**
+            If you have presales of 5,000 Bn VND in 2025 and Revenue Booking End Year is 2027:
+            - 2025: 1,000 Bn VND collected (20% of 5,000)
+            - 2026: 2,000 Bn VND collected (40% of 5,000)
+            - 2027: 2,000 Bn VND collected (40% of 5,000)
+            
+            This tranche payment structure is automatically applied to:
+            - Cash Flow Statement calculations
+            - RNAV (Net Asset Value) calculations
+            - Working capital requirements
+            
+            Note: The presales values you enter below represent the **booking amounts**, not the cash collection schedule.
+            """)
+        
         # Get timeline parameters from edited project
         sales_start = st.session_state.edited_project.get('sale_start_year',
                                                           project_data.get('sale_start_year', datetime.now().year) or datetime.now().year)
@@ -1248,6 +1271,61 @@ class ProjectPipelineRealEstateTab:
                 height=300
             )
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Show cash collection schedule based on tranche logic
+            if abs(total_pct - 100.0) < 0.01 and total_revenue > 0:
+                st.markdown("### 💰 Actual Cash Collection Schedule (with Tranche Logic)")
+                
+                # Get revenue booking end year
+                revenue_end = st.session_state.edited_project.get('revenue_booking_end_year',
+                                                                  project_data.get('revenue_booking_end_year', 
+                                                                  sales_end + 2))
+                
+                # Calculate cash collection schedule
+                cash_collection = {}
+                for year in years:
+                    year_pct = distribution.get(str(year), 0)
+                    presale_amount = total_revenue * year_pct / 100
+                    
+                    if presale_amount > 0:
+                        # 20% in first year
+                        if year not in cash_collection:
+                            cash_collection[year] = 0
+                        cash_collection[year] += presale_amount * 0.2
+                        
+                        # Remaining 80% distributed evenly
+                        remaining = presale_amount * 0.8
+                        collection_years = list(range(year + 1, min(revenue_end + 1, year + 10)))  # Cap at 10 years
+                        
+                        if collection_years:
+                            annual_collection = remaining / len(collection_years)
+                            for col_year in collection_years:
+                                if col_year not in cash_collection:
+                                    cash_collection[col_year] = 0
+                                cash_collection[col_year] += annual_collection
+                
+                # Create cash collection table
+                cash_data = []
+                all_years = sorted(set(years) | set(cash_collection.keys()))
+                for year in all_years:
+                    cash_data.append({
+                        "Year": year,
+                        "Presales Booking (Bn VND)": f"{total_revenue * distribution.get(str(year), 0) / 100:,.1f}",
+                        "Cash Collection (Bn VND)": f"{cash_collection.get(year, 0):,.1f}"
+                    })
+                
+                cash_df = pd.DataFrame(cash_data)
+                st.dataframe(cash_df, hide_index=True, use_container_width=True)
+                
+                # Show totals
+                total_presales = sum(total_revenue * distribution.get(str(y), 0) / 100 for y in years)
+                total_cash = sum(cash_collection.values())
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Presales Booking", f"{total_presales:,.1f} Bn VND")
+                with col2:
+                    st.metric("Total Cash Collection", f"{total_cash:,.1f} Bn VND")
     
     def render_project_balance_sheet_analysis(self, project_data):
         """Render comprehensive financial statements forecast using project data"""

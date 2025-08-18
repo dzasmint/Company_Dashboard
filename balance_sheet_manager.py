@@ -150,16 +150,47 @@ def generate_balance_sheet_schedules(
                 idx = years.index(year)
                 debt_repayment[idx] = -annual_repayment  # Negative for outflow
     
-    # 4. Calculate presales cash inflow and SG&A
+    # 4. Calculate presales and convert to cash inflow schedule with tranche logic
+    # First record the presales bookings
     for year, amount in presales_schedule.items():
         if year in years:
             idx = years.index(year)
-            presales[idx] = amount  # Record presales
-            cash_inflow_presales[idx] = amount
+            presales[idx] = amount  # Record presales booking
             # SG&A follows presales schedule - calculated as % of presales
             sga_amount = amount * sga_percentage
             sga_expense[idx] = sga_amount  # Hit P&L in the year it occurs
             cash_outflow_sga[idx] = -sga_amount  # Negative for cash outflow
+    
+    # Now calculate actual cash collection from presales using tranche logic
+    # For each presale, cash collection follows: 20% in year 1, remaining 80% evenly distributed until revenue_booking_end_year
+    for year, presale_amount in presales_schedule.items():
+        if year in years and presale_amount > 0:
+            presale_year_idx = years.index(year)
+            
+            # Calculate cash collection schedule for this presale
+            # 20% collected in the presale year
+            first_tranche = presale_amount * 0.2
+            cash_inflow_presales[presale_year_idx] += first_tranche
+            
+            # Remaining 80% distributed evenly from next year until revenue_booking_end_year
+            remaining_amount = presale_amount * 0.8
+            
+            # Determine the collection period
+            collection_start_year = year + 1
+            collection_end_year = revenue_booking_end_year if revenue_booking_end_year else year + 2
+            
+            # Calculate number of years for remaining collection
+            collection_years = []
+            for col_year in range(collection_start_year, collection_end_year + 1):
+                if col_year in years:
+                    collection_years.append(col_year)
+            
+            if collection_years:
+                # Distribute remaining amount evenly
+                annual_collection = remaining_amount / len(collection_years)
+                for col_year in collection_years:
+                    col_idx = years.index(col_year)
+                    cash_inflow_presales[col_idx] += annual_collection
     
     # 5. Calculate land cost payment (single year payment)
     if land_payment_year in years and total_land_cost > 0:
