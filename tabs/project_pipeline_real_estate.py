@@ -278,6 +278,12 @@ class ProjectPipelineRealEstateTab:
         st.subheader("➕ Create New Project")
         st.info("Enter details for your new project. All fields start with default values.")
         
+        # Clear any existing editing state to ensure clean slate
+        if 'edited_project' in st.session_state:
+            del st.session_state.edited_project
+        if 'current_editing_project' in st.session_state:
+            del st.session_state.current_editing_project
+        
         # Create a new project template with default values
         current_year = datetime.now().year
         new_project_template = {
@@ -511,8 +517,31 @@ class ProjectPipelineRealEstateTab:
     
     def render_individual_project_editor(self, project_name, df_projects):
         """Render editor for individual project with revenue/presales distribution"""
-        # Get the selected project data
-        project_data = df_projects[df_projects['project_name'] == project_name].iloc[0].to_dict()
+        
+        # Check if this is a new project (indicated by special flag or project name)
+        is_new_project = False
+        if 'project_name' not in df_projects.columns:
+            # This is a new project template DataFrame
+            is_new_project = True
+            project_data = df_projects.iloc[0].to_dict()
+        else:
+            # Check for the is_new_project flag in the data
+            if len(df_projects) == 1 and df_projects.iloc[0].get('is_new_project', False):
+                is_new_project = True
+                project_data = df_projects.iloc[0].to_dict()
+            else:
+                # Always use the most recent data from session state if available for existing projects
+                if 'project_data' in st.session_state and st.session_state.project_data is not None and 'project_name' in st.session_state.project_data.columns:
+                    df_projects = st.session_state.project_data
+                
+                # Get the selected project data
+                filtered_df = df_projects[df_projects['project_name'] == project_name]
+                
+                if filtered_df.empty:
+                    st.error(f"Project '{project_name}' not found.")
+                    return
+                else:
+                    project_data = filtered_df.iloc[0].to_dict()
         
         # Add default values for new fields if they don't exist
         defaults = {
@@ -550,8 +579,15 @@ class ProjectPipelineRealEstateTab:
             # Display previously generated AI suggestions
             self.display_ai_research_summary(project_name, project_data)
         
-        # Check if we're switching to a different project
-        if 'current_editing_project' not in st.session_state:
+        # Check if this is a new project
+        is_creating_new = project_data.get('is_new_project', False)
+        
+        # Check if we're switching to a different project or creating new
+        if is_creating_new:
+            # For new projects, always use fresh template data
+            st.session_state.current_editing_project = 'NEW_PROJECT_TEMP'
+            st.session_state.edited_project = project_data.copy()
+        elif 'current_editing_project' not in st.session_state:
             st.session_state.current_editing_project = project_name
             st.session_state.edited_project = project_data.copy()
         elif st.session_state.current_editing_project != project_name:
@@ -831,6 +867,26 @@ class ProjectPipelineRealEstateTab:
                     st.caption(f"AI Suggestion: {ai_suggestions['construction_cost_per_sqm']} VND/m²")
         st.session_state.edited_project['construction_cost_per_sqm'] = const_cost
         
+        # Total Construction Cost (calculated, non-editable)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Total Construction Cost (VND bn)**")
+        with col2:
+            # Calculate total construction cost from GFA and construction cost per sqm
+            gfa_value = float(st.session_state.edited_project.get('gross_floor_area', 0) or 0)
+            const_cost_value = float(st.session_state.edited_project.get('construction_cost_per_sqm', 0) or 0)
+            total_const_cost = gfa_value * const_cost_value / 1_000_000_000  # Convert to billions VND
+            
+            # Display as disabled text input
+            st.text_input(
+                "Total Construction Cost (VND bn)",
+                value=f"{total_const_cost:,.1f}",
+                disabled=True,
+                key="total_construction_cost_display",
+                label_visibility="collapsed",
+                help="Automatically calculated: GFA × Construction Cost per m²"
+            )
+        
         # Land Cost per sqm (in VND million per m2 for user input)
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -862,6 +918,26 @@ class ProjectPipelineRealEstateTab:
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
         st.session_state.edited_project['land_cost_per_sqm'] = land_cost
+        
+        # Total Land Cost (calculated, non-editable)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Total Land Cost (VND bn)**")
+        with col2:
+            # Calculate total land cost from Land Area and Land Cost per sqm
+            land_area_value = float(st.session_state.edited_project.get('land_area', 0) or 0)
+            land_cost_value = float(st.session_state.edited_project.get('land_cost_per_sqm', 0) or 0)
+            total_land_cost = land_area_value * land_cost_value / 1_000_000_000  # Convert to billions VND
+            
+            # Display as disabled text input
+            st.text_input(
+                "Total Land Cost (VND bn)",
+                value=f"{total_land_cost:,.1f}",
+                disabled=True,
+                key="total_land_cost_display",
+                label_visibility="collapsed",
+                help="Automatically calculated: Land Area × Land Cost per m²"
+            )
         
         # Total Debt field (in VND billions for user input)
         col1, col2 = st.columns([1, 3])
@@ -1156,21 +1232,21 @@ class ProjectPipelineRealEstateTab:
         revenue_end = st.session_state.edited_project.get('project_completion_year',
                                                           project_data.get('project_completion_year', datetime.now().year + 3) or datetime.now().year + 3)
         
-        # Get existing distribution from session state (which may have been updated by reset button)
-        # If not in session state, get from project data
+        # Create input fields for each year
+        years = list(range(int(revenue_start), int(revenue_end) + 1))
+        
+        # Get existing distribution from session state
         existing_dist = st.session_state.edited_project.get('revenue_distribution', 
                                                             project_data.get('revenue_distribution', {}))
         if not isinstance(existing_dist, dict):
             existing_dist = {}
         
-        # Create input fields for each year
-        years = list(range(int(revenue_start), int(revenue_end) + 1))
-        distribution = {}
-        
         # If no existing distribution or empty, create even split
         if not existing_dist or len(existing_dist) == 0:
             for year in years:
                 existing_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
+        
+        distribution = {}
         
         # Get the calculated total revenue (presales booking) from session state or calculate it
         edited = st.session_state.edited_project
@@ -1184,14 +1260,16 @@ class ProjectPipelineRealEstateTab:
         for i, year in enumerate(years):
             col_idx = i % len(cols)
             with cols[col_idx]:
+                widget_key = f"revenue_dist_{year}"
                 default_val = existing_dist.get(str(year), 100.0/len(years))
+                
                 pct = st.number_input(
                     f"Year {year} (%)",
                     value=float(default_val),
                     min_value=0.0,
                     max_value=100.0,
                     step=0.1,
-                    key=f"revenue_dist_{year}"
+                    key=widget_key
                 )
                 distribution[str(year)] = pct
                 
@@ -1201,23 +1279,10 @@ class ProjectPipelineRealEstateTab:
         
         # Validate percentages
         total_pct = sum(distribution.values())
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if abs(total_pct - 100.0) < 0.01:
-                st.success(f"✅ Total: {total_pct:.1f}%")
-            else:
-                st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
-        
-        with col2:
-            if st.button("Reset to Linear Distribution", key="reset_revenue"):
-                # Reset to even distribution across all years
-                even_pct = 100.0 / len(years) if len(years) > 0 else 100.0
-                reset_dist = {}
-                for year in years:
-                    reset_dist[str(year)] = even_pct
-                st.session_state.edited_project['revenue_distribution'] = reset_dist
-                st.rerun()
+        if abs(total_pct - 100.0) < 0.01:
+            st.success(f"✅ Total: {total_pct:.1f}%")
+        else:
+            st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
         
         st.session_state.edited_project['revenue_distribution'] = distribution
         
@@ -1256,21 +1321,21 @@ class ProjectPipelineRealEstateTab:
                                                           project_data.get('sales_years', 3) or 3)
         sales_end = int(sales_start or datetime.now().year) + int(sales_years or 3) - 1
         
-        # Get existing distribution from session state (which may have been updated by reset button)
-        # If not in session state, get from project data
+        # Create input fields for each year
+        years = list(range(int(sales_start), int(sales_end) + 1))
+        
+        # Get existing distribution from session state
         existing_dist = st.session_state.edited_project.get('presales_distribution', 
                                                             project_data.get('presales_distribution', {}))
         if not isinstance(existing_dist, dict):
             existing_dist = {}
         
-        # Create input fields for each year
-        years = list(range(int(sales_start), int(sales_end) + 1))
-        distribution = {}
-        
         # If no existing distribution or empty, create even split
         if not existing_dist or len(existing_dist) == 0:
             for year in years:
                 existing_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
+        
+        distribution = {}
         
         # Calculate totals for display with price increment
         edited = st.session_state.edited_project
@@ -1278,12 +1343,6 @@ class ProjectPipelineRealEstateTab:
         nsa = float(edited.get('net_sellable_area', 0) or 0)
         asp = float(edited.get('average_selling_price', 0) or 0)
         price_increment = float(edited.get('price_increment_factor', 0) or 0)  # As decimal
-        
-        # Calculate total presales using the helper method for consistency
-        total_presales = self.calculate_total_presales_booking(edited)
-        
-        # Display total presales
-        st.metric("Total Presales Booking", f"{total_presales:.1f}B VND")
         
         # Calculate adjusted ASP for each year (needed for display)
         adjusted_asp_by_year = {}
@@ -1295,14 +1354,16 @@ class ProjectPipelineRealEstateTab:
         for i, year in enumerate(years):
             col_idx = i % len(cols)
             with cols[col_idx]:
+                widget_key = f"presales_dist_{year}"
                 default_val = existing_dist.get(str(year), 100.0/len(years))
+                
                 pct = st.number_input(
                     f"Year {year} (%)",
                     value=float(default_val),
                     min_value=0.0,
                     max_value=100.0,
                     step=0.1,
-                    key=f"presales_dist_{year}"
+                    key=widget_key
                 )
                 distribution[str(year)] = pct
                 
@@ -1316,25 +1377,24 @@ class ProjectPipelineRealEstateTab:
                 if price_increment > 0:
                     st.caption(f"ASP: {year_asp_adjusted/1e6:.1f}M VND/m²")
         
+        # Calculate total presales based on current distribution values
+        # This needs to be calculated AFTER we have the distribution from the inputs
+        total_presales_calculated = 0
+        for i, year in enumerate(years):
+            year_pct = distribution.get(str(year), 0) / 100
+            year_nsa = nsa * year_pct
+            year_asp = asp * (1 + price_increment) ** i
+            total_presales_calculated += year_nsa * year_asp / 1e9
+        
+        # Display total presales
+        st.metric("Total Presales Booking", f"{total_presales_calculated:.1f}B VND")
+        
         # Validate percentages
         total_pct = sum(distribution.values())
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if abs(total_pct - 100.0) < 0.01:
-                st.success(f"✅ Total: {total_pct:.1f}%")
-            else:
-                st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
-        
-        with col2:
-            if st.button("Reset to Linear Distribution", key="reset_presales"):
-                # Reset to even distribution across all years
-                even_pct = 100.0 / len(years) if len(years) > 0 else 100.0
-                reset_dist = {}
-                for year in years:
-                    reset_dist[str(year)] = even_pct
-                st.session_state.edited_project['presales_distribution'] = reset_dist
-                st.rerun()
+        if abs(total_pct - 100.0) < 0.01:
+            st.success(f"✅ Total: {total_pct:.1f}%")
+        else:
+            st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
         
         st.session_state.edited_project['presales_distribution'] = distribution
         
@@ -1369,7 +1429,7 @@ class ProjectPipelineRealEstateTab:
             st.plotly_chart(fig, use_container_width=True)
             
             # Show cash collection schedule based on tranche logic
-            if abs(total_pct - 100.0) < 0.01 and total_presales > 0:
+            if abs(total_pct - 100.0) < 0.01 and total_presales_calculated > 0:
                 st.markdown("### 💰 Actual Cash Collection Schedule (with Tranche Logic)")
                 
                 # Get construction end year
@@ -1505,7 +1565,15 @@ class ProjectPipelineRealEstateTab:
                 with st.expander("📊 View Detailed Cash Collection Table", expanded=False):
                     cash_data = []
                     for year in all_years:
-                        presale_val = total_presales * distribution.get(str(year), 0) / 100
+                        # Calculate presale value for this year
+                        if year in years:
+                            year_idx = years.index(year)
+                            year_pct = distribution.get(str(year), 0) / 100
+                            year_nsa = nsa * year_pct
+                            year_asp = asp * (1 + price_increment) ** year_idx
+                            presale_val = year_nsa * year_asp / 1e9
+                        else:
+                            presale_val = 0
                         cash_val = cash_collection.get(year, 0)
                         cash_data.append({
                             "Year": year,
@@ -2203,16 +2271,13 @@ class ProjectPipelineRealEstateTab:
                         
                         # Debug: Show DataFrame info
                         st.info(f"Found Financial Statements DataFrame with {len(bs_df)} rows")
-                        print(f"DEBUG: DataFrame shape: {bs_df.shape}")
-                        print(f"DEBUG: DataFrame columns: {list(bs_df.columns)}")
                         
                         # Convert DataFrame to dictionary format for MongoDB storage
                         balance_sheet_data = {}
                         
                         # Process each year (excluding Total row)
-                        for idx, row in bs_df.iterrows():
+                        for _, row in bs_df.iterrows():
                             year_value = row['Year']
-                            print(f"DEBUG: Processing row {idx}, Year value: {year_value}, type: {type(year_value)}")
                             
                             if str(year_value) != 'Total':
                                 try:
@@ -2251,9 +2316,7 @@ class ProjectPipelineRealEstateTab:
                                         'cash_outflow_tax': -abs(float(row['Cash_Outflow_Tax'])) if float(row['Cash_Outflow_Tax']) != 0 else 0,  # Ensure negative
                                         'cash_balance_change': float(row['Cash_Balance_Change'])
                                     }
-                                    print(f"DEBUG: Successfully processed year {year_str}")
                                 except Exception as e:
-                                    print(f"DEBUG: Error processing row {idx}: {e}")
                                     st.error(f"Error processing year data: {e}")
                         
                         # Store complete financial statements in project data
@@ -2299,9 +2362,7 @@ class ProjectPipelineRealEstateTab:
                     # Debug: Check what's in edited before saving
                     if 'comprehensive_financial_statements' in edited:
                         st.info(f"📊 About to save {len(edited['comprehensive_financial_statements'])} years of financial data to MongoDB")
-                        print(f"DEBUG: edited contains comprehensive_financial_statements with {len(edited['comprehensive_financial_statements'])} years")
                     else:
-                        print("DEBUG: edited does NOT contain comprehensive_financial_statements")
                         st.warning("⚠️ Note: Financial statements data not found in save data")
                     
                     # Save to MongoDB
@@ -2316,25 +2377,33 @@ class ProjectPipelineRealEstateTab:
                     if result['success']:
                         st.success(result['message'])
                         
-                        # For new projects, we need to refresh the project list and switch to the new project
-                        if is_new_project:
-                            # Refresh project data
-                            from utils.mongodb_utils import load_projects_data
-                            df_projects = load_projects_data()
-                            
-                            # Filter for selected company if applicable
-                            if st.session_state.selected_company:
-                                df_projects = df_projects[df_projects['company_ticker'] == st.session_state.selected_company]
-                            
-                            # Update session state with new project data
-                            st.session_state.project_data = df_projects
-                            
-                            # Switch to the newly created project
-                            st.session_state.selected_project_for_edit = edited.get('project_name')
+                        # Always refresh project data from MongoDB after save
+                        from utils.mongodb_utils import load_projects_data
+                        df_projects = load_projects_data()
                         
-                        # Clear editing state
-                        if 'current_editing_project' in st.session_state:
-                            del st.session_state.current_editing_project
+                        # Filter for selected company if applicable
+                        if st.session_state.selected_company:
+                            df_projects = df_projects[df_projects['company_ticker'] == st.session_state.selected_company]
+                        
+                        # Update session state with fresh project data
+                        st.session_state.project_data = df_projects
+                        
+                        # For new projects, switch to the newly created project
+                        if is_new_project:
+                            st.session_state.selected_project_for_edit = edited.get('project_name')
+                        else:
+                            # For existing projects, clear the editing state to force reload
+                            # This ensures the comparison values are refreshed
+                            if 'current_editing_project' in st.session_state:
+                                del st.session_state.current_editing_project
+                            if 'edited_project' in st.session_state:
+                                del st.session_state.edited_project
+                        
+                        # Clear any temporary editing state
+                        if 'confirm_delete' in st.session_state:
+                            del st.session_state.confirm_delete
+                        
+                        # Rerun to refresh the UI with new data
                         st.rerun()
                     else:
                         st.error(result['message'])

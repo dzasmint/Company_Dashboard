@@ -407,11 +407,6 @@ class ModelForecastTab:
                         # Debug: Log first project's values for verification
                         if year == years[0] and project_name not in logged_projects:
                             logged_projects.add(project_name)
-                            print(f"DEBUG: Project '{project_name}' Year {year} from MongoDB:")
-                            print(f"  Revenue: {revenue_amount:.1f}B VND")
-                            print(f"  COGS: {project_cogs:.1f}B VND (should be negative)")
-                            print(f"  SG&A: {sga_amount:.1f}B VND (should be negative)")
-                            print(f"  Interest: {interest_amount:.1f}B VND (should be negative)")
                     else:
                         # No data for this year
                         project_revenue_breakdown[project_name][year] = 0
