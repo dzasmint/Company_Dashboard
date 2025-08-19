@@ -495,6 +495,10 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
         # Start with all fields from project_data to ensure nothing is missed
         document = project_data.copy()
         
+        # Remove the is_new_project flag - this should not be saved to database
+        if 'is_new_project' in document:
+            del document['is_new_project']
+        
         # Ensure required fields are present with defaults
         document.update({
             "project_name": project_name,

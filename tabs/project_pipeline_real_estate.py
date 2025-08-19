@@ -14,17 +14,11 @@ class ProjectPipelineRealEstateTab:
         self.parent = parent
     
     def calculate_total_presales_booking(self, project_data):
-        """Calculate total presales booking with price increment.
+        """Calculate total presales booking with price increment for both low-rise and high-rise.
         This is the single source of truth for total revenue calculation.
         Total Revenue = Total Presales Booking = Total Cash Collection
         """
-        nsa = float(project_data.get('net_sellable_area', 0) or 0)
-        asp = float(project_data.get('average_selling_price', 0) or 0)
         price_increment = float(project_data.get('price_increment_factor', 0) or 0)
-        presales_dist = project_data.get('presales_distribution', {})
-        
-        if not presales_dist:
-            return 0
         
         # Get presales timeline
         presales_start = int(project_data.get('sale_start_year', 2025) or 2025)
@@ -32,14 +26,32 @@ class ProjectPipelineRealEstateTab:
         presales_end = presales_start + sales_years - 1
         years = list(range(presales_start, presales_end + 1))
         
-        # Calculate total presales with price increment
         total_presales = 0
-        for i, year in enumerate(years):
-            year_pct = presales_dist.get(str(year), 0) / 100
-            year_nsa = nsa * year_pct
-            # Apply price increment: first year = base, subsequent years apply increment
-            year_asp = asp * (1 + price_increment) ** i
-            total_presales += year_nsa * year_asp
+        
+        # Calculate low-rise presales
+        low_rise_nsa = float(project_data.get('low_rise_nsa', 0) or 0)
+        low_rise_asp = float(project_data.get('low_rise_asp', 0) or 0)
+        low_rise_dist = project_data.get('low_rise_presales_distribution', {})
+        
+        if low_rise_dist:
+            for i, year in enumerate(years):
+                year_pct = low_rise_dist.get(str(year), 0) / 100
+                year_nsa = low_rise_nsa * year_pct
+                year_asp = low_rise_asp * (1 + price_increment) ** i
+                total_presales += year_nsa * year_asp
+        
+        # Calculate high-rise presales
+        high_rise_nsa = float(project_data.get('high_rise_nsa', 0) or 0)
+        high_rise_asp = float(project_data.get('high_rise_asp', 0) or 0)
+        high_rise_dist = project_data.get('high_rise_presales_distribution', {})
+        
+        if high_rise_dist:
+            for i, year in enumerate(years):
+                year_pct = high_rise_dist.get(str(year), 0) / 100
+                year_nsa = high_rise_nsa * year_pct
+                year_asp = high_rise_asp * (1 + price_increment) ** i
+                total_presales += year_nsa * year_asp
+        
         
         return total_presales / 1e9  # Return in billions
         
@@ -290,11 +302,23 @@ class ProjectPipelineRealEstateTab:
             'project_name': 'New Project',
             'company_ticker': st.session_state.get('selected_company', ''),
             'location': '',
+            # Low-rise fields
+            'low_rise_units': 0,
+            'low_rise_avg_unit_size': 0,
+            'low_rise_nsa': 0,
+            'low_rise_asp': 0,
+            # High-rise fields
+            'high_rise_units': 0,
+            'high_rise_avg_unit_size': 0,
+            'high_rise_nsa': 0,
+            'high_rise_asp': 0,
+            # Combined fields (calculated)
             'total_units': 0,
             'net_sellable_area': 0,
+            'average_selling_price': 0,
+            # Other fields
             'gross_floor_area': 0,
             'land_area': 0,
-            'average_selling_price': 0,
             'price_increment_factor': 0,  # Annual price increment percentage
             'construction_cost_per_sqm': 0,
             'land_cost_per_sqm': 0,
@@ -305,6 +329,12 @@ class ProjectPipelineRealEstateTab:
             'construction_years': 3,
             'sales_years': 4,
             'project_ownership': 1.0,  # 100% ownership default
+            # Separate distributions for low-rise and high-rise
+            'low_rise_presales_distribution': {},
+            'high_rise_presales_distribution': {},
+            'low_rise_revenue_distribution': {},
+            'high_rise_revenue_distribution': {},
+            # Combined distributions (for backward compatibility)
             'revenue_distribution': {},
             'presales_distribution': {},
             'sga_percentage': 0.08,  # 8% default
@@ -526,9 +556,15 @@ class ProjectPipelineRealEstateTab:
             project_data = df_projects.iloc[0].to_dict()
         else:
             # Check for the is_new_project flag in the data
-            if len(df_projects) == 1 and df_projects.iloc[0].get('is_new_project', False):
-                is_new_project = True
-                project_data = df_projects.iloc[0].to_dict()
+            if len(df_projects) == 1:
+                row_data = df_projects.iloc[0].to_dict()
+                if row_data.get('is_new_project', False):
+                    is_new_project = True
+                    project_data = row_data
+                else:
+                    # Not a new project, proceed with normal flow
+                    is_new_project = False
+                    project_data = row_data  # Set project_data for existing projects too
             else:
                 # Always use the most recent data from session state if available for existing projects
                 if 'project_data' in st.session_state and st.session_state.project_data is not None and 'project_name' in st.session_state.project_data.columns:
@@ -618,7 +654,10 @@ class ProjectPipelineRealEstateTab:
         self.render_project_financial_analysis(project_data)
         
         st.markdown("---")
-        self.render_project_save_interface(project_data)
+        # Pass the is_new_project flag explicitly to save interface
+        project_data_with_flag = project_data.copy()
+        project_data_with_flag['is_new_project'] = is_new_project
+        self.render_project_save_interface(project_data_with_flag)
     
     def render_project_basic_info(self, project_data):
         """Render basic project information editor"""
@@ -636,7 +675,42 @@ class ProjectPipelineRealEstateTab:
         
         # Each field on its own row with label and input side by side
         
-        # Project Ownership - moved to top and converted to percentage display
+        # Project Name - FIRST field for new projects
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Project Name**")
+        with col2:
+            # Check if this is a new project
+            is_new_project = project_data.get('is_new_project', False)
+            
+            if is_new_project:
+                # For new projects, allow editing the name
+                project_name_input = st.text_input(
+                    "Project Name",
+                    value=str(project_data.get('project_name', 'New Project') or 'New Project'),
+                    key="edit_project_name",
+                    label_visibility="collapsed",
+                    placeholder="Enter a unique project name",
+                    help="Please enter a unique project name (not 'New Project')"
+                )
+                
+                # Validate project name
+                if project_name_input == 'New Project' or not project_name_input.strip():
+                    st.error("⚠️ Please enter a unique project name (not 'New Project')")
+                
+                st.session_state.edited_project['project_name'] = project_name_input
+            else:
+                # For existing projects, show as disabled
+                st.text_input(
+                    "Project Name",
+                    value=str(project_data.get('project_name', '') or ''),
+                    disabled=True,
+                    key="display_project_name",
+                    label_visibility="collapsed"
+                )
+                st.session_state.edited_project['project_name'] = project_data.get('project_name', '')
+        
+        # Project Ownership - moved to second position
         col1, col2 = st.columns([1, 3])
         with col1:
             st.markdown("**Project Ownership (%)**")
@@ -674,97 +748,197 @@ class ProjectPipelineRealEstateTab:
                 st.caption(f"AI Suggestion: {ai_suggestions['location']}")
         st.session_state.edited_project['location'] = location
         
-        # Total Units
+        # Section header for Low-Rise
+        st.markdown("#### Low-Rise Units")
+        
+        # Low-Rise Units
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Low-Rise Units**")
+        with col2:
+            low_rise_units = st.number_input(
+                "Low-Rise Units",
+                value=int(project_data.get('low_rise_units', 0) or 0),
+                min_value=0,
+                step=1,
+                format="%d",
+                key="edit_low_rise_units",
+                label_visibility="collapsed"
+            )
+        st.session_state.edited_project['low_rise_units'] = low_rise_units
+        
+        # Low-Rise Average Unit Size
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Low-Rise Avg Unit Size (m²)**")
+        with col2:
+            low_rise_avg_unit_size = st.number_input(
+                "Low-Rise Average Unit Size (m²)",
+                value=int(project_data.get('low_rise_avg_unit_size', 0) or 0),
+                min_value=0,
+                step=1,
+                format="%d",
+                key="edit_low_rise_avg_unit_size",
+                label_visibility="collapsed"
+            )
+        st.session_state.edited_project['low_rise_avg_unit_size'] = low_rise_avg_unit_size
+        
+        # Calculate and display Low-Rise NSA
+        low_rise_nsa = low_rise_units * low_rise_avg_unit_size
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Low-Rise NSA**")
+        with col2:
+            st.text_input(
+                "Low-Rise Net Sellable Area",
+                value=f"{low_rise_nsa:,.0f} m² (calculated)",
+                disabled=True,
+                key="low_rise_nsa_display",
+                label_visibility="collapsed"
+            )
+        st.session_state.edited_project['low_rise_nsa'] = low_rise_nsa
+        
+        # Low-Rise Average Selling Price
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Low-Rise ASP (VND mn/m²)**")
+        with col2:
+            low_rise_asp_raw = float(project_data.get('low_rise_asp', 0) or 0)
+            low_rise_asp_million = low_rise_asp_raw / 1_000_000
+            
+            low_rise_asp_million_input = st.number_input(
+                "Low-Rise Average Selling Price (VND mn/m²)",
+                value=low_rise_asp_million,
+                min_value=0.0,
+                step=1.0,
+                format="%.1f",
+                key="edit_low_rise_asp",
+                label_visibility="collapsed"
+            )
+            low_rise_asp_value = low_rise_asp_million_input * 1_000_000
+        st.session_state.edited_project['low_rise_asp'] = low_rise_asp_value
+        
+        # Section header for High-Rise
+        st.markdown("#### High-Rise Units")
+        
+        # High-Rise Units
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**High-Rise Units**")
+        with col2:
+            high_rise_units = st.number_input(
+                "High-Rise Units",
+                value=int(project_data.get('high_rise_units', 0) or 0),
+                min_value=0,
+                step=1,
+                format="%d",
+                key="edit_high_rise_units",
+                label_visibility="collapsed"
+            )
+        st.session_state.edited_project['high_rise_units'] = high_rise_units
+        
+        # High-Rise Average Unit Size
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**High-Rise Avg Unit Size (m²)**")
+        with col2:
+            high_rise_avg_unit_size = st.number_input(
+                "High-Rise Average Unit Size (m²)",
+                value=int(project_data.get('high_rise_avg_unit_size', 0) or 0),
+                min_value=0,
+                step=1,
+                format="%d",
+                key="edit_high_rise_avg_unit_size",
+                label_visibility="collapsed"
+            )
+        st.session_state.edited_project['high_rise_avg_unit_size'] = high_rise_avg_unit_size
+        
+        # Calculate and display High-Rise NSA
+        high_rise_nsa = high_rise_units * high_rise_avg_unit_size
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**High-Rise NSA**")
+        with col2:
+            st.text_input(
+                "High-Rise Net Sellable Area",
+                value=f"{high_rise_nsa:,.0f} m² (calculated)",
+                disabled=True,
+                key="high_rise_nsa_display",
+                label_visibility="collapsed"
+            )
+        st.session_state.edited_project['high_rise_nsa'] = high_rise_nsa
+        
+        # High-Rise Average Selling Price
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**High-Rise ASP (VND mn/m²)**")
+        with col2:
+            high_rise_asp_raw = float(project_data.get('high_rise_asp', 0) or 0)
+            high_rise_asp_million = high_rise_asp_raw / 1_000_000
+            
+            high_rise_asp_million_input = st.number_input(
+                "High-Rise Average Selling Price (VND mn/m²)",
+                value=high_rise_asp_million,
+                min_value=0.0,
+                step=1.0,
+                format="%.1f",
+                key="edit_high_rise_asp",
+                label_visibility="collapsed"
+            )
+            high_rise_asp_value = high_rise_asp_million_input * 1_000_000
+        st.session_state.edited_project['high_rise_asp'] = high_rise_asp_value
+        
+        # Section for Combined Totals
+        st.markdown("#### Combined Totals")
+        
+        # Calculate combined values
+        total_units = low_rise_units + high_rise_units
+        total_nsa = low_rise_nsa + high_rise_nsa
+        # Weighted average ASP
+        if total_nsa > 0:
+            weighted_asp = (low_rise_nsa * low_rise_asp_value + high_rise_nsa * high_rise_asp_value) / total_nsa
+        else:
+            weighted_asp = 0
+        
+        # Display combined totals
         col1, col2 = st.columns([1, 3])
         with col1:
             st.markdown("**Total Units**")
         with col2:
-            total_units = st.number_input(
+            st.text_input(
                 "Total Units",
-                value=int(project_data.get('total_units', 0) or 0),
-                min_value=0,
-                step=1,
-                format="%d",
-                key="edit_total_units",
+                value=f"{total_units:,.0f} units",
+                disabled=True,
+                key="total_units_display",
                 label_visibility="collapsed"
             )
-            if ai_suggestions.get("total_units"):
-                try:
-                    ai_units = float(ai_suggestions['total_units'])
-                    st.caption(f"AI Suggestion: {ai_units:,.0f} units")
-                except:
-                    st.caption(f"AI Suggestion: {ai_suggestions['total_units']} units")
         st.session_state.edited_project['total_units'] = total_units
         
-        # Average Unit Size
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Average Unit Size (m²)**")
+            st.markdown("**Total NSA**")
         with col2:
-            avg_unit_size = st.number_input(
-                "Average Unit Size (m²)",
-                value=int(project_data.get('average_unit_size', 0) or 0),
-                min_value=0,
-                step=1,
-                format="%d",
-                key="edit_avg_unit_size",
-                label_visibility="collapsed"
-            )
-            if ai_suggestions.get("average_unit_size"):
-                try:
-                    ai_size = float(ai_suggestions['average_unit_size'])
-                    st.caption(f"AI Suggestion: {ai_size:,.0f} m²")
-                except:
-                    st.caption(f"AI Suggestion: {ai_suggestions['average_unit_size']} m²")
-        st.session_state.edited_project['average_unit_size'] = avg_unit_size
-        
-        # Calculate and display NSA
-        nsa = total_units * avg_unit_size
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Net Sellable Area**")
-        with col2:
-            # Use a disabled text input for consistent height with other fields
             st.text_input(
-                "Net Sellable Area",
-                value=f"{nsa:,.0f} m² (calculated)",
+                "Total Net Sellable Area",
+                value=f"{total_nsa:,.0f} m²",
                 disabled=True,
-                key="nsa_display",
+                key="total_nsa_display",
                 label_visibility="collapsed"
             )
-        st.session_state.edited_project['net_sellable_area'] = nsa
+        st.session_state.edited_project['net_sellable_area'] = total_nsa
         
-        # Average Selling Price (in VND million per m2 for user input)
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Average Selling Price (VND mn/m²)**")
+            st.markdown("**Weighted Avg ASP (VND mn/m²)**")
         with col2:
-            # Convert from raw VND to VND million for display
-            asp_raw = float(project_data.get('average_selling_price', 0) or 0)
-            asp_million = asp_raw / 1_000_000  # Convert to million VND
-            
-            asp_million_input = st.number_input(
-                "Average Selling Price (VND mn/m²)",
-                value=asp_million,
-                min_value=0.0,
-                step=1.0,
-                format="%.0f",
-                key="edit_asp",
-                label_visibility="collapsed",
-                help="Enter price in million VND per m² (e.g., 50.0 for 50 million VND/m²)"
+            st.text_input(
+                "Weighted Average Selling Price",
+                value=f"{weighted_asp/1_000_000:.1f}",
+                disabled=True,
+                key="weighted_asp_display",
+                label_visibility="collapsed"
             )
-            
-            # Convert back to raw VND for storage and calculations
-            asp = int(asp_million_input * 1_000_000)
-            
-            if ai_suggestions.get("avg_selling_price_per_sqm"):
-                try:
-                    ai_price = float(ai_suggestions['avg_selling_price_per_sqm'])
-                    ai_price_million = ai_price / 1_000_000
-                    st.caption(f"AI Suggestion: {ai_price_million:.1f} mn VND/m²")
-                except:
-                    st.caption(f"AI Suggestion: {ai_suggestions['avg_selling_price_per_sqm']} VND/m²")
-        st.session_state.edited_project['average_selling_price'] = asp
+        st.session_state.edited_project['average_selling_price'] = weighted_asp
         
         # Price Annual Increment
         col1, col2 = st.columns([1, 3])
@@ -1222,9 +1396,9 @@ class ProjectPipelineRealEstateTab:
         st.session_state.edited_project['cost_of_debt'] = cost_of_debt_decimal
     
     def render_revenue_distribution_editor(self, project_data):
-        """Render revenue distribution editor with year-by-year percentages"""
+        """Render revenue distribution editor with year-by-year percentages for low-rise and high-rise"""
         st.subheader("Revenue Distribution Schedule")
-        st.info("Enter percentage of total revenue to recognize in each year. Must sum to 100%. Revenue = Total Presales Booking.")
+        st.info("Enter percentage of revenue to recognize in each year for Low-Rise and High-Rise units. Each must sum to 100%.")
         
         # Get timeline parameters from edited project
         revenue_start = st.session_state.edited_project.get('revenue_booking_start_year', 
@@ -1235,84 +1409,232 @@ class ProjectPipelineRealEstateTab:
         # Create input fields for each year
         years = list(range(int(revenue_start), int(revenue_end) + 1))
         
-        # Get existing distribution from session state
-        existing_dist = st.session_state.edited_project.get('revenue_distribution', 
-                                                            project_data.get('revenue_distribution', {}))
-        if not isinstance(existing_dist, dict):
-            existing_dist = {}
-        
-        # If no existing distribution or empty, create even split
-        if not existing_dist or len(existing_dist) == 0:
-            for year in years:
-                existing_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
-        
-        distribution = {}
-        
-        # Get the calculated total revenue (presales booking) from session state or calculate it
+        # Get values from edited project
         edited = st.session_state.edited_project
-        total_revenue = self.calculate_total_presales_booking(edited)
         
-        # Display total revenue that will be distributed
-        st.metric("Total Revenue (from Presales Booking)", f"{total_revenue:.1f}B VND")
+        # Calculate total revenue for each type using presales booking
+        price_increment = float(edited.get('price_increment_factor', 0) or 0)
         
-        cols = st.columns(min(len(years), 4))  # Max 4 columns
+        # Get presales timeline for revenue calculation
+        presales_start = int(edited.get('sale_start_year', 2025) or 2025)
+        sales_years = int(edited.get('sales_years', 3) or 3)
+        presales_end = presales_start + sales_years - 1
+        presales_years = list(range(presales_start, presales_end + 1))
         
-        for i, year in enumerate(years):
-            col_idx = i % len(cols)
-            with cols[col_idx]:
-                widget_key = f"revenue_dist_{year}"
-                default_val = existing_dist.get(str(year), 100.0/len(years))
+        # Calculate low-rise total revenue
+        low_rise_nsa = float(edited.get('low_rise_nsa', 0) or 0)
+        low_rise_asp = float(edited.get('low_rise_asp', 0) or 0)
+        low_rise_presales_dist = edited.get('low_rise_presales_distribution', {})
+        
+        total_low_revenue = 0
+        if low_rise_presales_dist:
+            for i, year in enumerate(presales_years):
+                year_pct = low_rise_presales_dist.get(str(year), 0) / 100
+                year_nsa = low_rise_nsa * year_pct
+                year_asp = low_rise_asp * (1 + price_increment) ** i
+                total_low_revenue += year_nsa * year_asp / 1e9
+        
+        # Calculate high-rise total revenue
+        high_rise_nsa = float(edited.get('high_rise_nsa', 0) or 0)
+        high_rise_asp = float(edited.get('high_rise_asp', 0) or 0)
+        high_rise_presales_dist = edited.get('high_rise_presales_distribution', {})
+        
+        total_high_revenue = 0
+        if high_rise_presales_dist:
+            for i, year in enumerate(presales_years):
+                year_pct = high_rise_presales_dist.get(str(year), 0) / 100
+                year_nsa = high_rise_nsa * year_pct
+                year_asp = high_rise_asp * (1 + price_increment) ** i
+                total_high_revenue += year_nsa * year_asp / 1e9
+        
+        # Create tabs for Low-Rise and High-Rise
+        tab_low, tab_high, tab_combined = st.tabs(["Low-Rise Distribution", "High-Rise Distribution", "Combined View"])
+        
+        with tab_low:
+            st.markdown("### Low-Rise Revenue Distribution")
+            st.metric("Total Low-Rise Revenue", f"{total_low_revenue:.1f}B VND")
+            
+            # Get existing low-rise distribution
+            existing_low_dist = edited.get('low_rise_revenue_distribution',
+                                          project_data.get('low_rise_revenue_distribution', {}))
+            if not isinstance(existing_low_dist, dict):
+                existing_low_dist = {}
+            
+            # If no existing distribution, create even split
+            if not existing_low_dist:
+                for year in years:
+                    existing_low_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
+            
+            low_rise_distribution = {}
+            
+            cols = st.columns(min(len(years), 4))
+            for i, year in enumerate(years):
+                col_idx = i % len(cols)
+                with cols[col_idx]:
+                    widget_key = f"low_revenue_dist_{year}"
+                    default_val = existing_low_dist.get(str(year), 100.0/len(years))
+                    
+                    pct = st.number_input(
+                        f"Year {year} (%)",
+                        value=float(default_val),
+                        min_value=0.0,
+                        max_value=100.0,
+                        step=0.1,
+                        key=widget_key
+                    )
+                    low_rise_distribution[str(year)] = pct
+                    
+                    # Display calculated value
+                    year_revenue = total_low_revenue * pct / 100
+                    st.caption(f"Value: {year_revenue:.1f}B VND")
+            
+            # Validate percentages
+            total_pct = sum(low_rise_distribution.values())
+            if abs(total_pct - 100.0) < 0.01:
+                st.success(f"✅ Total: {total_pct:.1f}%")
+            else:
+                st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
+            
+            st.session_state.edited_project['low_rise_revenue_distribution'] = low_rise_distribution
+        
+        with tab_high:
+            st.markdown("### High-Rise Revenue Distribution")
+            st.metric("Total High-Rise Revenue", f"{total_high_revenue:.1f}B VND")
+            
+            # Get existing high-rise distribution
+            existing_high_dist = edited.get('high_rise_revenue_distribution',
+                                           project_data.get('high_rise_revenue_distribution', {}))
+            if not isinstance(existing_high_dist, dict):
+                existing_high_dist = {}
+            
+            # If no existing distribution, create even split
+            if not existing_high_dist:
+                for year in years:
+                    existing_high_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
+            
+            high_rise_distribution = {}
+            
+            cols = st.columns(min(len(years), 4))
+            for i, year in enumerate(years):
+                col_idx = i % len(cols)
+                with cols[col_idx]:
+                    widget_key = f"high_revenue_dist_{year}"
+                    default_val = existing_high_dist.get(str(year), 100.0/len(years))
+                    
+                    pct = st.number_input(
+                        f"Year {year} (%)",
+                        value=float(default_val),
+                        min_value=0.0,
+                        max_value=100.0,
+                        step=0.1,
+                        key=widget_key
+                    )
+                    high_rise_distribution[str(year)] = pct
+                    
+                    # Display calculated value
+                    year_revenue = total_high_revenue * pct / 100
+                    st.caption(f"Value: {year_revenue:.1f}B VND")
+            
+            # Validate percentages
+            total_pct = sum(high_rise_distribution.values())
+            if abs(total_pct - 100.0) < 0.01:
+                st.success(f"✅ Total: {total_pct:.1f}%")
+            else:
+                st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
+            
+            st.session_state.edited_project['high_rise_revenue_distribution'] = high_rise_distribution
+        
+        with tab_combined:
+            st.markdown("### Combined Revenue View")
+            
+            # Calculate combined revenue for each year
+            combined_distribution = {}
+            combined_values = []
+            
+            for year in years:
+                # Low-rise for this year
+                low_pct = low_rise_distribution.get(str(year), 0) / 100
+                low_year_value = total_low_revenue * low_pct
                 
-                pct = st.number_input(
-                    f"Year {year} (%)",
-                    value=float(default_val),
-                    min_value=0.0,
-                    max_value=100.0,
-                    step=0.1,
-                    key=widget_key
+                # High-rise for this year
+                high_pct = high_rise_distribution.get(str(year), 0) / 100
+                high_year_value = total_high_revenue * high_pct
+                
+                # Combined
+                combined_value = low_year_value + high_year_value
+                combined_values.append(combined_value)
+                
+                # Calculate combined percentage (for backward compatibility)
+                total_revenue = total_low_revenue + total_high_revenue
+                if total_revenue > 0:
+                    combined_pct = (combined_value / total_revenue) * 100
+                else:
+                    combined_pct = 0
+                combined_distribution[str(year)] = combined_pct
+            
+            # Display combined chart
+            if years and combined_values:
+                import plotly.graph_objects as go
+                
+                fig = go.Figure()
+                
+                # Add low-rise bars
+                low_values = []
+                for year in years:
+                    low_pct = low_rise_distribution.get(str(year), 0) / 100
+                    low_values.append(total_low_revenue * low_pct)
+                
+                # Add high-rise bars
+                high_values = []
+                for year in years:
+                    high_pct = high_rise_distribution.get(str(year), 0) / 100
+                    high_values.append(total_high_revenue * high_pct)
+                
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=low_values,
+                    name='Low-Rise',
+                    marker_color='lightgreen',
+                    text=[f'{v:.1f}B' for v in low_values],
+                    textposition='inside'
+                ))
+                
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=high_values,
+                    name='High-Rise',
+                    marker_color='darkgreen',
+                    text=[f'{v:.1f}B' for v in high_values],
+                    textposition='inside'
+                ))
+                
+                fig.update_layout(
+                    title="Combined Revenue Recognition (Billion VND)",
+                    xaxis_title="Year",
+                    yaxis_title="Revenue (Billion VND)",
+                    barmode='stack',
+                    height=400
                 )
-                distribution[str(year)] = pct
                 
-                # Simply display the revenue amount for this year
-                year_revenue = total_revenue * pct / 100
-                st.caption(f"Revenue: {year_revenue:.1f}B VND")
-        
-        # Validate percentages
-        total_pct = sum(distribution.values())
-        if abs(total_pct - 100.0) < 0.01:
-            st.success(f"✅ Total: {total_pct:.1f}%")
-        else:
-            st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
-        
-        st.session_state.edited_project['revenue_distribution'] = distribution
-        
-        # Show visual chart of distribution
-        if years:
-            import plotly.graph_objects as go
+                st.plotly_chart(fig, use_container_width=True)
             
-            # Simply use total revenue * percentage for each year
-            absolute_values = [total_revenue * distribution.get(str(y), 0) / 100 for y in years]
+            # Display totals
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Low-Rise Total", f"{total_low_revenue:.1f}B VND")
+            with col2:
+                st.metric("High-Rise Total", f"{total_high_revenue:.1f}B VND")
+            with col3:
+                total_combined = total_low_revenue + total_high_revenue
+                st.metric("Combined Total", f"{total_combined:.1f}B VND")
             
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=[str(y) for y in years],
-                y=absolute_values,
-                text=[f"{abs_val:.0f}B ({distribution.get(str(y), 0):.1f}%)" for y, abs_val in zip(years, absolute_values)],
-                textposition='auto',
-                marker_color='darkblue'
-            ))
-            fig.update_layout(
-                title="Revenue Recognition Schedule",
-                xaxis_title="Year",
-                yaxis_title="Revenue (VND Billions)",
-                height=300
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            # Store combined distribution for backward compatibility
+            st.session_state.edited_project['revenue_distribution'] = combined_distribution
     
     def render_presales_distribution_editor(self, project_data):
-        """Render presales distribution editor with year-by-year percentages"""
+        """Render presales distribution editor with year-by-year percentages for low-rise and high-rise"""
         st.subheader("Presales Distribution Schedule")
-        st.info("Enter percentage of total sales to achieve in each year. Must sum to 100%.")
+        st.info("Enter percentage of sales to achieve in each year for Low-Rise and High-Rise units. Each must sum to 100%.")
         
         # Get timeline parameters from edited project
         sales_start = st.session_state.edited_project.get('sale_start_year',
@@ -1324,112 +1646,254 @@ class ProjectPipelineRealEstateTab:
         # Create input fields for each year
         years = list(range(int(sales_start), int(sales_end) + 1))
         
-        # Get existing distribution from session state
-        existing_dist = st.session_state.edited_project.get('presales_distribution', 
-                                                            project_data.get('presales_distribution', {}))
-        if not isinstance(existing_dist, dict):
-            existing_dist = {}
-        
-        # If no existing distribution or empty, create even split
-        if not existing_dist or len(existing_dist) == 0:
-            for year in years:
-                existing_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
-        
-        distribution = {}
-        
-        # Calculate totals for display with price increment
+        # Get values from edited project
         edited = st.session_state.edited_project
-        total_units = float(edited.get('total_units', 0) or 0)
-        nsa = float(edited.get('net_sellable_area', 0) or 0)
-        asp = float(edited.get('average_selling_price', 0) or 0)
-        price_increment = float(edited.get('price_increment_factor', 0) or 0)  # As decimal
+        price_increment = float(edited.get('price_increment_factor', 0) or 0)
         
-        # Calculate adjusted ASP for each year (needed for display)
-        adjusted_asp_by_year = {}
-        for i, year in enumerate(years):
-            adjusted_asp_by_year[year] = asp * (1 + price_increment) ** i
+        # Low-Rise values
+        low_rise_nsa = float(edited.get('low_rise_nsa', 0) or 0)
+        low_rise_asp = float(edited.get('low_rise_asp', 0) or 0)
+        low_rise_units = float(edited.get('low_rise_units', 0) or 0)
         
-        cols = st.columns(min(len(years), 4))  # Max 4 columns
+        # High-Rise values
+        high_rise_nsa = float(edited.get('high_rise_nsa', 0) or 0)
+        high_rise_asp = float(edited.get('high_rise_asp', 0) or 0)
+        high_rise_units = float(edited.get('high_rise_units', 0) or 0)
         
-        for i, year in enumerate(years):
-            col_idx = i % len(cols)
-            with cols[col_idx]:
-                widget_key = f"presales_dist_{year}"
-                default_val = existing_dist.get(str(year), 100.0/len(years))
-                
-                pct = st.number_input(
-                    f"Year {year} (%)",
-                    value=float(default_val),
-                    min_value=0.0,
-                    max_value=100.0,
-                    step=0.1,
-                    key=widget_key
-                )
-                distribution[str(year)] = pct
-                
-                # Display calculated units and value with adjusted ASP
-                units_for_year = int(total_units * pct / 100)
-                year_nsa = nsa * pct / 100
-                year_asp_adjusted = adjusted_asp_by_year[year]
-                year_presales = year_nsa * year_asp_adjusted / 1e9
-                st.caption(f"Units: {units_for_year:,}")
-                st.caption(f"Value: {year_presales:.0f}B VND")
-                if price_increment > 0:
-                    st.caption(f"ASP: {year_asp_adjusted/1e6:.1f}M VND/m²")
+        # Create tabs for Low-Rise and High-Rise
+        tab_low, tab_high, tab_combined = st.tabs(["Low-Rise Distribution", "High-Rise Distribution", "Combined View"])
         
-        # Calculate total presales based on current distribution values
-        # This needs to be calculated AFTER we have the distribution from the inputs
-        total_presales_calculated = 0
-        for i, year in enumerate(years):
-            year_pct = distribution.get(str(year), 0) / 100
-            year_nsa = nsa * year_pct
-            year_asp = asp * (1 + price_increment) ** i
-            total_presales_calculated += year_nsa * year_asp / 1e9
-        
-        # Display total presales
-        st.metric("Total Presales Booking", f"{total_presales_calculated:.1f}B VND")
-        
-        # Validate percentages
-        total_pct = sum(distribution.values())
-        if abs(total_pct - 100.0) < 0.01:
-            st.success(f"✅ Total: {total_pct:.1f}%")
-        else:
-            st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
-        
-        st.session_state.edited_project['presales_distribution'] = distribution
-        
-        # Show visual chart of distribution
-        if years:
-            import plotly.graph_objects as go
+        with tab_low:
+            st.markdown("### Low-Rise Presales Distribution")
             
-            # Calculate presales values with price increment for each year
-            # Must match the actual presales booking calculation
-            absolute_values = []
+            # Get existing low-rise distribution
+            existing_low_dist = edited.get('low_rise_presales_distribution', 
+                                          project_data.get('low_rise_presales_distribution', {}))
+            if not isinstance(existing_low_dist, dict):
+                existing_low_dist = {}
+            
+            # If no existing distribution, create even split
+            if not existing_low_dist:
+                for year in years:
+                    existing_low_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
+            
+            low_rise_distribution = {}
+            
+            cols = st.columns(min(len(years), 4))
             for i, year in enumerate(years):
-                year_pct = distribution.get(str(year), 0) / 100
-                year_nsa = nsa * year_pct
-                year_asp = asp * (1 + price_increment) ** i
-                year_value = year_nsa * year_asp / 1e9
-                absolute_values.append(year_value)
+                col_idx = i % len(cols)
+                with cols[col_idx]:
+                    widget_key = f"low_presales_dist_{year}"
+                    default_val = existing_low_dist.get(str(year), 100.0/len(years))
+                    
+                    pct = st.number_input(
+                        f"Year {year} (%)",
+                        value=float(default_val),
+                        min_value=0.0,
+                        max_value=100.0,
+                        step=0.1,
+                        key=widget_key
+                    )
+                    low_rise_distribution[str(year)] = pct
+                    
+                    # Display calculated values
+                    units_for_year = int(low_rise_units * pct / 100)
+                    year_nsa = low_rise_nsa * pct / 100
+                    year_asp_adjusted = low_rise_asp * (1 + price_increment) ** i
+                    year_presales = year_nsa * year_asp_adjusted / 1e9
+                    
+                    st.caption(f"Units: {units_for_year:,}")
+                    st.caption(f"Value: {year_presales:.1f}B VND")
+                    if price_increment > 0:
+                        st.caption(f"ASP: {year_asp_adjusted/1e6:.1f}M VND/m²")
             
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=[str(y) for y in years],
-                y=absolute_values,
-                text=[f"{abs_val:.0f}B ({distribution.get(str(y), 0):.1f}%)" for y, abs_val in zip(years, absolute_values)],
-                textposition='auto',
-                marker_color='lightblue'
-            ))
-            fig.update_layout(
-                title="Presales Schedule",
-                xaxis_title="Year",
-                yaxis_title="Presales Value (VND Billions)",
-                height=300
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            # Calculate total low-rise presales
+            total_low_presales = 0
+            for i, year in enumerate(years):
+                year_pct = low_rise_distribution.get(str(year), 0) / 100
+                year_nsa = low_rise_nsa * year_pct
+                year_asp = low_rise_asp * (1 + price_increment) ** i
+                total_low_presales += year_nsa * year_asp / 1e9
+            
+            st.metric("Total Low-Rise Presales", f"{total_low_presales:.1f}B VND")
+            
+            # Validate percentages
+            total_pct = sum(low_rise_distribution.values())
+            if abs(total_pct - 100.0) < 0.01:
+                st.success(f"✅ Total: {total_pct:.1f}%")
+            else:
+                st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
+            
+            st.session_state.edited_project['low_rise_presales_distribution'] = low_rise_distribution
+        
+        with tab_high:
+            st.markdown("### High-Rise Presales Distribution")
+            
+            # Get existing high-rise distribution
+            existing_high_dist = edited.get('high_rise_presales_distribution',
+                                           project_data.get('high_rise_presales_distribution', {}))
+            if not isinstance(existing_high_dist, dict):
+                existing_high_dist = {}
+            
+            # If no existing distribution, create even split
+            if not existing_high_dist:
+                for year in years:
+                    existing_high_dist[str(year)] = 100.0 / len(years) if len(years) > 0 else 100.0
+            
+            high_rise_distribution = {}
+            
+            cols = st.columns(min(len(years), 4))
+            for i, year in enumerate(years):
+                col_idx = i % len(cols)
+                with cols[col_idx]:
+                    widget_key = f"high_presales_dist_{year}"
+                    default_val = existing_high_dist.get(str(year), 100.0/len(years))
+                    
+                    pct = st.number_input(
+                        f"Year {year} (%)",
+                        value=float(default_val),
+                        min_value=0.0,
+                        max_value=100.0,
+                        step=0.1,
+                        key=widget_key
+                    )
+                    high_rise_distribution[str(year)] = pct
+                    
+                    # Display calculated values
+                    units_for_year = int(high_rise_units * pct / 100)
+                    year_nsa = high_rise_nsa * pct / 100
+                    year_asp_adjusted = high_rise_asp * (1 + price_increment) ** i
+                    year_presales = year_nsa * year_asp_adjusted / 1e9
+                    
+                    st.caption(f"Units: {units_for_year:,}")
+                    st.caption(f"Value: {year_presales:.1f}B VND")
+                    if price_increment > 0:
+                        st.caption(f"ASP: {year_asp_adjusted/1e6:.1f}M VND/m²")
+            
+            # Calculate total high-rise presales
+            total_high_presales = 0
+            for i, year in enumerate(years):
+                year_pct = high_rise_distribution.get(str(year), 0) / 100
+                year_nsa = high_rise_nsa * year_pct
+                year_asp = high_rise_asp * (1 + price_increment) ** i
+                total_high_presales += year_nsa * year_asp / 1e9
+            
+            st.metric("Total High-Rise Presales", f"{total_high_presales:.1f}B VND")
+            
+            # Validate percentages
+            total_pct = sum(high_rise_distribution.values())
+            if abs(total_pct - 100.0) < 0.01:
+                st.success(f"✅ Total: {total_pct:.1f}%")
+            else:
+                st.error(f"❌ Total: {total_pct:.1f}% (must be 100%)")
+            
+            st.session_state.edited_project['high_rise_presales_distribution'] = high_rise_distribution
+        
+        with tab_combined:
+            st.markdown("### Combined Presales View")
+            
+            # Calculate combined presales for each year
+            combined_distribution = {}
+            combined_values = []
+            
+            for i, year in enumerate(years):
+                # Low-rise for this year
+                low_pct = low_rise_distribution.get(str(year), 0) / 100
+                low_year_nsa = low_rise_nsa * low_pct
+                low_year_asp = low_rise_asp * (1 + price_increment) ** i
+                low_year_value = low_year_nsa * low_year_asp / 1e9
+                
+                # High-rise for this year
+                high_pct = high_rise_distribution.get(str(year), 0) / 100
+                high_year_nsa = high_rise_nsa * high_pct
+                high_year_asp = high_rise_asp * (1 + price_increment) ** i
+                high_year_value = high_year_nsa * high_year_asp / 1e9
+                
+                # Combined
+                combined_value = low_year_value + high_year_value
+                combined_values.append(combined_value)
+                
+                # Calculate combined percentage (for backward compatibility)
+                total_nsa = low_rise_nsa + high_rise_nsa
+                if total_nsa > 0:
+                    combined_nsa = low_year_nsa + high_year_nsa
+                    combined_pct = (combined_nsa / total_nsa) * 100
+                else:
+                    combined_pct = 0
+                combined_distribution[str(year)] = combined_pct
+            
+            # Display combined chart
+            if years and combined_values:
+                import plotly.graph_objects as go
+                
+                fig = go.Figure()
+                
+                # Add low-rise bars
+                low_values = []
+                for i, year in enumerate(years):
+                    low_pct = low_rise_distribution.get(str(year), 0) / 100
+                    low_year_nsa = low_rise_nsa * low_pct
+                    low_year_asp = low_rise_asp * (1 + price_increment) ** i
+                    low_values.append(low_year_nsa * low_year_asp / 1e9)
+                
+                # Add high-rise bars
+                high_values = []
+                for i, year in enumerate(years):
+                    high_pct = high_rise_distribution.get(str(year), 0) / 100
+                    high_year_nsa = high_rise_nsa * high_pct
+                    high_year_asp = high_rise_asp * (1 + price_increment) ** i
+                    high_values.append(high_year_nsa * high_year_asp / 1e9)
+                
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=low_values,
+                    name='Low-Rise',
+                    marker_color='lightblue',
+                    text=[f'{v:.1f}B' for v in low_values],
+                    textposition='inside'
+                ))
+                
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=high_values,
+                    name='High-Rise',
+                    marker_color='darkblue',
+                    text=[f'{v:.1f}B' for v in high_values],
+                    textposition='inside'
+                ))
+                
+                fig.update_layout(
+                    title="Combined Presales Distribution (Billion VND)",
+                    xaxis_title="Year",
+                    yaxis_title="Presales (Billion VND)",
+                    barmode='stack',
+                    height=400
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Display totals
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Low-Rise Total", f"{total_low_presales:.1f}B VND")
+            with col2:
+                st.metric("High-Rise Total", f"{total_high_presales:.1f}B VND")
+            with col3:
+                total_combined = total_low_presales + total_high_presales
+                st.metric("Combined Total", f"{total_combined:.1f}B VND")
+            
+            # Store combined distribution for backward compatibility
+            st.session_state.edited_project['presales_distribution'] = combined_distribution
+            
+            # Calculate combined total for validation
+            total_combined_presales = total_low_presales + total_high_presales
             
             # Show cash collection schedule based on tranche logic
-            if abs(total_pct - 100.0) < 0.01 and total_presales_calculated > 0:
+            # Check if distributions are valid (both should sum to 100%)
+            low_total_pct = sum(low_rise_distribution.values())
+            high_total_pct = sum(high_rise_distribution.values())
+            
+            if abs(low_total_pct - 100.0) < 0.01 and abs(high_total_pct - 100.0) < 0.01 and total_combined_presales > 0:
                 st.markdown("### 💰 Actual Cash Collection Schedule (with Tranche Logic)")
                 
                 # Get construction end year
@@ -1447,14 +1911,24 @@ class ProjectPipelineRealEstateTab:
                 
                 st.info(f"📍 Cash collection will be completed by construction end year: **{construction_end}**")
                 
-                # Calculate cash collection schedule with price increment
+                # Calculate cash collection schedule using combined distributions
                 cash_collection = {}
+                
+                # Process low-rise presales
                 for i, year in enumerate(years):
-                    year_pct = distribution.get(str(year), 0) / 100
-                    year_nsa = nsa * year_pct
-                    # Apply price increment: first year = base, subsequent years apply increment
-                    year_asp = asp * (1 + price_increment) ** i
-                    presale_amount = year_nsa * year_asp / 1e9  # Already in billions
+                    low_year_pct = low_rise_distribution.get(str(year), 0) / 100
+                    low_year_nsa = low_rise_nsa * low_year_pct
+                    low_year_asp = low_rise_asp * (1 + price_increment) ** i
+                    low_presale_amount = low_year_nsa * low_year_asp / 1e9
+                    
+                    # Process high-rise presales
+                    high_year_pct = high_rise_distribution.get(str(year), 0) / 100
+                    high_year_nsa = high_rise_nsa * high_year_pct
+                    high_year_asp = high_rise_asp * (1 + price_increment) ** i
+                    high_presale_amount = high_year_nsa * high_year_asp / 1e9
+                    
+                    # Combined presale amount for this year
+                    presale_amount = low_presale_amount + high_presale_amount
                     
                     if presale_amount > 0:
                         # If presale year is at or after construction end year, collect all 100% immediately
@@ -1486,17 +1960,27 @@ class ProjectPipelineRealEstateTab:
                 # Prepare data for visualization with price increment
                 all_years = sorted(set(years) | set(cash_collection.keys()))
                 
-                # Calculate presales values with price increment for all years
+                # Calculate combined presales values for all years
                 presales_values = []
                 for y in all_years:
                     if y in years:
                         # Find the index of this year in the original years list
                         year_idx = years.index(y)
-                        year_pct = distribution.get(str(y), 0) / 100
-                        year_nsa = nsa * year_pct
-                        # Apply price increment based on year index
-                        year_asp = asp * (1 + price_increment) ** year_idx
-                        year_value = year_nsa * year_asp / 1e9
+                        
+                        # Calculate low-rise presales for this year
+                        low_year_pct = low_rise_distribution.get(str(y), 0) / 100
+                        low_year_nsa = low_rise_nsa * low_year_pct
+                        low_year_asp = low_rise_asp * (1 + price_increment) ** year_idx
+                        low_year_value = low_year_nsa * low_year_asp / 1e9
+                        
+                        # Calculate high-rise presales for this year
+                        high_year_pct = high_rise_distribution.get(str(y), 0) / 100
+                        high_year_nsa = high_rise_nsa * high_year_pct
+                        high_year_asp = high_rise_asp * (1 + price_increment) ** year_idx
+                        high_year_value = high_year_nsa * high_year_asp / 1e9
+                        
+                        # Combined value
+                        year_value = low_year_value + high_year_value
                         presales_values.append(year_value)
                     else:
                         presales_values.append(0)
@@ -1565,13 +2049,23 @@ class ProjectPipelineRealEstateTab:
                 with st.expander("📊 View Detailed Cash Collection Table", expanded=False):
                     cash_data = []
                     for year in all_years:
-                        # Calculate presale value for this year
+                        # Calculate combined presale value for this year
                         if year in years:
                             year_idx = years.index(year)
-                            year_pct = distribution.get(str(year), 0) / 100
-                            year_nsa = nsa * year_pct
-                            year_asp = asp * (1 + price_increment) ** year_idx
-                            presale_val = year_nsa * year_asp / 1e9
+                            
+                            # Low-rise presales
+                            low_year_pct = low_rise_distribution.get(str(year), 0) / 100
+                            low_year_nsa = low_rise_nsa * low_year_pct
+                            low_year_asp = low_rise_asp * (1 + price_increment) ** year_idx
+                            low_presale_val = low_year_nsa * low_year_asp / 1e9
+                            
+                            # High-rise presales
+                            high_year_pct = high_rise_distribution.get(str(year), 0) / 100
+                            high_year_nsa = high_rise_nsa * high_year_pct
+                            high_year_asp = high_rise_asp * (1 + price_increment) ** year_idx
+                            high_presale_val = high_year_nsa * high_year_asp / 1e9
+                            
+                            presale_val = low_presale_val + high_presale_val
                         else:
                             presale_val = 0
                         cash_val = cash_collection.get(year, 0)
@@ -1740,9 +2234,98 @@ class ProjectPipelineRealEstateTab:
         debt_repayment_start = revenue_booking_end  # Repay all debt in final year
         debt_repayment_end = revenue_booking_end    # Single year repayment
         
-        # Get distributions if available
-        presales_dist = edited.get('presales_distribution', {})  # Fix: use presales_distribution
-        revenue_dist = edited.get('revenue_distribution', {})  # This is for revenue recognition
+        # Get distributions - create combined distributions if using low-rise/high-rise
+        # For presales distribution
+        low_rise_presales_dist = edited.get('low_rise_presales_distribution', {})
+        high_rise_presales_dist = edited.get('high_rise_presales_distribution', {})
+        
+        if low_rise_presales_dist or high_rise_presales_dist:
+            # Create combined presales distribution
+            presales_dist = {}
+            low_rise_nsa = float(edited.get('low_rise_nsa', 0) or 0)
+            high_rise_nsa = float(edited.get('high_rise_nsa', 0) or 0)
+            total_nsa_calc = low_rise_nsa + high_rise_nsa
+            
+            if total_nsa_calc > 0:
+                years = set()
+                if low_rise_presales_dist:
+                    years.update(low_rise_presales_dist.keys())
+                if high_rise_presales_dist:
+                    years.update(high_rise_presales_dist.keys())
+                
+                for year_str in years:
+                    low_pct = low_rise_presales_dist.get(year_str, 0) / 100
+                    high_pct = high_rise_presales_dist.get(year_str, 0) / 100
+                    
+                    combined_nsa = (low_rise_nsa * low_pct) + (high_rise_nsa * high_pct)
+                    combined_pct = (combined_nsa / total_nsa_calc) * 100 if total_nsa_calc > 0 else 0
+                    presales_dist[year_str] = combined_pct
+            else:
+                presales_dist = edited.get('presales_distribution', {})
+        else:
+            # Fallback to combined distribution
+            presales_dist = edited.get('presales_distribution', {})
+        
+        # For revenue distribution
+        low_rise_revenue_dist = edited.get('low_rise_revenue_distribution', {})
+        high_rise_revenue_dist = edited.get('high_rise_revenue_distribution', {})
+        
+        if low_rise_revenue_dist or high_rise_revenue_dist:
+            # Create combined revenue distribution weighted by revenue amounts
+            revenue_dist = {}
+            
+            # Calculate total revenues for weighting
+            low_rise_revenue = 0
+            high_rise_revenue = 0
+            
+            # Calculate low-rise total revenue
+            low_rise_nsa = float(edited.get('low_rise_nsa', 0) or 0)
+            low_rise_asp = float(edited.get('low_rise_asp', 0) or 0)
+            low_rise_presales = edited.get('low_rise_presales_distribution', {})
+            
+            if low_rise_presales:
+                for i, year in enumerate(range(presales_start, presales_end + 1)):
+                    year_pct = low_rise_presales.get(str(year), 0) / 100
+                    year_nsa = low_rise_nsa * year_pct
+                    year_asp = low_rise_asp * (1 + price_increment) ** i
+                    low_rise_revenue += year_nsa * year_asp / 1e9
+            
+            # Calculate high-rise total revenue
+            high_rise_nsa = float(edited.get('high_rise_nsa', 0) or 0)
+            high_rise_asp = float(edited.get('high_rise_asp', 0) or 0)
+            high_rise_presales = edited.get('high_rise_presales_distribution', {})
+            
+            if high_rise_presales:
+                for i, year in enumerate(range(presales_start, presales_end + 1)):
+                    year_pct = high_rise_presales.get(str(year), 0) / 100
+                    year_nsa = high_rise_nsa * year_pct
+                    year_asp = high_rise_asp * (1 + price_increment) ** i
+                    high_rise_revenue += year_nsa * year_asp / 1e9
+            
+            total_combined_revenue = low_rise_revenue + high_rise_revenue
+            
+            if total_combined_revenue > 0:
+                years = set()
+                if low_rise_revenue_dist:
+                    years.update(low_rise_revenue_dist.keys())
+                if high_rise_revenue_dist:
+                    years.update(high_rise_revenue_dist.keys())
+                
+                for year_str in years:
+                    low_pct = low_rise_revenue_dist.get(year_str, 0) / 100
+                    high_pct = high_rise_revenue_dist.get(year_str, 0) / 100
+                    
+                    low_year_value = low_rise_revenue * low_pct
+                    high_year_value = high_rise_revenue * high_pct
+                    combined_value = low_year_value + high_year_value
+                    
+                    combined_pct = (combined_value / total_combined_revenue) * 100 if total_combined_revenue > 0 else 0
+                    revenue_dist[year_str] = combined_pct
+            else:
+                revenue_dist = edited.get('revenue_distribution', {})
+        else:
+            # Fallback to combined distribution
+            revenue_dist = edited.get('revenue_distribution', {})
         
         # Auto-calculate balance sheet analysis
         # Check if we have minimum required data to run analysis
@@ -1751,29 +2334,59 @@ class ProjectPipelineRealEstateTab:
                 # Get tax rate from assumptions or use default
                 tax_rate = 0.2  # Default 20% corporate tax rate in Vietnam
                 
-                # Generate balance sheet schedules
-                df = generate_simplified_balance_sheet_schedules(
+                # Import the main balance sheet function directly to pass presales schedule
+                from balance_sheet_manager import generate_balance_sheet_schedules
+                
+                # Calculate the actual presales schedule combining low-rise and high-rise
+                # This ensures consistency with the presales distribution display
+                presales_schedule = {}
+                for i, year in enumerate(range(presales_start, presales_end + 1)):
+                    # Low-rise presales for this year
+                    if isinstance(low_rise_presales_dist, dict):
+                        low_pct = low_rise_presales_dist.get(str(year), 0) / 100
+                    else:
+                        low_pct = 0
+                    low_year_nsa = float(edited.get('low_rise_nsa', 0) or 0) * low_pct
+                    low_year_asp = float(edited.get('low_rise_asp', 0) or 0) * (1 + price_increment) ** i
+                    low_presale = low_year_nsa * low_year_asp
+                    
+                    # High-rise presales for this year
+                    if isinstance(high_rise_presales_dist, dict):
+                        high_pct = high_rise_presales_dist.get(str(year), 0) / 100
+                    else:
+                        high_pct = 0
+                    high_year_nsa = float(edited.get('high_rise_nsa', 0) or 0) * high_pct
+                    high_year_asp = float(edited.get('high_rise_asp', 0) or 0) * (1 + price_increment) ** i
+                    high_presale = high_year_nsa * high_year_asp
+                    
+                    # Combined presales for this year (in raw value, not billions)
+                    presales_schedule[year] = low_presale + high_presale
+                
+                # Convert revenue distribution to the format expected by balance sheet manager
+                revenue_dist_converted = None
+                if revenue_dist:
+                    revenue_dist_converted = {}
+                    for year_str, percentage in revenue_dist.items():
+                        year = int(year_str)
+                        revenue_dist_converted[year] = percentage / 100.0
+                
+                # Generate balance sheet schedules with pre-calculated presales
+                df = generate_balance_sheet_schedules(
                     total_debt=total_debt,
                     total_construction_cost=total_const_cost,
                     total_land_cost=total_land_cost,
                     land_payment_year=land_payment_year,
-                    total_revenue=total_revenue,
-                    interest_rate=cost_of_debt,  # Use cost_of_debt for interest calculations
+                    presales_schedule=presales_schedule,  # Pass the pre-calculated presales schedule
+                    interest_rate=cost_of_debt,
                     sga_percentage=sga_pct,
-                    construction_start_year=const_start,
-                    construction_end_year=const_end,
-                    sales_start_year=presales_start,
-                    sales_end_year=presales_end,
+                    debt_disbursement_start_year=const_start,
+                    debt_disbursement_end_year=const_end,
                     debt_repayment_start_year=debt_repayment_start,
                     debt_repayment_end_year=debt_repayment_end,
                     revenue_booking_start_year=revenue_booking_start,
                     revenue_booking_end_year=revenue_booking_end,
-                    presales_distribution=presales_dist if presales_dist else None,
-                    revenue_distribution=revenue_dist if revenue_dist else None,
-                    tax_rate=tax_rate,
-                    price_increment_factor=price_increment,
-                    base_asp=asp,
-                    total_nsa=nsa
+                    revenue_distribution=revenue_dist_converted,
+                    tax_rate=tax_rate
                 )
                 
                 # Format the dataframe for display - exclude Total row
@@ -2166,51 +2779,40 @@ class ProjectPipelineRealEstateTab:
     def render_project_save_interface(self, project_data):
         """Render interface to save project changes to MongoDB"""
         
-        # Check if this is a new project
-        is_new_project = project_data.get('is_new_project', False) or project_data.get('project_name') == 'New Project'
-        
-        if is_new_project:
-            st.subheader("Save New Project")
-        else:
-            st.subheader("Save Project Changes")
+        st.subheader("Project Actions")
         
         # Show what has changed
         changes = []
         edited = st.session_state.edited_project
         
-        # For new projects, just list the fields that have been filled
-        if is_new_project:
-            for key, value in edited.items():
-                if key not in ['is_new_project'] and value and value != 0:
-                    changes.append(f"{key}: {value}")
-        else:
-            for key, value in edited.items():
-                try:
-                    if key in project_data:
-                        old_value = project_data[key]
-                        if isinstance(value, dict):
-                            # For distribution dictionaries, check if they're different
-                            old_dict = old_value if isinstance(old_value, dict) else {}
-                            if value != old_dict:
-                                changes.append(f"{key}: Updated")
-                        elif isinstance(value, (int, float)):
-                            # Compare numeric values
-                            if isinstance(old_value, (int, float)):
-                                if abs(float(old_value) - float(value)) > 0.001:
-                                    changes.append(f"{key}: {old_value} → {value}")
-                            else:
-                                # Old value is not numeric, just note the change
+        # Check what has been modified
+        for key, value in edited.items():
+            try:
+                if key in project_data:
+                    old_value = project_data[key]
+                    if isinstance(value, dict):
+                        # For distribution dictionaries, check if they're different
+                        old_dict = old_value if isinstance(old_value, dict) else {}
+                        if value != old_dict:
+                            changes.append(f"{key}: Updated")
+                    elif isinstance(value, (int, float)):
+                        # Compare numeric values
+                        if isinstance(old_value, (int, float)):
+                            if abs(float(old_value) - float(value)) > 0.001:
                                 changes.append(f"{key}: {old_value} → {value}")
                         else:
-                            # Compare other types (strings, etc.)
-                            if old_value != value:
-                                changes.append(f"{key}: {old_value} → {value}")
+                            # Old value is not numeric, just note the change
+                            changes.append(f"{key}: {old_value} → {value}")
                     else:
-                        if value:  # Only show if new value is not empty
-                            changes.append(f"{key}: New value = {value}")
-                except Exception as e:
-                    # If any error in comparison, just note it as changed
-                    changes.append(f"{key}: Modified")
+                        # Compare other types (strings, etc.)
+                        if old_value != value:
+                            changes.append(f"{key}: {old_value} → {value}")
+                else:
+                    if value:  # Only show if new value is not empty
+                        changes.append(f"{key}: New value = {value}")
+            except Exception as e:
+                # If any error in comparison, just note it as changed
+                changes.append(f"{key}: Modified")
         
         if changes:
             st.info(f"{len(changes)} changes detected:")
@@ -2225,20 +2827,35 @@ class ProjectPipelineRealEstateTab:
         # Get project name for use in buttons
         project_name = edited.get('project_name', project_data.get('project_name', 'Unnamed Project'))
         
-        # Save and Delete buttons
+        # Check if this is a new project (for validation purposes)
+        is_new_project = (
+            project_data.get('is_new_project', False) == True or 
+            project_data.get('project_name', '') in ['New Project', '', None]
+        )
+        
+        # Save, Delete, and Cancel buttons
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            button_label = "Create New Project" if is_new_project else "Save Changes to MongoDB"
-            if st.button(button_label, type="primary"):
+            if st.button("💾 Save to MongoDB", type="primary", use_container_width=True):
                 try:
                     # For new projects, validate the project name
                     if is_new_project:
-                        if edited.get('project_name') == 'New Project' or not edited.get('project_name'):
-                            st.error("Please enter a unique project name (not 'New Project')")
+                        new_name = edited.get('project_name', '').strip()
+                        if not new_name or new_name == 'New Project':
+                            st.error("❌ Please enter a unique project name (not 'New Project')")
                             return
+                        
+                        # Check for duplicate project name
+                        if 'project_data' in st.session_state and st.session_state.project_data is not None:
+                            existing_projects = st.session_state.project_data
+                            if not existing_projects.empty and 'project_name' in existing_projects.columns:
+                                if new_name in existing_projects['project_name'].values:
+                                    st.error(f"❌ A project with the name '{new_name}' already exists. Please choose a different name.")
+                                    return
+                        
                         if not edited.get('company_ticker'):
-                            st.error("Company ticker is required")
+                            st.error("❌ Company ticker is required")
                             return
                     
                     # Calculate financial metrics before saving
@@ -2411,9 +3028,9 @@ class ProjectPipelineRealEstateTab:
                 except Exception as e:
                     st.error(f"Error saving project: {str(e)}")
         
-        # Delete button (only show for existing projects)
+        # Delete button
         with col2:
-            if not is_new_project and st.button("🗑️ Delete from MongoDB", type="secondary", use_container_width=True):
+            if st.button("🗑️ Delete from MongoDB", type="secondary", use_container_width=True):
                 # Add confirmation dialog
                 if 'confirm_delete' not in st.session_state:
                     st.session_state.confirm_delete = True
