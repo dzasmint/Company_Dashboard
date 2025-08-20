@@ -164,7 +164,7 @@ def generate_balance_sheet_schedules(
             cash_outflow_sga[idx] = -sga_amount  # Negative for cash outflow
     
     # Now calculate actual cash collection from presales using tranche logic
-    # For each presale, cash collection follows: 20% in year 1, remaining 80% evenly distributed until construction completion
+    # For each presale, cash collection follows: 30% in year 1, remaining 70% evenly distributed until construction completion
     # Use debt_disbursement_end_year as construction end year
     construction_end_year = debt_disbursement_end_year
     
@@ -173,12 +173,12 @@ def generate_balance_sheet_schedules(
             presale_year_idx = years.index(year)
             
             # Calculate cash collection schedule for this presale
-            # 20% collected in the presale year
-            first_tranche = presale_amount * 0.2
+            # 30% collected in the presale year
+            first_tranche = presale_amount * 0.3
             cash_inflow_presales[presale_year_idx] += first_tranche
             
-            # Remaining 80% distributed evenly from next year until construction completion
-            remaining_amount = presale_amount * 0.8
+            # Remaining 70% distributed evenly from next year until construction completion
+            remaining_amount = presale_amount * 0.7
             
             # Determine the collection period
             # Collection should end by construction_end_year, not extend beyond it

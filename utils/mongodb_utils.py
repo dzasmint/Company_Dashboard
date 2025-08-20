@@ -3,6 +3,7 @@
 import streamlit as st
 import os
 import pandas as pd
+import numpy as np
 import certifi
 from pymongo import MongoClient
 import datetime
@@ -495,9 +496,60 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
         # Start with all fields from project_data to ensure nothing is missed
         document = project_data.copy()
         
-        # Remove the is_new_project flag - this should not be saved to database
-        if 'is_new_project' in document:
-            del document['is_new_project']
+        # List of fields that should NOT be saved to database
+        fields_to_remove = [
+            'is_new_project',
+            'revenue_schedule',
+            'construction_schedule', 
+            'land_schedule',
+            'sga_schedule',
+            'interest_schedule',
+            'custom_presales_schedule',
+            'custom_revenue_schedule',
+            'company_name_x',
+            'company_name_y',
+            'sector_x',
+            'sector_y',
+            # Remove any pandas merge suffixes
+            '_x', '_y',
+            # Remove temporary UI state fields
+            'show_ai_research',
+            'pending_ai_research',
+            'ai_suggestions',
+            # Add any other temporary or calculated fields that might contain suffixes
+        ]
+        
+        # Also remove any fields ending with _x or _y (merge artifacts)
+        for key in list(document.keys()):
+            if key.endswith('_x') or key.endswith('_y'):
+                # Try to keep the base field without suffix if it doesn't exist
+                base_key = key[:-2]
+                if base_key not in document and key.endswith('_x'):
+                    document[base_key] = document[key]
+                del document[key]
+        
+        # Remove unwanted fields
+        for field in fields_to_remove:
+            if field in document:
+                del document[field]
+        
+        # Clean up NaN values - convert to None or appropriate defaults
+        for key, value in list(document.items()):
+            if isinstance(value, float):
+                if pd.isna(value) or np.isinf(value):
+                    # Remove NaN/inf fields entirely or set to None/0 based on field type
+                    if key in ['debt_financing_pct']:
+                        document[key] = 0.3  # Default 30% debt financing
+                    elif key == 'total_debt':
+                        # Calculate reasonable total_debt if it's NaN or unreasonably large
+                        if pd.isna(value) or value > 1e15:  # More than 1 quadrillion is likely an error
+                            total_construction = document.get('total_construction_cost', 0)
+                            debt_pct = document.get('debt_financing_pct', 0.3)
+                            document[key] = total_construction * debt_pct
+                    else:
+                        del document[key]  # Remove NaN fields
+            elif isinstance(value, str) and value in ['NaN', 'nan', 'None']:
+                del document[key]  # Remove string 'NaN' fields
         
         # Ensure required fields are present with defaults
         document.update({

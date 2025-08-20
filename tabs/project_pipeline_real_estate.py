@@ -85,6 +85,14 @@ class ProjectPipelineRealEstateTab:
         if 'selected_project_for_edit' not in st.session_state:
             st.session_state.selected_project_for_edit = "All Projects (Overview)"
         
+        # Handle pending project switch (after creating a new project)
+        if 'pending_project_switch' in st.session_state:
+            pending_project = st.session_state.pending_project_switch
+            del st.session_state.pending_project_switch
+            # Check if the new project exists in the options
+            if pending_project in project_names:
+                st.session_state.selected_project_for_edit = pending_project
+        
         # Create a form to prevent auto-rerun on selection
         with st.container():
             selected_project_name = st.selectbox(
@@ -1937,13 +1945,13 @@ class ProjectPipelineRealEstateTab:
                                 cash_collection[year] = 0
                             cash_collection[year] += presale_amount
                         else:
-                            # 20% in first year
+                            # 30% in first year
                             if year not in cash_collection:
                                 cash_collection[year] = 0
-                            cash_collection[year] += presale_amount * 0.2
+                            cash_collection[year] += presale_amount * 0.3
                             
-                            # Remaining 80% distributed evenly until construction_end (not beyond)
-                            remaining = presale_amount * 0.8
+                            # Remaining 70% distributed evenly until construction_end (not beyond)
+                            remaining = presale_amount * 0.7
                             # Collection period is from next year until construction_end
                             collection_years = list(range(year + 1, construction_end + 1))
                             
@@ -2165,7 +2173,7 @@ class ProjectPipelineRealEstateTab:
         
         # Now display Comprehensive Financial Statements Forecast
         st.subheader("Comprehensive Financial Statements Forecast")
-        st.info("💡 **Key Difference**: 'Presales (Bookings)' = contractual sales. 'Cash Inflow (Actual Collection)' = cash received (20% upfront, 80% distributed). Customer Prepayment Balance is based on actual cash received.")
+        st.info("💡 **Key Difference**: 'Presales (Bookings)' = contractual sales. 'Cash Inflow (Actual Collection)' = cash received (30% upfront, 70% distributed). Customer Prepayment Balance is based on actual cash received.")
         
         # Import balance sheet manager
         import sys
@@ -2605,9 +2613,8 @@ class ProjectPipelineRealEstateTab:
         sga_pct = float(edited.get('sga_percentage', 0.0) or 0.0)
         total_sga = total_revenue * sga_pct
         
-        # Calculate PBT and PAT for RNAV calculation
-        pbt = total_revenue - total_const_cost - total_land_cost - total_sga
-        pat = pbt * 0.8  # 20% tax
+        # Calculate PBT for RNAV calculation
+        # pbt = total_revenue - total_const_cost - total_land_cost - total_sga
         
         # Calculate RNAV if requested
         if st.button("Calculate RNAV", key="calc_rnav"):
@@ -3005,16 +3012,16 @@ class ProjectPipelineRealEstateTab:
                         # Update session state with fresh project data
                         st.session_state.project_data = df_projects
                         
-                        # For new projects, switch to the newly created project
+                        # Clear editing state to force reload
+                        # This ensures the comparison values are refreshed
+                        if 'current_editing_project' in st.session_state:
+                            del st.session_state.current_editing_project
+                        if 'edited_project' in st.session_state:
+                            del st.session_state.edited_project
+                        
+                        # For new projects, we need to set a flag to switch to the new project on next render
                         if is_new_project:
-                            st.session_state.selected_project_for_edit = edited.get('project_name')
-                        else:
-                            # For existing projects, clear the editing state to force reload
-                            # This ensures the comparison values are refreshed
-                            if 'current_editing_project' in st.session_state:
-                                del st.session_state.current_editing_project
-                            if 'edited_project' in st.session_state:
-                                del st.session_state.edited_project
+                            st.session_state.pending_project_switch = edited.get('project_name')
                         
                         # Clear any temporary editing state
                         if 'confirm_delete' in st.session_state:
