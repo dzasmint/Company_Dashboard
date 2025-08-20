@@ -158,10 +158,6 @@ def generate_balance_sheet_schedules(
         if year in years:
             idx = years.index(year)
             presales[idx] = amount  # Record presales booking (contractual amount)
-            # SG&A follows presales schedule - calculated as % of presales booking
-            sga_amount = amount * sga_percentage
-            sga_expense[idx] = sga_amount  # Hit P&L in the year it occurs
-            cash_outflow_sga[idx] = -sga_amount  # Negative for cash outflow
     
     # Now calculate actual cash collection from presales using tranche logic
     # For each presale, cash collection follows: 30% in year 1, remaining 70% evenly distributed until construction completion
@@ -207,13 +203,22 @@ def generate_balance_sheet_schedules(
                     # If no collection years available, collect all remaining in the presale year
                     cash_inflow_presales[presale_year_idx] += remaining_amount
     
-    # 5. Calculate land cost payment (single year payment)
+    # 5. Calculate SG&A expense based on actual cash collection
+    # SG&A is now calculated as a percentage of actual cash collected, not presales booking
+    for i, year in enumerate(years):
+        if cash_inflow_presales[i] > 0:
+            # SG&A expense is based on cash collected in this year
+            sga_amount = cash_inflow_presales[i] * sga_percentage
+            sga_expense[i] = sga_amount  # Hit P&L when cash is collected
+            cash_outflow_sga[i] = -sga_amount  # Negative for cash outflow
+    
+    # 6. Calculate land cost payment (single year payment)
     if land_payment_year in years and total_land_cost > 0:
         idx = years.index(land_payment_year)
         land_cost[idx] = total_land_cost
         cash_outflow_land[idx] = -total_land_cost  # Negative for cash outflow
     
-    # 6. Calculate revenue recognition (custom distribution or linear)
+    # 7. Calculate revenue recognition (custom distribution or linear)
     total_revenue = sum(presales_schedule.values()) if presales_schedule else 0
     
     if revenue_distribution and isinstance(revenue_distribution, dict):
@@ -234,7 +239,7 @@ def generate_balance_sheet_schedules(
                     idx = years.index(year)
                     revenue_recognition[idx] = annual_revenue
     
-    # 7. Calculate debt balance, interest, and inventory year by year
+    # 8. Calculate debt balance, interest, and inventory year by year
     for i, year in enumerate(years):
         # Starting debt balance
         if i == 0:
@@ -308,7 +313,7 @@ def generate_balance_sheet_schedules(
             inventory_balance[i] = previous_inventory + inventory_addition[i]
             cogs[i] = 0
     
-    # 8. Calculate customer prepayment balance
+    # 9. Calculate customer prepayment balance
     # Customer prepayment increases with actual cash collection (not presales booking) and decreases with revenue recognition
     for i in range(n_years):
         if i == 0:
@@ -320,7 +325,7 @@ def generate_balance_sheet_schedules(
         # This reflects the actual cash received from customers
         customer_prepayment_balance[i] = previous_prepayment + cash_inflow_presales[i] - revenue_recognition[i]
     
-    # 9. Calculate P&L items (PBT, Tax, PAT)
+    # 10. Calculate P&L items (PBT, Tax, PAT)
     pbt = np.zeros(n_years)  # Profit before tax
     tax_expense = np.zeros(n_years)  # Tax expense
     pat = np.zeros(n_years)  # Profit after tax
@@ -342,7 +347,7 @@ def generate_balance_sheet_schedules(
         # PAT = PBT - Tax
         pat[i] = pbt[i] - tax_expense[i]
     
-    # 10. Calculate net cash flow (outflows are already negative)
+    # 11. Calculate net cash flow (outflows are already negative)
     cash_balance_change = (
         cash_inflow_presales 
         + debt_disbursement  # Cash inflow from debt

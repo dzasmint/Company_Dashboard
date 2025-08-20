@@ -1030,11 +1030,11 @@ class ProjectPipelineRealEstateTab:
                 "Construction Cost (VND mn/m²)",
                 value=const_cost_million,
                 min_value=0.0,
-                step=1.0,
-                format="%.0f",
+                step=0.1,
+                format="%.1f",
                 key="edit_const_cost",
                 label_visibility="collapsed",
-                help="Enter cost in million VND per m² (e.g., 15.0 for 15 million VND/m²)"
+                help="Enter cost in million VND per m² (e.g., 15.5 for 15.5 million VND/m²)"
             )
             
             # Convert back to raw VND for storage and calculations
@@ -1082,11 +1082,11 @@ class ProjectPipelineRealEstateTab:
                 "Land Cost (VND mn/m²)",
                 value=land_cost_million,
                 min_value=0.0,
-                step=1.0,
-                format="%.0f",
+                step=0.1,
+                format="%.1f",
                 key="edit_land_cost",
                 label_visibility="collapsed",
-                help="Enter cost in million VND per m² (e.g., 25.0 for 25 million VND/m²)"
+                help="Enter cost in million VND per m² (e.g., 25.5 for 25.5 million VND/m²)"
             )
             
             # Convert back to raw VND for storage and calculations
@@ -2130,14 +2130,18 @@ class ProjectPipelineRealEstateTab:
         
         # Calculate financial metrics
         total_project_cost = total_const_cost + total_land_cost
+        total_gross_profit = total_revenue - total_const_cost - total_land_cost
+        gross_profit_margin = (total_gross_profit / total_revenue * 100) if total_revenue > 0 else 0
         actual_debt_pct = (total_debt / total_project_cost * 100) if total_project_cost > 0 else 0
         
-        # Create summary data (removed PBT and PAT)
+        # Create summary data with Gross Profit added
         summary_data = {
             "Metric": [
                 "Total Revenue",
                 "Total Construction Cost",
                 "Total Land Cost",
+                "Total Gross Profit",
+                "Gross Profit Margin (%)",
                 "Total SG&A",
                 "Total Debt",
                 "Debt/Project Ratio",
@@ -2150,6 +2154,8 @@ class ProjectPipelineRealEstateTab:
                 f"{total_revenue/1e9:,.1f}B VND",
                 f"{total_const_cost/1e9:,.1f}B VND",
                 f"{total_land_cost/1e9:,.1f}B VND",
+                f"{total_gross_profit/1e9:,.1f}B VND",
+                f"{gross_profit_margin:.1f}%",
                 f"{total_sga/1e9:,.1f}B VND",
                 f"{total_debt/1e9:,.1f}B VND",
                 f"{actual_debt_pct:.0f}%",
@@ -2166,7 +2172,7 @@ class ProjectPipelineRealEstateTab:
             summary_df,
             use_container_width=True,
             hide_index=True,
-            height=350  # Reduced height since we have fewer rows
+            height=420  # Adjusted height for additional rows
         )
         
         st.markdown("---")
