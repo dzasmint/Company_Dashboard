@@ -2452,6 +2452,67 @@ class ModelForecastTab:
                         st.error(f"❌ {result['message']}")
         
             st.info("💡 This saves all three consolidated financial statements (P&L, Balance Sheet, Cash Flow) to the CompanyForecast collection in MongoDB for reporting and analysis.")
+            
+            # ChatGPT Analysis Section
+            st.markdown("---")
+            st.subheader("🤖 AI Financial Analysis")
+            
+            st.write("Get comprehensive financial analysis from ChatGPT based on the consolidated statements above.")
+            
+            # Add model selection
+            col_model1, col_model2 = st.columns([1, 1])
+            with col_model1:
+                use_gpt4 = st.checkbox("Use GPT-4 (more stable)", value=True, 
+                                       help="GPT-4 is more stable. Uncheck to try GPT-5 (experimental)")
+            
+            col_analyze1, col_analyze2, col_analyze3 = st.columns([1, 2, 1])
+            with col_analyze2:
+                if st.button("Analyze with ChatGPT", type="secondary", use_container_width=True):
+                    with st.spinner("Analyzing financial statements... This may take a moment."):
+                        from utils.chatgpt_utils import analyze_financial_statements
+                        
+                        # Prepare DataFrames for analysis
+                        # Include historical column for comparison
+                        analysis_pnl_df = pnl_df.copy()
+                        analysis_bs_df = bs_df.copy()
+                        analysis_cf_df = cf_df.copy()
+                        
+                        # Call ChatGPT analysis with model selection
+                        analysis_result = analyze_financial_statements(
+                            pnl_data=analysis_pnl_df,
+                            balance_sheet_data=analysis_bs_df,
+                            cash_flow_data=analysis_cf_df,
+                            company_name=selected_ticker,
+                            use_gpt4=use_gpt4
+                        )
+                        
+                        if 'error' in analysis_result:
+                            st.error(f"❌ {analysis_result['error']}")
+                        elif analysis_result.get('success'):
+                            st.success("✅ Analysis completed successfully!")
+                            
+                            # Display analysis in an expandable section
+                            with st.expander("📊 ChatGPT Financial Analysis", expanded=True):
+                                st.markdown(analysis_result['analysis'])
+                                
+                                # Add metadata
+                                st.markdown("---")
+                                st.caption(f"Analysis generated at: {analysis_result['timestamp']}")
+                                st.caption(f"Model: {analysis_result['model']}")
+                            
+                            # Store in session state for reference
+                            st.session_state[f'chatgpt_analysis_{selected_ticker}'] = analysis_result
+                        else:
+                            st.error("❌ Unexpected error during analysis")
+            
+            # Test connection button
+            with st.expander("🔧 Test OpenAI Connection"):
+                if st.button("Test Connection"):
+                    from utils.chatgpt_utils import test_openai_connection
+                    if test_openai_connection():
+                        st.success("✅ OpenAI API connection successful!")
+                    else:
+                        st.error("❌ Failed to connect to OpenAI API. Please check your API key in the .env file.")
         
         else:
             st.info("No project data available. Please add projects in the Project Pipeline tab.")

@@ -20,7 +20,8 @@ def generate_balance_sheet_schedules(
     revenue_distribution: Optional[Dict[int, float]] = None,  # {year: percentage} for revenue recognition
     project_start_year: int = None,
     project_end_year: int = None,
-    tax_rate: float = 0.2  # Default 20% tax rate
+    tax_rate: float = 0.2,  # Default 20% tax rate
+    cash_collection_schedules: Optional[Dict[int, Dict[int, float]]] = None  # {presale_year: {collection_year: percentage}}
 ) -> pd.DataFrame:
     """
     Generate comprehensive balance sheet schedules including debt, interest, inventory, and cash.
@@ -159,49 +160,55 @@ def generate_balance_sheet_schedules(
             idx = years.index(year)
             presales[idx] = amount  # Record presales booking (contractual amount)
     
-    # Now calculate actual cash collection from presales using tranche logic
-    # For each presale, cash collection follows: 30% in year 1, remaining 70% evenly distributed until construction completion
-    # Use debt_disbursement_end_year as construction end year
-    construction_end_year = debt_disbursement_end_year
-    
-    for year, presale_amount in presales_schedule.items():
-        if year in years and presale_amount > 0:
-            presale_year_idx = years.index(year)
-            
-            # Calculate cash collection schedule for this presale
-            # 30% collected in the presale year
-            first_tranche = presale_amount * 0.3
-            cash_inflow_presales[presale_year_idx] += first_tranche
-            
-            # Remaining 70% distributed evenly from next year until construction completion
-            remaining_amount = presale_amount * 0.7
-            
-            # Determine the collection period
-            # Collection should end by construction_end_year, not extend beyond it
-            collection_start_year = year + 1
-            collection_end_year = construction_end_year
-            
-            # If the presale year is already at or after construction_end_year, collect all in that year
-            if year >= construction_end_year:
-                # Collect all 100% in the presale year if it's at or after construction end
-                # Need to subtract the first tranche already added and then add full amount
-                cash_inflow_presales[presale_year_idx] = cash_inflow_presales[presale_year_idx] - first_tranche + presale_amount
-            else:
-                # Calculate number of years for remaining collection (excluding the presale year)
-                collection_years = []
-                for col_year in range(collection_start_year, collection_end_year + 1):
-                    if col_year in years and col_year <= construction_end_year:
-                        collection_years.append(col_year)
+    # Calculate actual cash collection from presales using flexible schedules
+    if cash_collection_schedules:
+        # Use user-defined collection schedules
+        for presale_year, presale_amount in presales_schedule.items():
+            if presale_year in years and presale_amount > 0:
+                # Get the collection schedule for this presale year
+                collection_schedule = cash_collection_schedules.get(presale_year, {})
                 
-                if collection_years:
-                    # Distribute remaining amount evenly
-                    annual_collection = remaining_amount / len(collection_years)
-                    for col_year in collection_years:
-                        col_idx = years.index(col_year)
-                        cash_inflow_presales[col_idx] += annual_collection
+                if collection_schedule:
+                    # Apply the user-defined percentages
+                    for collection_year, percentage in collection_schedule.items():
+                        if collection_year in years:
+                            col_idx = years.index(collection_year)
+                            collection_amount = presale_amount * (percentage / 100.0)
+                            cash_inflow_presales[col_idx] += collection_amount
                 else:
-                    # If no collection years available, collect all remaining in the presale year
-                    cash_inflow_presales[presale_year_idx] += remaining_amount
+                    # Fallback: collect 100% in presale year if no schedule defined
+                    presale_year_idx = years.index(presale_year)
+                    cash_inflow_presales[presale_year_idx] += presale_amount
+    else:
+        # Fallback to default 30/70 logic if no schedules provided
+        construction_end_year = debt_disbursement_end_year
+        
+        for year, presale_amount in presales_schedule.items():
+            if year in years and presale_amount > 0:
+                presale_year_idx = years.index(year)
+                
+                # Default: 30% in first year, 70% spread to construction end
+                if year >= construction_end_year:
+                    # Collect all 100% immediately
+                    cash_inflow_presales[presale_year_idx] += presale_amount
+                else:
+                    # 30% in first year
+                    first_tranche = presale_amount * 0.3
+                    cash_inflow_presales[presale_year_idx] += first_tranche
+                    
+                    # Remaining 70% distributed evenly
+                    remaining_amount = presale_amount * 0.7
+                    collection_years = list(range(year + 1, construction_end_year + 1))
+                    
+                    if collection_years:
+                        annual_collection = remaining_amount / len(collection_years)
+                        for col_year in collection_years:
+                            if col_year in years:
+                                col_idx = years.index(col_year)
+                                cash_inflow_presales[col_idx] += annual_collection
+                    else:
+                        # Add remaining to presale year
+                        cash_inflow_presales[presale_year_idx] += remaining_amount
     
     # 5. Calculate SG&A expense based on actual cash collection
     # SG&A is now calculated as a percentage of actual cash collected, not presales booking

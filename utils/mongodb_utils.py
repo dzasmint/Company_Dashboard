@@ -133,6 +133,40 @@ def load_projects_data():
             #st.write(f"🔍 DEBUG: No projects found in MongoDB database '{db_name}', collection '{collection_name}'.")
             return pd.DataFrame()
         
+        # Convert string keys back to integers for certain fields
+        for project in projects_list:
+            # Convert relative_collection_schedule keys from strings to integers
+            if 'relative_collection_schedule' in project and isinstance(project['relative_collection_schedule'], dict):
+                converted = {}
+                for k, v in project['relative_collection_schedule'].items():
+                    try:
+                        converted[int(k)] = v
+                    except (ValueError, TypeError):
+                        converted[k] = v  # Keep as string if conversion fails
+                project['relative_collection_schedule'] = converted
+            
+            # Convert cash_collection_schedules keys from strings to integers
+            if 'cash_collection_schedules' in project and isinstance(project['cash_collection_schedules'], dict):
+                converted = {}
+                for k, v in project['cash_collection_schedules'].items():
+                    try:
+                        # Convert outer key to int
+                        k_int = int(k)
+                        # Convert inner dict keys to int
+                        if isinstance(v, dict):
+                            v_converted = {}
+                            for k2, v2 in v.items():
+                                try:
+                                    v_converted[int(k2)] = v2
+                                except (ValueError, TypeError):
+                                    v_converted[k2] = v2
+                            converted[k_int] = v_converted
+                        else:
+                            converted[k_int] = v
+                    except (ValueError, TypeError):
+                        converted[k] = v  # Keep as string if conversion fails
+                project['cash_collection_schedules'] = converted
+        
         # Convert to DataFrame
         df_projects = pd.DataFrame(projects_list)
         
@@ -532,6 +566,20 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
         for field in fields_to_remove:
             if field in document:
                 del document[field]
+        
+        # Convert integer keys to strings for MongoDB compatibility
+        for field in ['relative_collection_schedule', 'cash_collection_schedules']:
+            if field in document and isinstance(document[field], dict):
+                # Convert integer keys to strings
+                converted = {}
+                for k, v in document[field].items():
+                    # If value is also a dict with integer keys, convert those too
+                    if isinstance(v, dict):
+                        v_converted = {str(k2): v2 for k2, v2 in v.items()}
+                        converted[str(k)] = v_converted
+                    else:
+                        converted[str(k)] = v
+                document[field] = converted
         
         # Clean up NaN values - convert to None or appropriate defaults
         for key, value in list(document.items()):

@@ -631,13 +631,22 @@ class ProjectPipelineRealEstateTab:
             # For new projects, always use fresh template data
             st.session_state.current_editing_project = 'NEW_PROJECT_TEMP'
             st.session_state.edited_project = project_data.copy()
+            # Clear the relative collection schedule for new projects
+            if 'relative_collection_schedule' in st.session_state:
+                del st.session_state.relative_collection_schedule
         elif 'current_editing_project' not in st.session_state:
             st.session_state.current_editing_project = project_name
             st.session_state.edited_project = project_data.copy()
+            # Clear the relative collection schedule to force reload from new project
+            if 'relative_collection_schedule' in st.session_state:
+                del st.session_state.relative_collection_schedule
         elif st.session_state.current_editing_project != project_name:
             # Different project selected, reset the edited data
             st.session_state.current_editing_project = project_name
             st.session_state.edited_project = project_data.copy()
+            # Clear the relative collection schedule to force reload from new project
+            if 'relative_collection_schedule' in st.session_state:
+                del st.session_state.relative_collection_schedule
         elif 'edited_project' not in st.session_state:
             # Same project but edited_project was deleted (e.g., after save)
             st.session_state.edited_project = project_data.copy()
@@ -651,6 +660,9 @@ class ProjectPipelineRealEstateTab:
         
         st.markdown("---")
         self.render_presales_distribution_editor(project_data)
+        
+        st.markdown("---")
+        self.render_cash_collection_schedule(project_data)
         
         st.markdown("---")
         self.render_revenue_distribution_editor(project_data)
@@ -756,197 +768,226 @@ class ProjectPipelineRealEstateTab:
                 st.caption(f"AI Suggestion: {ai_suggestions['location']}")
         st.session_state.edited_project['location'] = location
         
-        # Section header for Low-Rise
-        st.markdown("#### Low-Rise Units")
+        # Get current values for calculations (needed across all tabs)
+        low_rise_units_current = int(project_data.get('low_rise_units', 0) or 0)
+        low_rise_avg_unit_size_current = int(project_data.get('low_rise_avg_unit_size', 0) or 0)
+        low_rise_asp_current = float(project_data.get('low_rise_asp', 0) or 0)
         
-        # Low-Rise Units
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Low-Rise Units**")
-        with col2:
-            low_rise_units = st.number_input(
-                "Low-Rise Units",
-                value=int(project_data.get('low_rise_units', 0) or 0),
-                min_value=0,
-                step=1,
-                format="%d",
-                key="edit_low_rise_units",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['low_rise_units'] = low_rise_units
+        high_rise_units_current = int(project_data.get('high_rise_units', 0) or 0)
+        high_rise_avg_unit_size_current = int(project_data.get('high_rise_avg_unit_size', 0) or 0)
+        high_rise_asp_current = float(project_data.get('high_rise_asp', 0) or 0)
         
-        # Low-Rise Average Unit Size
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Low-Rise Avg Unit Size (m²)**")
-        with col2:
-            low_rise_avg_unit_size = st.number_input(
-                "Low-Rise Average Unit Size (m²)",
-                value=int(project_data.get('low_rise_avg_unit_size', 0) or 0),
-                min_value=0,
-                step=1,
-                format="%d",
-                key="edit_low_rise_avg_unit_size",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['low_rise_avg_unit_size'] = low_rise_avg_unit_size
+        # Create tabs for unit information
+        st.markdown("#### Unit Information")
+        tab_low_rise, tab_high_rise, tab_combined = st.tabs(["🏘️ Low-Rise Units", "🏢 High-Rise Units", "📊 Combined Totals"])
         
-        # Calculate and display Low-Rise NSA
-        low_rise_nsa = low_rise_units * low_rise_avg_unit_size
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Low-Rise NSA**")
-        with col2:
-            st.text_input(
-                "Low-Rise Net Sellable Area",
-                value=f"{low_rise_nsa:,.0f} m² (calculated)",
-                disabled=True,
-                key="low_rise_nsa_display",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['low_rise_nsa'] = low_rise_nsa
-        
-        # Low-Rise Average Selling Price
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Low-Rise ASP (VND mn/m²)**")
-        with col2:
-            low_rise_asp_raw = float(project_data.get('low_rise_asp', 0) or 0)
-            low_rise_asp_million = low_rise_asp_raw / 1_000_000
+        with tab_low_rise:
+            # Low-Rise Units
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**Low-Rise Units**")
+            with col2:
+                low_rise_units = st.number_input(
+                    "Low-Rise Units",
+                    value=int(project_data.get('low_rise_units', 0) or 0),
+                    min_value=0,
+                    step=1,
+                    format="%d",
+                    key="edit_low_rise_units",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['low_rise_units'] = low_rise_units
             
-            low_rise_asp_million_input = st.number_input(
-                "Low-Rise Average Selling Price (VND mn/m²)",
-                value=low_rise_asp_million,
-                min_value=0.0,
-                step=1.0,
-                format="%.1f",
-                key="edit_low_rise_asp",
-                label_visibility="collapsed"
-            )
-            low_rise_asp_value = low_rise_asp_million_input * 1_000_000
-        st.session_state.edited_project['low_rise_asp'] = low_rise_asp_value
-        
-        # Section header for High-Rise
-        st.markdown("#### High-Rise Units")
-        
-        # High-Rise Units
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**High-Rise Units**")
-        with col2:
-            high_rise_units = st.number_input(
-                "High-Rise Units",
-                value=int(project_data.get('high_rise_units', 0) or 0),
-                min_value=0,
-                step=1,
-                format="%d",
-                key="edit_high_rise_units",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['high_rise_units'] = high_rise_units
-        
-        # High-Rise Average Unit Size
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**High-Rise Avg Unit Size (m²)**")
-        with col2:
-            high_rise_avg_unit_size = st.number_input(
-                "High-Rise Average Unit Size (m²)",
-                value=int(project_data.get('high_rise_avg_unit_size', 0) or 0),
-                min_value=0,
-                step=1,
-                format="%d",
-                key="edit_high_rise_avg_unit_size",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['high_rise_avg_unit_size'] = high_rise_avg_unit_size
-        
-        # Calculate and display High-Rise NSA
-        high_rise_nsa = high_rise_units * high_rise_avg_unit_size
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**High-Rise NSA**")
-        with col2:
-            st.text_input(
-                "High-Rise Net Sellable Area",
-                value=f"{high_rise_nsa:,.0f} m² (calculated)",
-                disabled=True,
-                key="high_rise_nsa_display",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['high_rise_nsa'] = high_rise_nsa
-        
-        # High-Rise Average Selling Price
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**High-Rise ASP (VND mn/m²)**")
-        with col2:
-            high_rise_asp_raw = float(project_data.get('high_rise_asp', 0) or 0)
-            high_rise_asp_million = high_rise_asp_raw / 1_000_000
+            # Low-Rise Average Unit Size
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**Low-Rise Avg Unit Size (m²)**")
+            with col2:
+                low_rise_avg_unit_size = st.number_input(
+                    "Low-Rise Average Unit Size (m²)",
+                    value=int(project_data.get('low_rise_avg_unit_size', 0) or 0),
+                    min_value=0,
+                    step=1,
+                    format="%d",
+                    key="edit_low_rise_avg_unit_size",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['low_rise_avg_unit_size'] = low_rise_avg_unit_size
             
-            high_rise_asp_million_input = st.number_input(
-                "High-Rise Average Selling Price (VND mn/m²)",
-                value=high_rise_asp_million,
-                min_value=0.0,
-                step=1.0,
-                format="%.1f",
-                key="edit_high_rise_asp",
-                label_visibility="collapsed"
-            )
-            high_rise_asp_value = high_rise_asp_million_input * 1_000_000
-        st.session_state.edited_project['high_rise_asp'] = high_rise_asp_value
+            # Calculate and display Low-Rise NSA
+            low_rise_nsa = low_rise_units * low_rise_avg_unit_size
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**Low-Rise NSA**")
+            with col2:
+                st.text_input(
+                    "Low-Rise Net Sellable Area",
+                    value=f"{low_rise_nsa:,.0f} m² (calculated)",
+                    disabled=True,
+                    key="low_rise_nsa_display",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['low_rise_nsa'] = low_rise_nsa
+            
+            # Low-Rise Average Selling Price
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**Low-Rise ASP (VND mn/m²)**")
+            with col2:
+                low_rise_asp_raw = float(project_data.get('low_rise_asp', 0) or 0)
+                low_rise_asp_million = low_rise_asp_raw / 1_000_000
+                
+                low_rise_asp_million_input = st.number_input(
+                    "Low-Rise Average Selling Price (VND mn/m²)",
+                    value=low_rise_asp_million,
+                    min_value=0.0,
+                    step=1.0,
+                    format="%.1f",
+                    key="edit_low_rise_asp",
+                    label_visibility="collapsed"
+                )
+                low_rise_asp_value = low_rise_asp_million_input * 1_000_000
+            st.session_state.edited_project['low_rise_asp'] = low_rise_asp_value
         
-        # Section for Combined Totals
-        st.markdown("#### Combined Totals")
+        with tab_high_rise:
+            # High-Rise Units
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**High-Rise Units**")
+            with col2:
+                high_rise_units = st.number_input(
+                    "High-Rise Units",
+                    value=int(project_data.get('high_rise_units', 0) or 0),
+                    min_value=0,
+                    step=1,
+                    format="%d",
+                    key="edit_high_rise_units",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['high_rise_units'] = high_rise_units
+            
+            # High-Rise Average Unit Size
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**High-Rise Avg Unit Size (m²)**")
+            with col2:
+                high_rise_avg_unit_size = st.number_input(
+                    "High-Rise Average Unit Size (m²)",
+                    value=int(project_data.get('high_rise_avg_unit_size', 0) or 0),
+                    min_value=0,
+                    step=1,
+                    format="%d",
+                    key="edit_high_rise_avg_unit_size",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['high_rise_avg_unit_size'] = high_rise_avg_unit_size
+            
+            # Calculate and display High-Rise NSA
+            high_rise_nsa = high_rise_units * high_rise_avg_unit_size
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**High-Rise NSA**")
+            with col2:
+                st.text_input(
+                    "High-Rise Net Sellable Area",
+                    value=f"{high_rise_nsa:,.0f} m² (calculated)",
+                    disabled=True,
+                    key="high_rise_nsa_display",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['high_rise_nsa'] = high_rise_nsa
+            
+            # High-Rise Average Selling Price
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**High-Rise ASP (VND mn/m²)**")
+            with col2:
+                high_rise_asp_raw = float(project_data.get('high_rise_asp', 0) or 0)
+                high_rise_asp_million = high_rise_asp_raw / 1_000_000
+                
+                high_rise_asp_million_input = st.number_input(
+                    "High-Rise Average Selling Price (VND mn/m²)",
+                    value=high_rise_asp_million,
+                    min_value=0.0,
+                    step=1.0,
+                    format="%.1f",
+                    key="edit_high_rise_asp",
+                    label_visibility="collapsed"
+                )
+                high_rise_asp_value = high_rise_asp_million_input * 1_000_000
+            st.session_state.edited_project['high_rise_asp'] = high_rise_asp_value
         
-        # Calculate combined values
-        total_units = low_rise_units + high_rise_units
-        total_nsa = low_rise_nsa + high_rise_nsa
-        # Weighted average ASP
-        if total_nsa > 0:
-            weighted_asp = (low_rise_nsa * low_rise_asp_value + high_rise_nsa * high_rise_asp_value) / total_nsa
-        else:
-            weighted_asp = 0
-        
-        # Display combined totals
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Total Units**")
-        with col2:
-            st.text_input(
-                "Total Units",
-                value=f"{total_units:,.0f} units",
-                disabled=True,
-                key="total_units_display",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['total_units'] = total_units
-        
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Total NSA**")
-        with col2:
-            st.text_input(
-                "Total Net Sellable Area",
-                value=f"{total_nsa:,.0f} m²",
-                disabled=True,
-                key="total_nsa_display",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['net_sellable_area'] = total_nsa
-        
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Weighted Avg ASP (VND mn/m²)**")
-        with col2:
-            st.text_input(
-                "Weighted Average Selling Price",
-                value=f"{weighted_asp/1_000_000:.1f}",
-                disabled=True,
-                key="weighted_asp_display",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['average_selling_price'] = weighted_asp
+        with tab_combined:
+            # Get the latest values from session state for combined calculations
+            low_rise_units = st.session_state.edited_project.get('low_rise_units', 0)
+            high_rise_units = st.session_state.edited_project.get('high_rise_units', 0)
+            low_rise_nsa = st.session_state.edited_project.get('low_rise_nsa', 0)
+            high_rise_nsa = st.session_state.edited_project.get('high_rise_nsa', 0)
+            low_rise_asp_value = st.session_state.edited_project.get('low_rise_asp', 0)
+            high_rise_asp_value = st.session_state.edited_project.get('high_rise_asp', 0)
+            
+            # Calculate combined values
+            total_units = low_rise_units + high_rise_units
+            total_nsa = low_rise_nsa + high_rise_nsa
+            # Weighted average ASP
+            if total_nsa > 0:
+                weighted_asp = (low_rise_nsa * low_rise_asp_value + high_rise_nsa * high_rise_asp_value) / total_nsa
+            else:
+                weighted_asp = 0
+            
+            # Display combined totals
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**Total Units**")
+            with col2:
+                st.text_input(
+                    "Total Units",
+                    value=f"{total_units:,.0f} units",
+                    disabled=True,
+                    key="total_units_display",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['total_units'] = total_units
+            
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**Total NSA**")
+            with col2:
+                st.text_input(
+                    "Total Net Sellable Area",
+                    value=f"{total_nsa:,.0f} m²",
+                    disabled=True,
+                    key="total_nsa_display",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['net_sellable_area'] = total_nsa
+            
+            # Calculate and display average unit size
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**Average Unit Size**")
+            with col2:
+                avg_unit_size = total_nsa / total_units if total_units > 0 else 0
+                st.text_input(
+                    "Average Unit Size",
+                    value=f"{avg_unit_size:.1f} m²",
+                    disabled=True,
+                    key="avg_unit_size_display",
+                    label_visibility="collapsed"
+                )
+            
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.markdown("**Weighted Avg ASP (VND mn/m²)**")
+            with col2:
+                st.text_input(
+                    "Weighted Average Selling Price",
+                    value=f"{weighted_asp/1_000_000:.1f}",
+                    disabled=True,
+                    key="weighted_asp_display",
+                    label_visibility="collapsed"
+                )
+            st.session_state.edited_project['average_selling_price'] = weighted_asp
         
         # Price Annual Increment
         col1, col2 = st.columns([1, 3])
@@ -973,6 +1014,10 @@ class ProjectPipelineRealEstateTab:
             price_increment_decimal = price_increment_input / 100
         st.session_state.edited_project['price_increment_factor'] = price_increment_decimal
         
+        # Section separator and header for Land and Construction Information
+        st.markdown("---")
+        st.markdown("#### Land and Construction Information")
+        
         # Land Area
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -994,6 +1039,58 @@ class ProjectPipelineRealEstateTab:
                 except:
                     st.caption(f"AI Suggestion: {ai_suggestions['land_area_sqm']} m²")
         st.session_state.edited_project['land_area'] = land_area
+        
+        # Land Cost per sqm (in VND million per m2 for user input) - moved here after Land Area
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Land Cost (VND mn/m²)**")
+        with col2:
+            # Convert from raw VND to VND million for display
+            land_cost_raw = float(project_data.get('land_cost_per_sqm', 0) or 0)
+            land_cost_million = land_cost_raw / 1_000_000  # Convert to million VND
+            
+            land_cost_million_input = st.number_input(
+                "Land Cost (VND mn/m²)",
+                value=land_cost_million,
+                min_value=0.0,
+                step=0.1,
+                format="%.1f",
+                key="edit_land_cost",
+                label_visibility="collapsed",
+                help="Enter cost in million VND per m² (e.g., 25.5 for 25.5 million VND/m²)"
+            )
+            
+            # Convert back to raw VND for storage and calculations
+            land_cost = int(land_cost_million_input * 1_000_000)
+            
+            if ai_suggestions.get("land_cost_per_sqm"):
+                try:
+                    ai_land_cost = float(ai_suggestions['land_cost_per_sqm'])
+                    ai_land_cost_million = ai_land_cost / 1_000_000
+                    st.caption(f"AI Suggestion: {ai_land_cost_million:.1f} mn VND/m²")
+                except:
+                    st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
+        st.session_state.edited_project['land_cost_per_sqm'] = land_cost
+        
+        # Total Land Cost (calculated, non-editable)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Total Land Cost (VND bn)**")
+        with col2:
+            # Calculate total land cost from Land Area and Land Cost per sqm
+            land_area_value = float(st.session_state.edited_project.get('land_area', 0) or 0)
+            land_cost_value = float(st.session_state.edited_project.get('land_cost_per_sqm', 0) or 0)
+            total_land_cost = land_area_value * land_cost_value / 1_000_000_000  # Convert to billions VND
+            
+            # Display as disabled text input
+            st.text_input(
+                "Total Land Cost (VND bn)",
+                value=f"{total_land_cost:,.1f}",
+                disabled=True,
+                key="total_land_cost_display",
+                label_visibility="collapsed",
+                help="Automatically calculated: Land Area × Land Cost per m²"
+            )
         
         # Gross Floor Area
         col1, col2 = st.columns([1, 3])
@@ -1069,58 +1166,6 @@ class ProjectPipelineRealEstateTab:
                 help="Automatically calculated: GFA × Construction Cost per m²"
             )
         
-        # Land Cost per sqm (in VND million per m2 for user input)
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Land Cost (VND mn/m²)**")
-        with col2:
-            # Convert from raw VND to VND million for display
-            land_cost_raw = float(project_data.get('land_cost_per_sqm', 0) or 0)
-            land_cost_million = land_cost_raw / 1_000_000  # Convert to million VND
-            
-            land_cost_million_input = st.number_input(
-                "Land Cost (VND mn/m²)",
-                value=land_cost_million,
-                min_value=0.0,
-                step=0.1,
-                format="%.1f",
-                key="edit_land_cost",
-                label_visibility="collapsed",
-                help="Enter cost in million VND per m² (e.g., 25.5 for 25.5 million VND/m²)"
-            )
-            
-            # Convert back to raw VND for storage and calculations
-            land_cost = int(land_cost_million_input * 1_000_000)
-            
-            if ai_suggestions.get("land_cost_per_sqm"):
-                try:
-                    ai_land_cost = float(ai_suggestions['land_cost_per_sqm'])
-                    ai_land_cost_million = ai_land_cost / 1_000_000
-                    st.caption(f"AI Suggestion: {ai_land_cost_million:.1f} mn VND/m²")
-                except:
-                    st.caption(f"AI Suggestion: {ai_suggestions['land_cost_per_sqm']} VND/m²")
-        st.session_state.edited_project['land_cost_per_sqm'] = land_cost
-        
-        # Total Land Cost (calculated, non-editable)
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Total Land Cost (VND bn)**")
-        with col2:
-            # Calculate total land cost from Land Area and Land Cost per sqm
-            land_area_value = float(st.session_state.edited_project.get('land_area', 0) or 0)
-            land_cost_value = float(st.session_state.edited_project.get('land_cost_per_sqm', 0) or 0)
-            total_land_cost = land_area_value * land_cost_value / 1_000_000_000  # Convert to billions VND
-            
-            # Display as disabled text input
-            st.text_input(
-                "Total Land Cost (VND bn)",
-                value=f"{total_land_cost:,.1f}",
-                disabled=True,
-                key="total_land_cost_display",
-                label_visibility="collapsed",
-                help="Automatically calculated: Land Area × Land Cost per m²"
-            )
-        
         # Total Debt field (in VND billions for user input)
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -1190,6 +1235,23 @@ class ProjectPipelineRealEstateTab:
         st.subheader("Project Timeline")
         
         # Each field on its own row with label and input side by side
+        
+        # Land Payment Year - moved to top
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown("**Land Payment Year**")
+        with col2:
+            # Use construction start year as default if not set
+            default_land_year = int(project_data.get('construction_start_year', datetime.now().year) or datetime.now().year)
+            land_payment = st.number_input(
+                "Land Payment Year",
+                value=int(project_data.get('land_payment_year', default_land_year) or default_land_year),
+                min_value=2000,
+                max_value=2040,
+                key="edit_land_payment",
+                label_visibility="collapsed"
+            )
+        st.session_state.edited_project['land_payment_year'] = land_payment
         
         # Construction Start Year
         col1, col2 = st.columns([1, 3])
@@ -1281,21 +1343,6 @@ class ProjectPipelineRealEstateTab:
                 label_visibility="collapsed"
             )
         st.session_state.edited_project['project_completion_year'] = completion_year
-        
-        # Land Payment Year
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Land Payment Year**")
-        with col2:
-            land_payment = st.number_input(
-                "Land Payment Year",
-                value=int(project_data.get('land_payment_year', const_start) or const_start),
-                min_value=2000,
-                max_value=2040,
-                key="edit_land_payment",
-                label_visibility="collapsed"
-            )
-        st.session_state.edited_project['land_payment_year'] = land_payment
         
         # Financial Parameters Section
         st.markdown("---")
@@ -1897,196 +1944,288 @@ class ProjectPipelineRealEstateTab:
             total_combined_presales = total_low_presales + total_high_presales
             
             # Show cash collection schedule based on tranche logic
-            # Check if distributions are valid (both should sum to 100%)
-            low_total_pct = sum(low_rise_distribution.values())
-            high_total_pct = sum(high_rise_distribution.values())
+            # Note: Cash collection schedule has been moved to its own section
+            # The actual implementation is now in render_cash_collection_schedule() method
+    def render_cash_collection_schedule(self, project_data):
+        """Render cash collection schedule section (separated from presales distribution)"""
+        st.subheader("Actual Cash Collection Schedule")
+        #st.info("Define cash collection percentages for each presale year. This schedule determines when cash is actually collected from presales bookings.")
+        
+        # Get edited project data
+        edited = st.session_state.edited_project
+        
+        # Get unit information
+        low_rise_nsa = float(edited.get('low_rise_nsa', 0) or 0)
+        low_rise_asp = float(edited.get('low_rise_asp', 0) or 0)
+        high_rise_nsa = float(edited.get('high_rise_nsa', 0) or 0)
+        high_rise_asp = float(edited.get('high_rise_asp', 0) or 0)
+        
+        # Get price increment
+        price_increment = float(edited.get('price_increment_factor', 0) or 0)
+        
+        # Get presales distributions
+        low_rise_distribution = edited.get('low_rise_presales_distribution', {})
+        high_rise_distribution = edited.get('high_rise_presales_distribution', {})
+        
+        # Get timeline parameters
+        sales_start = edited.get('sale_start_year', datetime.now().year)
+        sales_years = edited.get('sales_years', 3)
+        sales_end = int(sales_start or datetime.now().year) + int(sales_years or 3) - 1
+        years = list(range(int(sales_start), sales_end + 1))
+        
+        # Calculate total combined presales
+        total_combined_presales = 0
+        for i, year in enumerate(years):
+            low_pct = low_rise_distribution.get(str(year), 0) / 100
+            low_year_nsa = low_rise_nsa * low_pct
+            low_year_asp = low_rise_asp * (1 + price_increment) ** i
+            low_year_value = low_year_nsa * low_year_asp / 1e9
             
-            if abs(low_total_pct - 100.0) < 0.01 and abs(high_total_pct - 100.0) < 0.01 and total_combined_presales > 0:
-                st.markdown("### 💰 Actual Cash Collection Schedule (with Tranche Logic)")
-                
-                # Get construction end year
-                const_start = st.session_state.edited_project.get('construction_start_year',
-                                                                  project_data.get('construction_start_year', datetime.now().year))
-                const_years = st.session_state.edited_project.get('construction_years',
-                                                                   project_data.get('construction_years', 3))
-                
-                if not const_start or not const_years:
-                    st.error("⚠️ Construction Start Year and Construction Years are required to calculate cash collection schedule. Please set them in the Project Timeline section.")
-                    return
-                
-                # Calculate construction end year
-                construction_end = int(const_start) + int(const_years) - 1
-                
-                st.info(f"📍 Cash collection will be completed by construction end year: **{construction_end}**")
-                
-                # Calculate cash collection schedule using combined distributions
-                cash_collection = {}
-                
-                # Process low-rise presales
-                for i, year in enumerate(years):
-                    low_year_pct = low_rise_distribution.get(str(year), 0) / 100
-                    low_year_nsa = low_rise_nsa * low_year_pct
-                    low_year_asp = low_rise_asp * (1 + price_increment) ** i
-                    low_presale_amount = low_year_nsa * low_year_asp / 1e9
-                    
-                    # Process high-rise presales
-                    high_year_pct = high_rise_distribution.get(str(year), 0) / 100
-                    high_year_nsa = high_rise_nsa * high_year_pct
-                    high_year_asp = high_rise_asp * (1 + price_increment) ** i
-                    high_presale_amount = high_year_nsa * high_year_asp / 1e9
-                    
-                    # Combined presale amount for this year
-                    presale_amount = low_presale_amount + high_presale_amount
-                    
-                    if presale_amount > 0:
-                        # If presale year is at or after construction end year, collect all 100% immediately
-                        if year >= construction_end:
-                            if year not in cash_collection:
-                                cash_collection[year] = 0
-                            cash_collection[year] += presale_amount
-                        else:
-                            # 30% in first year
-                            if year not in cash_collection:
-                                cash_collection[year] = 0
-                            cash_collection[year] += presale_amount * 0.3
-                            
-                            # Remaining 70% distributed evenly until construction_end (not beyond)
-                            remaining = presale_amount * 0.7
-                            # Collection period is from next year until construction_end
-                            collection_years = list(range(year + 1, construction_end + 1))
-                            
-                            if collection_years:
-                                annual_collection = remaining / len(collection_years)
-                                for col_year in collection_years:
-                                    if col_year not in cash_collection:
-                                        cash_collection[col_year] = 0
-                                    cash_collection[col_year] += annual_collection
-                            else:
-                                # If no collection years available, add remaining to presale year
-                                cash_collection[year] += remaining
-                
-                # Prepare data for visualization with price increment
-                all_years = sorted(set(years) | set(cash_collection.keys()))
-                
-                # Calculate combined presales values for all years
-                presales_values = []
-                for y in all_years:
-                    if y in years:
-                        # Find the index of this year in the original years list
-                        year_idx = years.index(y)
-                        
-                        # Calculate low-rise presales for this year
-                        low_year_pct = low_rise_distribution.get(str(y), 0) / 100
-                        low_year_nsa = low_rise_nsa * low_year_pct
-                        low_year_asp = low_rise_asp * (1 + price_increment) ** year_idx
-                        low_year_value = low_year_nsa * low_year_asp / 1e9
-                        
-                        # Calculate high-rise presales for this year
-                        high_year_pct = high_rise_distribution.get(str(y), 0) / 100
-                        high_year_nsa = high_rise_nsa * high_year_pct
-                        high_year_asp = high_rise_asp * (1 + price_increment) ** year_idx
-                        high_year_value = high_year_nsa * high_year_asp / 1e9
-                        
-                        # Combined value
-                        year_value = low_year_value + high_year_value
-                        presales_values.append(year_value)
-                    else:
-                        presales_values.append(0)
-                cash_values = [cash_collection.get(y, 0) for y in all_years]
-                
-                # Create interactive chart comparing presales booking vs cash collection
-                fig = go.Figure()
-                
-                # Add presales booking bars
-                fig.add_trace(go.Bar(
-                    name='Presales Booking',
-                    x=[str(y) for y in all_years],
-                    y=presales_values,
-                    text=[f"{val:.0f}B" if val > 0 else "" for val in presales_values],
-                    textposition='auto',
-                    marker_color='lightblue',
-                    offsetgroup=1
-                ))
-                
-                # Add cash collection bars
-                fig.add_trace(go.Bar(
-                    name='Cash Collection',
-                    x=[str(y) for y in all_years],
-                    y=cash_values,
-                    text=[f"{val:.0f}B" if val > 0 else "" for val in cash_values],
-                    textposition='auto',
-                    marker_color='lightgreen',
-                    offsetgroup=2
-                ))
-                
-                fig.update_layout(
-                    title="Presales Booking vs Actual Cash Collection (Tranche Logic)",
-                    xaxis_title="Year",
-                    yaxis_title="Amount (Billion VND)",
-                    barmode='group',
-                    height=400,
-                    showlegend=True,
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1
-                    ),
-                    hovermode='x unified'
+            high_pct = high_rise_distribution.get(str(year), 0) / 100
+            high_year_nsa = high_rise_nsa * high_pct
+            high_year_asp = high_rise_asp * (1 + price_increment) ** i
+            high_year_value = high_year_nsa * high_year_asp / 1e9
+            
+            total_combined_presales += low_year_value + high_year_value
+        
+        # Check if distributions are valid
+        low_total_pct = sum(low_rise_distribution.values())
+        high_total_pct = sum(high_rise_distribution.values())
+        
+        if abs(low_total_pct - 100.0) > 0.01 or abs(high_total_pct - 100.0) > 0.01:
+            st.warning("⚠️ Please ensure both Low-Rise and High-Rise presales distributions sum to 100% before defining cash collection schedule.")
+            return
+        
+        if total_combined_presales <= 0:
+            st.warning("⚠️ No presales to schedule cash collection for. Please define presales distributions first.")
+            return
+        
+        # Get project timeline
+        const_start = edited.get('construction_start_year', datetime.now().year)
+        const_years = edited.get('construction_years', 3)
+        
+        if not const_start or not const_years:
+            st.error("⚠️ Construction Start Year and Construction Years are required to calculate cash collection schedule. Please set them in the Project Timeline section.")
+            return
+        
+        # Calculate construction end year for reference
+        construction_end = int(const_start) + int(const_years) - 1
+        
+        # First, collect all presale years and amounts
+        presales_by_year = {}
+        for i, year in enumerate(years):
+            low_year_pct = low_rise_distribution.get(str(year), 0) / 100
+            low_year_nsa = low_rise_nsa * low_year_pct
+            low_year_asp = low_rise_asp * (1 + price_increment) ** i
+            low_presale_amount = low_year_nsa * low_year_asp / 1e9
+            
+            high_year_pct = high_rise_distribution.get(str(year), 0) / 100
+            high_year_nsa = high_rise_nsa * high_year_pct
+            high_year_asp = high_rise_asp * (1 + price_increment) ** i
+            high_presale_amount = high_year_nsa * high_year_asp / 1e9
+            
+            presale_amount = low_presale_amount + high_presale_amount
+            if presale_amount > 0:
+                presales_by_year[year] = presale_amount
+        
+        # Create UI for collection percentage inputs
+        #st.markdown("#### Define Cash Collection Schedule (Relative to Presale Year)")
+        st.info("This schedule will apply to ALL presales. Year 1 = presale year, Year 2 = presale year + 1, etc.")
+        
+        # Initialize relative collection schedule in session state if not exists
+        if 'relative_collection_schedule' not in st.session_state:
+            saved_schedule = edited.get('relative_collection_schedule', {})
+            if saved_schedule:
+                st.session_state.relative_collection_schedule = saved_schedule
+            else:
+                # Default: 30% in year 1, 70% spread over years 2-3
+                st.session_state.relative_collection_schedule = {
+                    1: 30.0,  # Year 1 (presale year)
+                    2: 35.0,  # Year 2 
+                    3: 35.0,  # Year 3
+                    4: 0.0,   # Year 4
+                    5: 0.0    # Year 5
+                }
+        
+        # Create exactly 5 columns for the 5 year inputs
+        cols = st.columns(5)
+        relative_schedule = {}
+        
+        for relative_year in range(1, 6):  # 1 to 5
+            col_idx = relative_year - 1
+            current_pct = st.session_state.relative_collection_schedule.get(relative_year, 0.0)
+            
+            with cols[col_idx]:
+                pct = st.number_input(
+                    f"Year {relative_year}",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(current_pct),
+                    step=5.0,
+                    format="%.1f",
+                    key=f"collect_relative_year_{relative_year}",
+                    help=f"% collected in year {relative_year} after presale"
                 )
+                relative_schedule[relative_year] = pct
+        
+        # Validate percentages
+        total_pct = sum(relative_schedule.values())
+        if abs(total_pct - 100.0) > 0.01:
+            st.error(f"❌ Collection percentages sum to {total_pct:.1f}%, must equal 100%")
+        else:
+            st.success(f"✅ Collection schedule is valid (100%)")
+        
+        # Store the relative schedule
+        st.session_state.relative_collection_schedule = relative_schedule
+        st.session_state.edited_project['relative_collection_schedule'] = relative_schedule
+        
+        # Show how this applies to each presale
+        if presales_by_year and relative_schedule:
+            #st.markdown("##### 📊 Application to Each Presale:")
+            
+            collection_schedules = {}
+            for presale_year, presale_amount in presales_by_year.items():
+                #st.markdown(f"**Presales in {presale_year}: {presale_amount:.1f}B VND**")
                 
-                st.plotly_chart(fig, use_container_width=True)
+                year_schedule = {}
+                #schedule_text = []
+                for relative_year, pct in relative_schedule.items():
+                    if pct > 0:
+                        actual_year = presale_year + relative_year - 1
+                        collection_amount = presale_amount * (pct / 100)
+                        year_schedule[actual_year] = pct
+                        #schedule_text.append(f"  • Year {relative_year} ({actual_year}): {collection_amount:.1f}B VND ({pct:.1f}%)")
                 
-                # Show totals with price increment
-                total_presales = sum(presales_values)
-                total_cash = sum(cash_collection.values())
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total Presales Booking", f"{total_presales:,.1f} Bn VND")
-                with col2:
-                    st.metric("Total Cash Collection", f"{total_cash:,.1f} Bn VND")
-                with col3:
-                    # Show collection efficiency
-                    if total_presales > 0:
-                        collection_pct = (total_cash / total_presales) * 100
-                        st.metric("Collection Rate", f"{collection_pct:.1f}%")
-                
-                # Optionally show detailed table
-                with st.expander("📊 View Detailed Cash Collection Table", expanded=False):
-                    cash_data = []
-                    for year in all_years:
-                        # Calculate combined presale value for this year
-                        if year in years:
-                            year_idx = years.index(year)
-                            
-                            # Low-rise presales
-                            low_year_pct = low_rise_distribution.get(str(year), 0) / 100
-                            low_year_nsa = low_rise_nsa * low_year_pct
-                            low_year_asp = low_rise_asp * (1 + price_increment) ** year_idx
-                            low_presale_val = low_year_nsa * low_year_asp / 1e9
-                            
-                            # High-rise presales
-                            high_year_pct = high_rise_distribution.get(str(year), 0) / 100
-                            high_year_nsa = high_rise_nsa * high_year_pct
-                            high_year_asp = high_rise_asp * (1 + price_increment) ** year_idx
-                            high_presale_val = high_year_nsa * high_year_asp / 1e9
-                            
-                            presale_val = low_presale_val + high_presale_val
-                        else:
-                            presale_val = 0
-                        cash_val = cash_collection.get(year, 0)
-                        cash_data.append({
-                            "Year": year,
-                            "Presales Booking": f"{presale_val:,.1f}" if presale_val > 0 else "-",
-                            "Cash Collection": f"{cash_val:,.1f}" if cash_val > 0 else "-",
-                            "Difference": f"{(cash_val - presale_val):+,.1f}" if (presale_val > 0 or cash_val > 0) else "-"
-                        })
+                #st.markdown("\n".join(schedule_text))
+                collection_schedules[presale_year] = year_schedule
+            
+            # Save schedules
+            if collection_schedules:
+                st.session_state.edited_project['cash_collection_schedules'] = collection_schedules
+            
+            # Calculate actual cash collection
+            cash_collection = {}
+            for presale_year, presale_amount in presales_by_year.items():
+                schedule = collection_schedules.get(presale_year, {})
+                for col_year, pct in schedule.items():
+                    if col_year not in cash_collection:
+                        cash_collection[col_year] = 0
+                    cash_collection[col_year] += presale_amount * (pct / 100)
+            
+            # Create visualization
+            all_years = sorted(set(years) | set(cash_collection.keys()))
+            
+            # Calculate presales values for visualization
+            presales_values = []
+            for y in all_years:
+                if y in years:
+                    year_idx = years.index(y)
                     
-                    cash_df = pd.DataFrame(cash_data)
-                    st.dataframe(cash_df, hide_index=True, use_container_width=True)
-    
+                    low_year_pct = low_rise_distribution.get(str(y), 0) / 100
+                    low_year_nsa = low_rise_nsa * low_year_pct
+                    low_year_asp = low_rise_asp * (1 + price_increment) ** year_idx
+                    low_year_value = low_year_nsa * low_year_asp / 1e9
+                    
+                    high_year_pct = high_rise_distribution.get(str(y), 0) / 100
+                    high_year_nsa = high_rise_nsa * high_year_pct
+                    high_year_asp = high_rise_asp * (1 + price_increment) ** year_idx
+                    high_year_value = high_year_nsa * high_year_asp / 1e9
+                    
+                    presales_values.append(low_year_value + high_year_value)
+                else:
+                    presales_values.append(0)
+            
+            cash_values = [cash_collection.get(y, 0) for y in all_years]
+            
+            # Create chart
+            fig = go.Figure()
+            
+            fig.add_trace(go.Bar(
+                name='Presales Booking',
+                x=[str(y) for y in all_years],
+                y=presales_values,
+                text=[f"{val:.0f}B" if val > 0 else "" for val in presales_values],
+                textposition='auto',
+                marker_color='lightblue',
+                offsetgroup=1
+            ))
+            
+            fig.add_trace(go.Bar(
+                name='Cash Collection',
+                x=[str(y) for y in all_years],
+                y=cash_values,
+                text=[f"{val:.0f}B" if val > 0 else "" for val in cash_values],
+                textposition='auto',
+                marker_color='lightgreen',
+                offsetgroup=2
+            ))
+            
+            fig.update_layout(
+                title="Presales Booking vs Actual Cash Collection",
+                xaxis_title="Year",
+                yaxis_title="Amount (Billion VND)",
+                barmode='group',
+                height=400,
+                showlegend=True,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                ),
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Show totals
+            total_presales = sum(presales_values)
+            total_cash = sum(cash_collection.values())
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Presales Booking", f"{total_presales:,.1f} Bn VND")
+            with col2:
+                st.metric("Total Cash Collection", f"{total_cash:,.1f} Bn VND")
+            with col3:
+                if total_presales > 0:
+                    collection_pct = (total_cash / total_presales) * 100
+                    st.metric("Collection Rate", f"{collection_pct:.1f}%")
+            
+            # Detailed table
+            #with st.expander("📊 View Detailed Cash Collection Table", expanded=False):
+            #    cash_data = []
+            #    for year in all_years:
+            #        if year in years:
+            #            year_idx = years.index(year)
+            #            
+            #            low_year_pct = low_rise_distribution.get(str(year), 0) / 100
+            #            low_year_nsa = low_rise_nsa * low_year_pct
+            #            low_year_asp = low_rise_asp * (1 + price_increment) ** year_idx
+            #            low_year_value = low_year_nsa * low_year_asp / 1e9
+            #            
+            #            high_year_pct = high_rise_distribution.get(str(year), 0) / 100
+            #            high_year_nsa = high_rise_nsa * high_year_pct
+            #            high_year_asp = high_rise_asp * (1 + price_increment) ** year_idx
+            #            high_year_value = high_year_nsa * high_year_asp / 1e9
+            #            
+            #            presale_val = low_year_value + high_year_value
+            #        else:
+            #            presale_val = 0
+            #        
+            #        cash_val = cash_collection.get(year, 0)
+            #        
+            #        cash_data.append({
+            #            "Year": str(year),
+            #            "Presales Booking": f"{presale_val:,.1f}" if presale_val > 0 else "-",
+            #            "Cash Collection": f"{cash_val:,.1f}" if cash_val > 0 else "-",
+            #            "Difference": f"{(cash_val - presale_val):+,.1f}" if (presale_val > 0 or cash_val > 0) else "-"
+            #        })
+            #    
+            #    cash_df = pd.DataFrame(cash_data)
+            #    st.dataframe(cash_df, hide_index=True, use_container_width=True)
+        
     def render_project_balance_sheet_analysis(self, project_data):
         """Render comprehensive financial statements forecast using project data"""
         # First display Project Financial Summary
@@ -2384,6 +2523,21 @@ class ProjectPipelineRealEstateTab:
                         year = int(year_str)
                         revenue_dist_converted[year] = percentage / 100.0
                 
+                # Prepare cash collection schedules from relative schedule
+                cash_collection_schedules_dict = {}
+                relative_schedule = st.session_state.edited_project.get('relative_collection_schedule', {})
+                
+                if relative_schedule:
+                    # Convert relative schedule to absolute year schedules for each presale year
+                    for presale_year in range(presales_start, presales_end + 1):
+                        year_schedule = {}
+                        for relative_year, pct in relative_schedule.items():
+                            if pct > 0:
+                                actual_year = presale_year + relative_year - 1
+                                year_schedule[actual_year] = pct
+                        if year_schedule:
+                            cash_collection_schedules_dict[presale_year] = year_schedule
+                
                 # Generate balance sheet schedules with pre-calculated presales
                 df = generate_balance_sheet_schedules(
                     total_debt=total_debt,
@@ -2400,7 +2554,8 @@ class ProjectPipelineRealEstateTab:
                     revenue_booking_start_year=revenue_booking_start,
                     revenue_booking_end_year=revenue_booking_end,
                     revenue_distribution=revenue_dist_converted,
-                    tax_rate=tax_rate
+                    tax_rate=tax_rate,
+                    cash_collection_schedules=cash_collection_schedules_dict if cash_collection_schedules_dict else None
                 )
                 
                 # Format the dataframe for display - exclude Total row
