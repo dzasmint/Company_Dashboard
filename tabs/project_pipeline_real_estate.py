@@ -782,7 +782,7 @@ class ProjectPipelineRealEstateTab:
         
         # Create tabs for unit information
         st.markdown("#### Unit Information")
-        tab_low_rise, tab_high_rise, tab_combined = st.tabs(["🏘️ Low-Rise Units", "🏢 High-Rise Units", "📊 Combined Totals"])
+        tab_low_rise, tab_high_rise, tab_combined = st.tabs(["Low-Rise Units", "High-Rise Units", "Combined Totals"])
         
         with tab_low_rise:
             # Low-Rise Units
