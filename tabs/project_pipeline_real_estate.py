@@ -659,6 +659,9 @@ class ProjectPipelineRealEstateTab:
         self.render_project_timeline(project_data)
         
         st.markdown("---")
+        self.render_project_financial_summary(project_data)
+        
+        st.markdown("---")
         self.render_presales_distribution_editor(project_data)
         
         st.markdown("---")
@@ -2226,9 +2229,8 @@ class ProjectPipelineRealEstateTab:
             #    cash_df = pd.DataFrame(cash_data)
             #    st.dataframe(cash_df, hide_index=True, use_container_width=True)
         
-    def render_project_balance_sheet_analysis(self, project_data):
-        """Render comprehensive financial statements forecast using project data"""
-        # First display Project Financial Summary
+    def render_project_financial_summary(self, project_data):
+        """Render project financial summary section"""
         st.subheader("Project Financial Summary")
         
         # Get edited project data
@@ -2311,14 +2313,14 @@ class ProjectPipelineRealEstateTab:
             summary_df,
             use_container_width=True,
             hide_index=True,
-            height=420  # Adjusted height for additional rows
+            height=460  # Adjusted height for additional rows
         )
-        
-        st.markdown("---")
-        
+
+    def render_project_balance_sheet_analysis(self, project_data):
+        """Render comprehensive financial statements forecast using project data"""
         # Now display Comprehensive Financial Statements Forecast
         st.subheader("Comprehensive Financial Statements Forecast")
-        st.info("💡 **Key Difference**: 'Presales (Bookings)' = contractual sales. 'Cash Inflow (Actual Collection)' = cash received (30% upfront, 70% distributed). Customer Prepayment Balance is based on actual cash received.")
+        # st.info("💡 **Key Difference**: 'Presales (Bookings)' = contractual sales. 'Cash Inflow (Actual Collection)' = cash received (30% upfront, 70% distributed). Customer Prepayment Balance is based on actual cash received.")
         
         # Import balance sheet manager
         import sys
