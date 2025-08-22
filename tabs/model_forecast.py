@@ -512,10 +512,31 @@ class ModelForecastTab:
             /* Active tab styling */
             div[role="tablist"] button[aria-selected="true"] {
                 background: linear-gradient(135deg, #2E7D7B, #3A9B98) !important;
-                border: 2px solid #FFFFFF !important;
+                border-bottom: 4px solid #000000 !important;
                 font-weight: bold !important;
                 box-shadow: 0 6px 12px rgba(46, 125, 123, 0.4);
                 transform: translateY(-2px);
+                position: relative;
+            }
+            
+            /* Black underline for active tab */
+            div[role="tablist"] button[aria-selected="true"]::after {
+                content: "";
+                position: absolute;
+                bottom: -4px;
+                left: 0;
+                right: 0;
+                height: 4px;
+                background-color: #000000 !important;
+            }
+            
+            /* Override any default red coloring */
+            .stTabs [data-baseweb="tab-highlight"] {
+                background-color: #000000 !important;
+            }
+            
+            .stTabs [aria-selected="true"] {
+                border-color: #000000 !important;
             }
             
             /* Tab panel content area */
