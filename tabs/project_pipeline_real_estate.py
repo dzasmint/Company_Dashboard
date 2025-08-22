@@ -1239,112 +1239,230 @@ class ProjectPipelineRealEstateTab:
         
         # Each field on its own row with label and input side by side
         
-        # Land Payment Year - moved to top
+        # Land Payment Period - moved to top
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Land Payment Year**")
+            st.markdown("**Land Payment Period**")
         with col2:
-            # Use construction start year as default if not set
-            default_land_year = int(project_data.get('construction_start_year', datetime.now().year) or datetime.now().year)
-            land_payment = st.number_input(
-                "Land Payment Year",
-                value=int(project_data.get('land_payment_year', default_land_year) or default_land_year),
-                min_value=2000,
-                max_value=2040,
-                key="edit_land_payment",
-                label_visibility="collapsed"
+            current_year = datetime.now().year
+            min_year = current_year - 15
+            max_year = current_year + 15
+            
+            # Get default values - check for new fields first, fallback to old single year
+            land_start_val = project_data.get('land_payment_start_year')
+            land_years_val = project_data.get('land_payment_years')
+            
+            if land_start_val is not None and not pd.isna(land_start_val) and land_years_val is not None and not pd.isna(land_years_val):
+                # New multi-year format with valid values
+                default_start = int(land_start_val)
+                default_duration = int(land_years_val)
+                default_end = default_start + default_duration - 1
+            else:
+                # Old single year format or missing data - convert to period
+                old_land_year_val = project_data.get('land_payment_year')
+                if old_land_year_val is not None and not pd.isna(old_land_year_val):
+                    default_start = int(old_land_year_val)
+                else:
+                    # Fallback to construction start year or current year
+                    const_start_val = project_data.get('construction_start_year')
+                    if const_start_val is not None and not pd.isna(const_start_val):
+                        default_start = int(const_start_val)
+                    else:
+                        default_start = current_year
+                default_end = default_start  # Single year payment
+            
+            # Ensure defaults are within range
+            if default_start < min_year:
+                default_start = min_year
+            elif default_start > max_year:
+                default_start = max_year
+                
+            if default_end < min_year:
+                default_end = min_year
+            elif default_end > max_year:
+                default_end = max_year
+                
+            # Ensure end is not before start
+            if default_end < default_start:
+                default_end = default_start
+            
+            land_payment_period = st.slider(
+                "Land Payment Period",
+                min_value=min_year,
+                max_value=max_year,
+                value=(default_start, default_end),
+                step=1,
+                format="%d",
+                key="edit_land_payment_period",
+                label_visibility="collapsed",
+                help=f"Select land payment start and end years (Range: {min_year} - {max_year})"
             )
-        st.session_state.edited_project['land_payment_year'] = land_payment
+            
+            land_start = land_payment_period[0]
+            land_end = land_payment_period[1]
+            land_years = max(1, land_end - land_start + 1)  # Calculate duration
+            
+            # Display the calculated duration
+            st.caption(f"Duration: {land_years} year{'s' if land_years > 1 else ''} ({land_start} - {land_end})")
         
-        # Construction Start Year
+        # Store both new fields and keep old field for backwards compatibility
+        st.session_state.edited_project['land_payment_start_year'] = land_start
+        st.session_state.edited_project['land_payment_years'] = land_years
+        st.session_state.edited_project['land_payment_year'] = land_start  # Keep for backwards compatibility
+        
+        # Construction Period (Start and End Year)
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Construction Start Year**")
+            st.markdown("**Construction Period**")
         with col2:
-            const_start = st.number_input(
-                "Construction Start Year",
-                value=int(project_data.get('construction_start_year', datetime.now().year) or datetime.now().year),
-                min_value=2000,  # Allow historical years
-                max_value=2040,
-                key="edit_const_start",
-                label_visibility="collapsed"
+            current_year = datetime.now().year
+            min_year = current_year - 15
+            max_year = current_year + 15
+            
+            # Get default values
+            default_start = int(project_data.get('construction_start_year', current_year) or current_year)
+            default_duration = int(project_data.get('construction_years', 1) or 1)
+            default_end = default_start + default_duration - 1
+            
+            # Ensure defaults are within range
+            if default_start < min_year:
+                default_start = min_year
+            elif default_start > max_year:
+                default_start = max_year
+                
+            if default_end < min_year:
+                default_end = min_year
+            elif default_end > max_year:
+                default_end = max_year
+                
+            # Ensure end is not before start
+            if default_end < default_start:
+                default_end = default_start
+            
+            construction_period = st.slider(
+                "Construction Period",
+                min_value=min_year,
+                max_value=max_year,
+                value=(default_start, default_end),
+                step=1,
+                format="%d",
+                key="edit_const_period",
+                label_visibility="collapsed",
+                help=f"Select construction start and end years (Range: {min_year} - {max_year})"
             )
+            
+            const_start = construction_period[0]
+            const_end = construction_period[1]
+            const_years = max(1, const_end - const_start + 1)  # Calculate duration
+            
+            # Display the calculated duration
+            st.caption(f"Duration: {const_years} year{'s' if const_years > 1 else ''} ({const_start} - {const_end})")
+        
         st.session_state.edited_project['construction_start_year'] = const_start
-        
-        # Construction Duration
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Construction Duration (years)**")
-        with col2:
-            const_years = st.number_input(
-                "Construction Duration (years)",
-                value=int(project_data.get('construction_years', 3) or 3),
-                min_value=1,
-                max_value=10,
-                key="edit_const_years",
-                label_visibility="collapsed"
-            )
         st.session_state.edited_project['construction_years'] = const_years
         
-        # Sales Start Year
+        # Sales Period (Start and End Year)
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Sales Start Year**")
+            st.markdown("**Sales Period**")
         with col2:
-            sales_start = st.number_input(
-                "Sales Start Year",
-                value=int(project_data.get('sale_start_year', datetime.now().year) or datetime.now().year),
-                min_value=2000,
-                max_value=2040,
-                key="edit_sales_start",
-                label_visibility="collapsed"
+            current_year = datetime.now().year
+            min_year = current_year - 15
+            max_year = current_year + 15
+            
+            # Get default values
+            default_sales_start = int(project_data.get('sale_start_year', current_year) or current_year)
+            default_sales_duration = int(project_data.get('sales_years', 3) or 3)
+            default_sales_end = default_sales_start + default_sales_duration - 1
+            
+            # Ensure defaults are within range
+            if default_sales_start < min_year:
+                default_sales_start = min_year
+            elif default_sales_start > max_year:
+                default_sales_start = max_year
+                
+            if default_sales_end < min_year:
+                default_sales_end = min_year
+            elif default_sales_end > max_year:
+                default_sales_end = max_year
+                
+            # Ensure end is not before start
+            if default_sales_end < default_sales_start:
+                default_sales_end = default_sales_start
+            
+            sales_period = st.slider(
+                "Sales Period",
+                min_value=min_year,
+                max_value=max_year,
+                value=(default_sales_start, default_sales_end),
+                step=1,
+                format="%d",
+                key="edit_sales_period",
+                label_visibility="collapsed",
+                help=f"Select sales start and end years (Range: {min_year} - {max_year})"
             )
-        st.session_state.edited_project['sale_start_year'] = sales_start
+            
+            sales_start = sales_period[0]
+            sales_end = sales_period[1]
+            sales_years = max(1, sales_end - sales_start + 1)  # Calculate duration
+            
+            # Display the calculated duration
+            st.caption(f"Duration: {sales_years} year{'s' if sales_years > 1 else ''} ({sales_start} - {sales_end})")
         
-        # Sales Duration
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Sales Duration (years)**")
-        with col2:
-            sales_years = st.number_input(
-                "Sales Duration (years)",
-                value=int(project_data.get('sales_years', 3) or 3),
-                min_value=1,
-                max_value=10,
-                key="edit_sales_years",
-                label_visibility="collapsed"
-            )
+        # Store using existing variable names
+        st.session_state.edited_project['sale_start_year'] = sales_start
         st.session_state.edited_project['sales_years'] = sales_years
         
-        # Revenue Booking Start Year
+        # Revenue Booking Period (Start to Completion)
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.markdown("**Revenue Booking Start Year**")
+            st.markdown("**Revenue Booking Period**")
+            st.caption("(Start to Project Completion)")
         with col2:
-            revenue_start = st.number_input(
-                "Revenue Booking Start Year",
-                value=int(project_data.get('revenue_booking_start_year', datetime.now().year + 1) or datetime.now().year + 1),
-                min_value=2000,
-                max_value=2040,
-                key="edit_revenue_start",
-                label_visibility="collapsed"
+            current_year = datetime.now().year
+            min_year = current_year - 15
+            max_year = current_year + 15
+            
+            # Get default values
+            default_revenue_start = int(project_data.get('revenue_booking_start_year', current_year + 1) or current_year + 1)
+            default_completion = int(project_data.get('project_completion_year', current_year + 3) or current_year + 3)
+            
+            # Ensure defaults are within range
+            if default_revenue_start < min_year:
+                default_revenue_start = min_year
+            elif default_revenue_start > max_year:
+                default_revenue_start = max_year
+                
+            if default_completion < min_year:
+                default_completion = min_year
+            elif default_completion > max_year:
+                default_completion = max_year
+                
+            # Ensure completion is not before start
+            if default_completion < default_revenue_start:
+                default_completion = default_revenue_start
+            
+            revenue_booking_period = st.slider(
+                "Revenue Booking Period",
+                min_value=min_year,
+                max_value=max_year,
+                value=(default_revenue_start, default_completion),
+                step=1,
+                format="%d",
+                key="edit_revenue_booking_period",
+                label_visibility="collapsed",
+                help=f"Select revenue booking start year and project completion year (Range: {min_year} - {max_year})"
             )
-        st.session_state.edited_project['revenue_booking_start_year'] = revenue_start
+            
+            revenue_start = revenue_booking_period[0]
+            completion_year = revenue_booking_period[1]
+            revenue_booking_years = max(1, completion_year - revenue_start + 1)  # Calculate duration
+            
+            # Display the calculated duration
+            st.caption(f"Duration: {revenue_booking_years} year{'s' if revenue_booking_years > 1 else ''} ({revenue_start} - {completion_year})")
         
-        # Project Completion Year
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.markdown("**Project Completion Year**")
-            st.caption("(Revenue Booking End Year)")
-        with col2:
-            completion_year = st.number_input(
-                "Project Completion Year",
-                value=int(project_data.get('project_completion_year', datetime.now().year + 3) or datetime.now().year + 3),
-                min_value=2000,
-                max_value=2040,
-                key="edit_completion",
-                label_visibility="collapsed"
-            )
+        # Store using existing variable names
+        st.session_state.edited_project['revenue_booking_start_year'] = revenue_start
         st.session_state.edited_project['project_completion_year'] = completion_year
         
         # Financial Parameters Section
@@ -2354,7 +2472,17 @@ class ProjectPipelineRealEstateTab:
         const_years = int(edited.get('construction_years', 3) or 3)
         const_end = const_start + const_years - 1  # Calculate end year from duration
         
-        land_payment_year = int(edited.get('land_payment_year', const_start) or const_start)
+        # Get land payment timeline (support both old and new format)
+        if 'land_payment_start_year' in edited and 'land_payment_years' in edited:
+            # New multi-year format
+            land_payment_start = int(edited.get('land_payment_start_year', const_start) or const_start)
+            land_payment_years = int(edited.get('land_payment_years', 1) or 1)
+            land_payment_year = land_payment_start  # Keep for backwards compatibility
+        else:
+            # Old single year format
+            land_payment_year = int(edited.get('land_payment_year', const_start) or const_start)
+            land_payment_start = land_payment_year
+            land_payment_years = 1
         
         # Sales/Presales timeline
         presales_start = int(edited.get('sale_start_year', const_start) or const_start)
@@ -2545,7 +2673,9 @@ class ProjectPipelineRealEstateTab:
                     total_debt=total_debt,
                     total_construction_cost=total_const_cost,
                     total_land_cost=total_land_cost,
-                    land_payment_year=land_payment_year,
+                    land_payment_year=land_payment_year,  # Keep for backwards compatibility
+                    land_payment_start_year=land_payment_start,  # New multi-year parameter
+                    land_payment_years=land_payment_years,  # New duration parameter
                     presales_schedule=presales_schedule,  # Pass the pre-calculated presales schedule
                     interest_rate=cost_of_debt,
                     sga_percentage=sga_pct,
@@ -2751,6 +2881,7 @@ class ProjectPipelineRealEstateTab:
         from utils.RNAV_utils import (
             selling_progress_schedule_custom,
             land_use_right_payment_schedule_single_year,
+            land_use_right_payment_schedule_multi_year,
             construction_payment_schedule,
             sga_payment_schedule_custom,
             generate_pnl_schedule_custom,

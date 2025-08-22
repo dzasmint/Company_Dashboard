@@ -120,6 +120,36 @@ def land_use_right_payment_schedule_single_year(
 
     return payment_array
 
+def land_use_right_payment_schedule_multi_year(
+    total_payment: float,
+    project_start_year: int,
+    current_year: int,
+    land_payment_start_year: int,
+    num_years: int,
+    end_booking_year: int
+) -> list:
+    """
+    Distribute total land payment evenly over num_years starting from land_payment_start_year.
+    Similar to construction payment schedule.
+    """
+    if end_booking_year < land_payment_start_year:
+        raise ValueError("end_booking_year must be >= land_payment_start_year")
+    if (land_payment_start_year + num_years - 1) > end_booking_year:
+        raise ValueError("Land payment period exceeds project completion year")
+
+    annual_payment = total_payment / num_years
+
+    # Create timeline from project_start_year to end_booking_year
+    full_years = list(range(project_start_year, end_booking_year + 1))
+
+    # Allocate payment to land payment years
+    payment_by_year = [
+        annual_payment if land_payment_start_year <= year < land_payment_start_year + num_years else 0.0
+        for year in full_years
+    ]
+
+    return payment_by_year
+
 def construction_payment_schedule(
     total_cost: float,
     project_start_year: int,

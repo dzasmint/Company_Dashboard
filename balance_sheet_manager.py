@@ -7,21 +7,23 @@ def generate_balance_sheet_schedules(
     total_debt: float,
     total_construction_cost: float,
     total_land_cost: float,  # New parameter
-    land_payment_year: int,  # New parameter
-    presales_schedule: Dict[int, float],  # {year: presale_amount}
-    interest_rate: float,
-    sga_percentage: float,  # SG&A as percentage of revenue (e.g., 0.05 for 5%)
-    debt_disbursement_start_year: int,
-    debt_disbursement_end_year: int,
-    debt_repayment_start_year: int,
-    debt_repayment_end_year: int,
-    revenue_booking_start_year: int,
-    revenue_booking_end_year: int,
+    land_payment_year: int = None,  # Deprecated - kept for backwards compatibility
+    presales_schedule: Dict[int, float] = None,  # {year: presale_amount}
+    interest_rate: float = 0.0,
+    sga_percentage: float = 0.0,  # SG&A as percentage of revenue (e.g., 0.05 for 5%)
+    debt_disbursement_start_year: int = None,
+    debt_disbursement_end_year: int = None,
+    debt_repayment_start_year: int = None,
+    debt_repayment_end_year: int = None,
+    revenue_booking_start_year: int = None,
+    revenue_booking_end_year: int = None,
     revenue_distribution: Optional[Dict[int, float]] = None,  # {year: percentage} for revenue recognition
     project_start_year: int = None,
     project_end_year: int = None,
     tax_rate: float = 0.2,  # Default 20% tax rate
-    cash_collection_schedules: Optional[Dict[int, Dict[int, float]]] = None  # {presale_year: {collection_year: percentage}}
+    cash_collection_schedules: Optional[Dict[int, Dict[int, float]]] = None,  # {presale_year: {collection_year: percentage}}
+    land_payment_start_year: int = None,  # New parameter for multi-year payment
+    land_payment_years: int = 1  # New parameter for payment duration
 ) -> pd.DataFrame:
     """
     Generate comprehensive balance sheet schedules including debt, interest, inventory, and cash.
@@ -30,7 +32,9 @@ def generate_balance_sheet_schedules(
         total_debt: Total debt amount to be disbursed
         total_construction_cost: Total construction cost
         total_land_cost: Total land cost to be paid
-        land_payment_year: Year when land cost is paid
+        land_payment_year: (Deprecated) Year when land cost is paid in single payment
+        land_payment_start_year: Start year for land payment (for multi-year payment)
+        land_payment_years: Number of years over which land payment is distributed
         presales_schedule: Dictionary of presales by year {year: amount}
         interest_rate: Annual interest rate (as decimal, e.g., 0.08 for 8%)
         sga_percentage: SG&A as percentage of revenue (as decimal, e.g., 0.05 for 5%)
@@ -64,6 +68,16 @@ def generate_balance_sheet_schedules(
         - Cash_Balance_Change: Net cash flow for the year
     """
     
+    # Handle backwards compatibility for land payment
+    if land_payment_start_year is None and land_payment_year is not None:
+        # Use old single-year parameter
+        land_payment_start_year = land_payment_year
+        land_payment_years = 1
+    elif land_payment_start_year is None:
+        # Default to project start if not specified
+        land_payment_start_year = project_start_year or debt_disbursement_start_year
+        land_payment_years = 1
+    
     # Determine project timeline
     if project_start_year is None:
         # Include all relevant start years in the timeline calculation
@@ -71,7 +85,7 @@ def generate_balance_sheet_schedules(
         
         # Add all years that have activities
         start_years.append(debt_disbursement_start_year)
-        start_years.append(land_payment_year)
+        start_years.append(land_payment_start_year)
         start_years.append(revenue_booking_start_year)
         start_years.append(debt_repayment_start_year)
         
@@ -219,11 +233,16 @@ def generate_balance_sheet_schedules(
             sga_expense[i] = sga_amount  # Hit P&L when cash is collected
             cash_outflow_sga[i] = -sga_amount  # Negative for cash outflow
     
-    # 6. Calculate land cost payment (single year payment)
-    if land_payment_year in years and total_land_cost > 0:
-        idx = years.index(land_payment_year)
-        land_cost[idx] = total_land_cost
-        cash_outflow_land[idx] = -total_land_cost  # Negative for cash outflow
+    # 6. Calculate land cost payment (multi-year payment)
+    if total_land_cost > 0 and land_payment_start_year is not None:
+        land_payment_end_year = land_payment_start_year + land_payment_years - 1
+        annual_land_payment = total_land_cost / land_payment_years
+        
+        for payment_year in range(land_payment_start_year, land_payment_end_year + 1):
+            if payment_year in years:
+                idx = years.index(payment_year)
+                land_cost[idx] = annual_land_payment
+                cash_outflow_land[idx] = -annual_land_payment  # Negative for cash outflow
     
     # 7. Calculate revenue recognition (custom distribution or linear)
     total_revenue = sum(presales_schedule.values()) if presales_schedule else 0
@@ -450,24 +469,26 @@ def generate_simplified_balance_sheet_schedules(
     total_debt: float,
     total_construction_cost: float,
     total_land_cost: float,
-    land_payment_year: int,
-    total_revenue: float,
-    interest_rate: float,
-    sga_percentage: float,  # SG&A as percentage of revenue
-    construction_start_year: int,
-    construction_end_year: int,
-    sales_start_year: int,
-    sales_end_year: int,
-    debt_repayment_start_year: int,
-    debt_repayment_end_year: int,
-    revenue_booking_start_year: int,
-    revenue_booking_end_year: int,
+    land_payment_year: int = None,  # Deprecated - kept for backwards compatibility
+    total_revenue: float = 0.0,
+    interest_rate: float = 0.0,
+    sga_percentage: float = 0.0,  # SG&A as percentage of revenue
+    construction_start_year: int = None,
+    construction_end_year: int = None,
+    sales_start_year: int = None,
+    sales_end_year: int = None,
+    debt_repayment_start_year: int = None,
+    debt_repayment_end_year: int = None,
+    revenue_booking_start_year: int = None,
+    revenue_booking_end_year: int = None,
     presales_distribution: Optional[Dict[str, float]] = None,  # {year_str: percentage}
     revenue_distribution: Optional[Dict[str, float]] = None,  # {year_str: percentage} for revenue recognition
     tax_rate: float = 0.2,  # Default 20% tax rate
     price_increment_factor: float = 0.0,  # Annual price increment as decimal (e.g., 0.05 for 5%)
     base_asp: float = None,  # Base average selling price
-    total_nsa: float = None  # Total net sellable area
+    total_nsa: float = None,  # Total net sellable area
+    land_payment_start_year: int = None,  # New parameter for multi-year payment
+    land_payment_years: int = 1  # New parameter for payment duration
 ) -> pd.DataFrame:
     """
     Simplified version that integrates with project pipeline calculations.
@@ -476,7 +497,9 @@ def generate_simplified_balance_sheet_schedules(
         total_debt: Total debt amount
         total_construction_cost: Total construction cost
         total_land_cost: Total land cost
-        land_payment_year: Year when land is paid
+        land_payment_year: (Deprecated) Year when land is paid in single payment
+        land_payment_start_year: Start year for land payment (for multi-year payment)
+        land_payment_years: Number of years over which land payment is distributed
         total_revenue: Total revenue from project
         interest_rate: Annual interest rate (as decimal)
         sga_percentage: SG&A as percentage of revenue (as decimal)
@@ -537,7 +560,9 @@ def generate_simplified_balance_sheet_schedules(
         total_debt=total_debt,
         total_construction_cost=total_construction_cost,
         total_land_cost=total_land_cost,
-        land_payment_year=land_payment_year,
+        land_payment_year=land_payment_year,  # Keep for backwards compatibility
+        land_payment_start_year=land_payment_start_year,
+        land_payment_years=land_payment_years,
         presales_schedule=presales_schedule,
         interest_rate=interest_rate,
         sga_percentage=sga_percentage,
