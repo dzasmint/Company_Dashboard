@@ -481,22 +481,22 @@ class ModelForecastTab:
             
             /* Individual tab button styling - variations of teal */
             div[role="tablist"] button:nth-of-type(1) {
-                background-color: #1A5E5C !important;  /* Light teal for Revenue */
+                background-color: #173F35 !important;  /* Light teal for Revenue */
                 color: #FFFFFF !important;
                 border-radius: 6px;
             }
             div[role="tablist"] button:nth-of-type(2) {
-                background-color: #1A5E5C !important;  /* Medium teal for COGS */
+                background-color: #173F35 !important;  /* Medium teal for COGS */
                 color: #FFFFFF !important;
                 border-radius: 6px;
             }
             div[role="tablist"] button:nth-of-type(3) {
-                background-color: #1A5E5C !important;  /* Main teal for Gross Profit */
+                background-color: #173F35 !important;  /* Main teal for Gross Profit */
                 color: #FFFFFF !important;
                 border-radius: 6px;
             }
             div[role="tablist"] button:nth-of-type(4) {
-                background-color: #1A5E5C !important;  /* Dark teal for Minority Interest */
+                background-color: #173F35 !important;  /* Dark teal for Minority Interest */
                 color: #FFFFFF !important;
                 border-radius: 6px;
             }
@@ -511,8 +511,8 @@ class ModelForecastTab:
             
             /* Active tab styling */
             div[role="tablist"] button[aria-selected="true"] {
-                background: linear-gradient(135deg, #2E7D7B, #3A9B98) !important;
-                border-bottom: 4px solid #000000 !important;
+                background: #08C179 !important;
+                border-bottom: none !important;
                 font-weight: bold !important;
                 box-shadow: 0 6px 12px rgba(46, 125, 123, 0.4);
                 transform: translateY(-2px);
@@ -522,32 +522,18 @@ class ModelForecastTab:
             /* Black underline for active tab */
             div[role="tablist"] button[aria-selected="true"]::after {
                 content: "";
-                position: absolute;
-                bottom: -4px;
-                left: 0;
-                right: 0;
-                height: 4px;
-                background-color: #000000 !important;
+                display: none;
             }
             
             /* Override any default red coloring */
             .stTabs [data-baseweb="tab-highlight"] {
-                background-color: #000000 !important;
+                background-color: transparent !important;
             }
             
             .stTabs [aria-selected="true"] {
-                border-color: #000000 !important;
+                border-color: transparent !important;
             }
             
-            /* Tab panel content area */
-            div[role="tabpanel"] {
-                background: #FFFFFF;
-                padding: 25px;
-                border-radius: 12px;
-                margin-top: 15px;
-                border: 1px solid #1A5E5C;
-                box-shadow: 0 2px 8px rgba(46, 125, 123, 0.1);
-            }
             
             /* Additional styling for better contrast */
             div[role="tablist"] button {
