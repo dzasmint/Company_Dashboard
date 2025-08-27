@@ -19,7 +19,7 @@ streamlit run Company_Dashboard_Refactored.py
 # Individual specialized pages
 streamlit run pages/Bank_Dashboard.py
 streamlit run pages/RNAV_Calculator_MongoDB.py
-streamlit run pages/Real_Estate_Dashboard_MongoDB.py
+streamlit run pages/Real_Estate_Financial_Model_God_AI.py
 streamlit run pages/Sector_Valuation.py
 
 # Install dependencies

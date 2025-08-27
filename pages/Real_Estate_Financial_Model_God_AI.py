@@ -34,11 +34,7 @@ if 'utils.RNAV_utils' in sys.modules:
 from utils.mongodb_utils import (
     init_mongodb_connection,
     load_projects_data,
-    get_financials_for_company,
-    save_project_to_mongodb,
-    load_financial_statements_from_mongodb,
-    load_valuation_metrics_from_mongodb,
-    get_available_tickers_from_mongodb
+    save_project_to_mongodb
 )
 # RNAV utilities temporarily disabled
 # from utils.RNAV_utils import (
@@ -55,7 +51,7 @@ from utils.perplexity_utils import (
 )
 from utils.project_pipeline_manager import ProjectPipelineManager
 from utils.claude_project_extractor import ClaudeProjectExtractor
-from utils.god_ai_assistant import GodAIAssistant
+from utils.god_ai_assistant_mcp import GodAIAssistant
 
 # Import tabs
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -248,6 +244,7 @@ class RealEstateFinancialModel:
                 "Research Insights",
                 "Export Model",
                 "God AI Assistant",
+                "Enhanced AI",
                 "Generate Report"
             ]
             
@@ -596,7 +593,9 @@ class RealEstateFinancialModel:
             self.render_export_interface()
         elif selected_tab == tab_names[8]:  # God AI Assistant
             self.render_god_ai_assistant()
-        elif selected_tab == tab_names[9]:  # Generate Report
+        elif selected_tab == tab_names[9]:  # Enhanced AI
+            self.render_enhanced_ai()
+        elif selected_tab == tab_names[10]:  # Generate Report
             self.render_generate_report()
         
     
@@ -1612,6 +1611,11 @@ class RealEstateFinancialModel:
         
         # Render the report generation tab
         st.session_state.report_generation_tab.render()
+    
+    def render_enhanced_ai(self):
+        """Render the Enhanced AI Assistant interface"""
+        from utils.enhanced_ai_assistant import render_enhanced_ai_interface
+        render_enhanced_ai_interface()
     
     def render_god_ai_assistant(self):
         """Render the God AI Assistant interface"""
