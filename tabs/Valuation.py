@@ -30,10 +30,11 @@ class ValuationTab:
                 # Add individual project rows
                 total_rnav_to_company = 0  # Track RNAV attributable to company
                 for _, project in st.session_state.project_data.iterrows():
-                    # Get ownership percentage if available, default to 100%
-                    ownership_pct = project.get('project_ownership', 100) if 'project_ownership' in project else 100
+                    # Get ownership as raw value (0.5 = 50%), default to 1.0 (100%)
+                    ownership_raw = project.get('project_ownership', 1.0) if 'project_ownership' in project else 1.0
+                    ownership_pct = ownership_raw * 100  # Convert to percentage for display
                     rnav_value_billions = project['rnav_value'] / 1e9
-                    rnav_to_company = rnav_value_billions * (ownership_pct / 100)
+                    rnav_to_company = rnav_value_billions * ownership_raw
                     total_rnav_to_company += rnav_to_company
                     
                     valuation_rows.append({
