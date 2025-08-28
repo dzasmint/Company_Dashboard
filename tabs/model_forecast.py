@@ -510,7 +510,17 @@ class ModelForecastTab:
                 border-radius: 6px;
             }
             div[role="tablist"] button:nth-of-type(5) {
+                background-color: #173F35 !important;  /* Dark teal for PAT */
+                color: #FFFFFF !important;
+                border-radius: 6px;
+            }
+            div[role="tablist"] button:nth-of-type(6) {
                 background-color: #173F35 !important;  /* Dark teal for Minority Interest */
+                color: #FFFFFF !important;
+                border-radius: 6px;
+            }
+            div[role="tablist"] button:nth-of-type(7) {
+                background-color: #173F35 !important;  /* Dark teal for PATMI */
                 color: #FFFFFF !important;
                 border-radius: 6px;
             }
