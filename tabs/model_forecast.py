@@ -343,6 +343,8 @@ class ModelForecastTab:
             project_land_breakdown = {}
             project_sga_breakdown = {}
             project_interest_breakdown = {}
+            project_pat_breakdown = {}
+            project_patmi_breakdown = {}
         
             # Store other business segment revenue breakdown
             other_revenue_breakdown = {}
@@ -365,6 +367,8 @@ class ModelForecastTab:
                         project_land_breakdown[project_name] = {}
                         project_sga_breakdown[project_name] = {}
                         project_interest_breakdown[project_name] = {}
+                        project_pat_breakdown[project_name] = {}
+                        project_patmi_breakdown[project_name] = {}
                 
                     # Get data from comprehensive_financial_statements only
                     financial_statements = project.get('comprehensive_financial_statements', {})
@@ -403,6 +407,10 @@ class ModelForecastTab:
                         # Get Interest expense from P&L - already negative in MongoDB (convert to billions)
                         interest_amount     = year_data.get('interest_expense_cash', 0) / 1e9  # Already negative in DB
                         project_interest_breakdown[project_name][year] = interest_amount
+                        
+                        # Get PAT directly from database (convert to billions)
+                        project_pat = year_data.get('pat', 0) / 1e9
+                        project_pat_breakdown[project_name][year] = project_pat
                     
                         # Debug: Log first project's values for verification
                         if year == years[0] and project_name not in logged_projects:
@@ -414,6 +422,7 @@ class ModelForecastTab:
                         project_land_breakdown[project_name][year] = 0
                         project_sga_breakdown[project_name][year] = 0
                         project_interest_breakdown[project_name][year] = 0
+                        project_pat_breakdown[project_name][year] = 0
         
             # Calculate other revenue streams and COGS
             for year_idx, year in enumerate(years):
@@ -549,12 +558,14 @@ class ModelForecastTab:
             </style>
             """, unsafe_allow_html=True)
             
-            tab_revenue, tab_cogs, tab_gp, tab_pbt, tab_minority = st.tabs([
+            tab_revenue, tab_cogs, tab_gp, tab_pbt, tab_pat, tab_minority, tab_patmi = st.tabs([
                 "Revenue Forecast", 
                 "Cost of Goods Sold", 
                 "Gross Profit",
                 "Profit Before Tax",
-                "Minority Interest"
+                "Profit After Tax",
+                "Minority Interest",
+                "PATMI"
             ])
             
             with tab_revenue:
@@ -1643,6 +1654,151 @@ class ModelForecastTab:
                     hide_index=True
                 )
         
+            # Display Profit After Tax Breakdown in the PAT tab
+            with tab_pat:
+                st.subheader("Profit After Tax Analysis")
+                
+                # Create PAT breakdown table using data from database
+                pat_breakdown_rows = []
+                
+                # Calculate PAT for each project (from database)
+                project_pat_total_by_year = {year: 0 for year in years}
+                for project_name in project_pat_breakdown.keys():
+                    pat_project_row = {'PAT Source': f"{project_name}"}
+                    pat_project_row[hist_col] = 0  # No historical breakdown by project
+                    
+                    for year in years:
+                        year_str = str(year)
+                        
+                        # Get PAT directly from database (already loaded earlier)
+                        project_pat = project_pat_breakdown[project_name].get(year, 0)
+                        
+                        pat_project_row[year_str] = project_pat
+                        project_pat_total_by_year[year] += project_pat
+                    
+                    pat_breakdown_rows.append(pat_project_row)
+                
+                # Add subtotal for projects
+                if pat_breakdown_rows:
+                    projects_pat_subtotal = {'PAT Source': 'Subtotal: Projects PAT'}
+                    projects_pat_subtotal[hist_col] = 0
+                    for year in years:
+                        year_str = str(year)
+                        projects_pat_subtotal[year_str] = project_pat_total_by_year[year]
+                    pat_breakdown_rows.append(projects_pat_subtotal)
+                
+                # Calculate PAT from other business
+                # PAT from other = Total PAT - Projects PAT
+                other_pat_row = {'PAT Source': 'PAT from Other Business'}
+                other_pat_row[hist_col] = pat_row[hist_col]  # Use historical total PAT
+                for year in years:
+                    year_str = str(year)
+                    total_pat = pat_row[year_str]
+                    projects_pat = project_pat_total_by_year[year]
+                    other_pat_row[year_str] = total_pat - projects_pat
+                pat_breakdown_rows.append(other_pat_row)
+                
+                # Add total PAT row
+                total_pat_breakdown_row = {'PAT Source': 'TOTAL PAT'}
+                total_pat_breakdown_row[hist_col] = pat_row[hist_col]
+                for year in years:
+                    year_str = str(year)
+                    total_pat_breakdown_row[year_str] = pat_row[year_str]
+                pat_breakdown_rows.append(total_pat_breakdown_row)
+                
+                # Create DataFrame for PAT breakdown
+                pat_breakdown_df = pd.DataFrame(pat_breakdown_rows)
+                
+                # Style function to highlight special rows
+                def highlight_pat_rows(row):
+                    if 'TOTAL' in str(row['PAT Source']) or 'Subtotal' in str(row['PAT Source']):
+                        return ['font-weight: bold'] * len(row)
+                    return [''] * len(row)
+                
+                st.write("**Profit After Tax Breakdown (Billion VND)**")
+                
+                # Define column configuration for consistent width
+                pat_column_config = {
+                    'PAT Source': st.column_config.TextColumn('PAT Source', width='medium'),
+                }
+                for col in [hist_col] + [str(y) for y in years]:
+                    pat_column_config[col] = st.column_config.NumberColumn(col, width='small')
+                
+                st.dataframe(
+                    pat_breakdown_df.style
+                    .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
+                    .apply(highlight_pat_rows, axis=1),
+                    use_container_width=True,
+                    column_config=pat_column_config,
+                    hide_index=True
+                )
+                
+                # Create PAT margin table
+                st.write("**PAT Margin Analysis (%)**")
+                pat_margin_rows = []
+                
+                # Calculate margin for Projects
+                projects_pat_margin_row = {'Segment': 'Projects'}
+                projects_pat_margin_row[hist_col] = 0
+                for year in years:
+                    year_str = str(year)
+                    projects_revenue = project_revenue_by_year[year]
+                    if projects_revenue > 0:
+                        projects_pat = project_pat_total_by_year[year]
+                        projects_pat_margin_row[year_str] = (projects_pat / projects_revenue) * 100
+                    else:
+                        projects_pat_margin_row[year_str] = 0
+                pat_margin_rows.append(projects_pat_margin_row)
+                
+                # Calculate margin for Other Business
+                other_margin_row = {'Segment': 'Other Business'}
+                other_margin_row[hist_col] = 0
+                for year in years:
+                    year_str = str(year)
+                    other_revenue = other_revenue_by_year.get(year, 0)
+                    if other_revenue > 0:
+                        other_pat = other_pat_row[year_str]
+                        other_margin_row[year_str] = (other_pat / other_revenue) * 100
+                    else:
+                        other_margin_row[year_str] = 0
+                pat_margin_rows.append(other_margin_row)
+                
+                # Add overall margin row
+                overall_pat_margin_row = {'Segment': 'Overall'}
+                if hist_values.get('Net Revenue', 0) > 0:
+                    hist_pat = pat_row[hist_col]
+                    overall_pat_margin_row[hist_col] = (hist_pat / hist_values['Net Revenue']) * 100
+                else:
+                    overall_pat_margin_row[hist_col] = 0
+                for year in years:
+                    year_str = str(year)
+                    total_revenue = revenue_row[year_str]
+                    if total_revenue > 0:
+                        total_pat = pat_row[year_str]
+                        overall_pat_margin_row[year_str] = (total_pat / total_revenue) * 100
+                    else:
+                        overall_pat_margin_row[year_str] = 0
+                pat_margin_rows.append(overall_pat_margin_row)
+                
+                # Create DataFrame for PAT margins
+                pat_margin_df = pd.DataFrame(pat_margin_rows)
+                
+                # Define column configuration for margin table
+                margin_column_config = {
+                    'Segment': st.column_config.TextColumn('Segment', width='medium'),
+                }
+                for col in [hist_col] + [str(y) for y in years]:
+                    margin_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f%%')
+                
+                st.dataframe(
+                    pat_margin_df.style
+                    .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                    .apply(lambda row: ['font-weight: bold'] * len(row) if row['Segment'] == 'Overall' else [''] * len(row), axis=1),
+                    use_container_width=True,
+                    column_config=margin_column_config,
+                    hide_index=True
+                )
+        
             # Display Minority Interest Breakdown in the minority tab
             with tab_minority:
                 if project_minority_interest_breakdown:
@@ -1708,6 +1864,174 @@ class ModelForecastTab:
                     st.caption("Note: Minority Interest = Project PAT × (1 - Ownership %). Only shown for profitable projects.")
                 else:
                     st.info("No minority interest to display. All projects are 100% owned or there are no projects with minority stakes.")
+        
+            # Display PATMI (PAT Minus Minority Interest) in the PATMI tab
+            with tab_patmi:
+                st.subheader("PATMI Analysis (Profit After Tax and Minority Interest)")
+                
+                # Create PATMI breakdown table
+                patmi_breakdown_rows = []
+                
+                # Calculate PATMI for each project (PAT - Minority Interest)
+                project_patmi_total_by_year = {year: 0 for year in years}
+                for project_name in project_pat_breakdown.keys():
+                    patmi_project_row = {'PATMI Source': f"{project_name}"}
+                    patmi_project_row[hist_col] = 0  # No historical breakdown by project
+                    
+                    # Get project ownership
+                    project_ownership = 1.0  # Default to 100%
+                    for _, project in df_projects.iterrows():
+                        if project.get('project_name') == project_name:
+                            project_ownership = project.get('project_ownership', 1.0)
+                            break
+                    
+                    for year in years:
+                        year_str = str(year)
+                        
+                        # Get PAT from breakdown
+                        project_pat = project_pat_breakdown[project_name].get(year, 0)
+                        
+                        # Calculate minority interest for this project
+                        minority_interest = 0
+                        if project_name in project_minority_interest_breakdown:
+                            if year in project_minority_interest_breakdown[project_name]:
+                                minority_interest = project_minority_interest_breakdown[project_name][year]['minority_interest']
+                        
+                        # PATMI = PAT - Minority Interest
+                        project_patmi = project_pat - minority_interest
+                        
+                        patmi_project_row[year_str] = project_patmi
+                        project_patmi_total_by_year[year] += project_patmi
+                        
+                        # Store for later use
+                        if project_name not in project_patmi_breakdown:
+                            project_patmi_breakdown[project_name] = {}
+                        project_patmi_breakdown[project_name][year] = project_patmi
+                    
+                    patmi_breakdown_rows.append(patmi_project_row)
+                
+                # Add subtotal for projects
+                if patmi_breakdown_rows:
+                    projects_patmi_subtotal = {'PATMI Source': 'Subtotal: Projects PATMI'}
+                    projects_patmi_subtotal[hist_col] = 0
+                    for year in years:
+                        year_str = str(year)
+                        projects_patmi_subtotal[year_str] = project_patmi_total_by_year[year]
+                    patmi_breakdown_rows.append(projects_patmi_subtotal)
+                
+                # Calculate PATMI from other business
+                # PATMI from other = Total PATMI - Projects PATMI
+                other_patmi_row = {'PATMI Source': 'PATMI from Other Business'}
+                other_patmi_row[hist_col] = npatmi_row[hist_col]  # Use historical total PATMI
+                for year in years:
+                    year_str = str(year)
+                    total_patmi = npatmi_row[year_str]
+                    projects_patmi = project_patmi_total_by_year[year]
+                    other_patmi_row[year_str] = total_patmi - projects_patmi
+                patmi_breakdown_rows.append(other_patmi_row)
+                
+                # Add total PATMI row
+                total_patmi_breakdown_row = {'PATMI Source': 'TOTAL PATMI'}
+                total_patmi_breakdown_row[hist_col] = npatmi_row[hist_col]
+                for year in years:
+                    year_str = str(year)
+                    total_patmi_breakdown_row[year_str] = npatmi_row[year_str]
+                patmi_breakdown_rows.append(total_patmi_breakdown_row)
+                
+                # Create DataFrame for PATMI breakdown
+                patmi_breakdown_df = pd.DataFrame(patmi_breakdown_rows)
+                
+                # Style function to highlight special rows
+                def highlight_patmi_rows(row):
+                    if 'TOTAL' in str(row['PATMI Source']) or 'Subtotal' in str(row['PATMI Source']):
+                        return ['font-weight: bold'] * len(row)
+                    return [''] * len(row)
+                
+                st.write("**PATMI Breakdown (Billion VND)**")
+                
+                # Define column configuration for consistent width
+                patmi_column_config = {
+                    'PATMI Source': st.column_config.TextColumn('PATMI Source', width='medium'),
+                }
+                for col in [hist_col] + [str(y) for y in years]:
+                    patmi_column_config[col] = st.column_config.NumberColumn(col, width='small')
+                
+                st.dataframe(
+                    patmi_breakdown_df.style
+                    .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
+                    .apply(highlight_patmi_rows, axis=1),
+                    use_container_width=True,
+                    column_config=patmi_column_config,
+                    hide_index=True
+                )
+                
+                # Create PATMI margin table
+                st.write("**PATMI Margin Analysis (%)**")
+                patmi_margin_rows = []
+                
+                # Calculate margin for Projects
+                projects_patmi_margin_row = {'Segment': 'Projects'}
+                projects_patmi_margin_row[hist_col] = 0
+                for year in years:
+                    year_str = str(year)
+                    projects_revenue = project_revenue_by_year[year]
+                    if projects_revenue > 0:
+                        projects_patmi = project_patmi_total_by_year[year]
+                        projects_patmi_margin_row[year_str] = (projects_patmi / projects_revenue) * 100
+                    else:
+                        projects_patmi_margin_row[year_str] = 0
+                patmi_margin_rows.append(projects_patmi_margin_row)
+                
+                # Calculate margin for Other Business
+                other_patmi_margin_row = {'Segment': 'Other Business'}
+                other_patmi_margin_row[hist_col] = 0
+                for year in years:
+                    year_str = str(year)
+                    other_revenue = other_revenue_by_year.get(year, 0)
+                    if other_revenue > 0:
+                        other_patmi = other_patmi_row[year_str]
+                        other_patmi_margin_row[year_str] = (other_patmi / other_revenue) * 100
+                    else:
+                        other_patmi_margin_row[year_str] = 0
+                patmi_margin_rows.append(other_patmi_margin_row)
+                
+                # Add overall margin row
+                overall_patmi_margin_row = {'Segment': 'Overall'}
+                if hist_values.get('Net Revenue', 0) > 0:
+                    hist_patmi = npatmi_row[hist_col]
+                    overall_patmi_margin_row[hist_col] = (hist_patmi / hist_values['Net Revenue']) * 100
+                else:
+                    overall_patmi_margin_row[hist_col] = 0
+                for year in years:
+                    year_str = str(year)
+                    total_revenue = revenue_row[year_str]
+                    if total_revenue > 0:
+                        total_patmi = npatmi_row[year_str]
+                        overall_patmi_margin_row[year_str] = (total_patmi / total_revenue) * 100
+                    else:
+                        overall_patmi_margin_row[year_str] = 0
+                patmi_margin_rows.append(overall_patmi_margin_row)
+                
+                # Create DataFrame for PATMI margins
+                patmi_margin_df = pd.DataFrame(patmi_margin_rows)
+                
+                # Define column configuration for margin table
+                margin_column_config = {
+                    'Segment': st.column_config.TextColumn('Segment', width='medium'),
+                }
+                for col in [hist_col] + [str(y) for y in years]:
+                    margin_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f%%')
+                
+                st.dataframe(
+                    patmi_margin_df.style
+                    .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
+                    .apply(lambda row: ['font-weight: bold'] * len(row) if row['Segment'] == 'Overall' else [''] * len(row), axis=1),
+                    use_container_width=True,
+                    column_config=margin_column_config,
+                    hide_index=True
+                )
+                
+                st.caption("Note: PATMI = PAT - Minority Interest. Represents profit attributable to company shareholders.")
         
             # Check for changes compared to saved data
             has_changes = False
