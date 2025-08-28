@@ -120,28 +120,28 @@ class ValuationTab:
                 
                 valuation_rows.append({
                     'Item': 'Cash & Equivalent',
-                    'RNAV Value (B VND)': cash_equivalent,
+                    'RNAV Value (B VND)': None,  # Empty for balance sheet items
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': cash_equivalent
                 })
                 
                 valuation_rows.append({
                     'Item': 'Short-term Investment',
-                    'RNAV Value (B VND)': short_term_investment,
+                    'RNAV Value (B VND)': None,  # Empty for balance sheet items
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': short_term_investment
                 })
                 
                 valuation_rows.append({
                     'Item': 'Short-term Debt',
-                    'RNAV Value (B VND)': -short_term_debt,  # Display as negative
+                    'RNAV Value (B VND)': None,  # Empty for balance sheet items
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': -short_term_debt
                 })
                 
                 valuation_rows.append({
                     'Item': 'Long-term Debt',
-                    'RNAV Value (B VND)': -long_term_debt,  # Display as negative
+                    'RNAV Value (B VND)': None,  # Empty for balance sheet items
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': -long_term_debt
                 })
@@ -160,7 +160,7 @@ class ValuationTab:
                 
                 valuation_rows.append({
                     'Item': 'TOTAL EQUITY',
-                    'RNAV Value (B VND)': total_equity,
+                    'RNAV Value (B VND)': None,  # Empty for summary rows
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': total_equity
                 })
@@ -168,7 +168,7 @@ class ValuationTab:
                 # Add Outstanding Shares row
                 valuation_rows.append({
                     'Item': 'Total Outstanding Shares (millions)',
-                    'RNAV Value (B VND)': outstanding_shares,  # Display in millions
+                    'RNAV Value (B VND)': None,  # Empty for summary rows
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': outstanding_shares
                 })
@@ -177,7 +177,7 @@ class ValuationTab:
                 rnav_per_share = (total_equity * 1e9 / (outstanding_shares * 1e6)) if outstanding_shares > 0 else 0
                 valuation_rows.append({
                     'Item': 'RNAV/share (VND)',
-                    'RNAV Value (B VND)': rnav_per_share,  # This will be formatted differently
+                    'RNAV Value (B VND)': None,  # Empty for summary rows
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': rnav_per_share
                 })
