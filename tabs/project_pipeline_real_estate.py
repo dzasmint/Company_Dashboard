@@ -747,8 +747,7 @@ class ProjectPipelineRealEstateTab:
                 value=ownership_percentage,
                 min_value=0.0,
                 max_value=100.0,
-                step=1.0,
-                format="%.1f",
+                step=0.1,
                 key="edit_ownership_pct",
                 label_visibility="collapsed"
             )
@@ -844,8 +843,7 @@ class ProjectPipelineRealEstateTab:
                     "Low-Rise Average Selling Price (VND mn/m²)",
                     value=low_rise_asp_million,
                     min_value=0.0,
-                    step=1.0,
-                    format="%.1f",
+                    step=0.1,
                     key="edit_low_rise_asp",
                     label_visibility="collapsed"
                 )
@@ -912,8 +910,7 @@ class ProjectPipelineRealEstateTab:
                     "High-Rise Average Selling Price (VND mn/m²)",
                     value=high_rise_asp_million,
                     min_value=0.0,
-                    step=1.0,
-                    format="%.1f",
+                    step=0.1,
                     key="edit_high_rise_asp",
                     label_visibility="collapsed"
                 )
@@ -1057,7 +1054,6 @@ class ProjectPipelineRealEstateTab:
                 value=land_cost_million,
                 min_value=0.0,
                 step=0.1,
-                format="%.1f",
                 key="edit_land_cost",
                 label_visibility="collapsed",
                 help="Enter cost in million VND per m² (e.g., 25.5 for 25.5 million VND/m²)"
@@ -1131,7 +1127,6 @@ class ProjectPipelineRealEstateTab:
                 value=const_cost_million,
                 min_value=0.0,
                 step=0.1,
-                format="%.1f",
                 key="edit_const_cost",
                 label_visibility="collapsed",
                 help="Enter cost in million VND per m² (e.g., 15.5 for 15.5 million VND/m²)"
@@ -1219,7 +1214,6 @@ class ProjectPipelineRealEstateTab:
                 value=existing_total_debt_bn,
                 min_value=0.0,
                 step=1.0,  # 1 billion VND steps
-                format="%.1f",
                 key="edit_total_debt",
                 label_visibility="collapsed",
                 help=tooltip_text
@@ -2183,7 +2177,6 @@ class ProjectPipelineRealEstateTab:
                     max_value=100.0,
                     value=float(current_pct),
                     step=5.0,
-                    format="%.1f",
                     key=f"collect_relative_year_{relative_year}",
                     help=f"% collected in year {relative_year} after presale"
                 )
