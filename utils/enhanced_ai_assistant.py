@@ -884,58 +884,6 @@ class EnhancedAIToolSystem:
                 return {"error": str(e), "status": "failed"}
         
         @self.tool(
-            name="get_project_location_details",
-            description="Get location details including coordinates and Google Maps link for projects",
-            parameters={
-                "project_names": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Project names to get location details for",
-                    "required": True
-                }
-            }
-        )
-        def get_project_location_details(project_names: List[str]) -> Dict:
-            """Get project location details from MongoDB"""
-            
-            df = self._load_real_estate_projects()
-            
-            if df.empty:
-                return {"error": "No projects data available", "status": "failed"}
-            
-            # Filter projects
-            mask = df['project_name'].str.lower().isin([p.lower() for p in project_names])
-            projects_df = df[mask]
-            
-            if projects_df.empty:
-                return {"error": f"Projects not found: {project_names}", "status": "failed"}
-            
-            # Extract location data
-            location_cols = ['project_name', 'company_ticker', 'location']
-            if 'latitude' in projects_df.columns:
-                location_cols.append('latitude')
-            if 'longitude' in projects_df.columns:
-                location_cols.append('longitude')
-            if 'google_maps_location' in projects_df.columns:
-                location_cols.append('google_maps_location')
-            
-            location_data = projects_df[location_cols].to_dict('records')
-            
-            # Add Google Maps URL for those with coordinates
-            for project in location_data:
-                if 'latitude' in project and 'longitude' in project:
-                    lat = project.get('latitude')
-                    lng = project.get('longitude')
-                    if lat and lng:
-                        project['google_maps_url'] = f"https://maps.google.com/?q={lat},{lng}"
-            
-            return {
-                "projects": location_data,
-                "count": len(location_data),
-                "status": "success"
-            }
-        
-        @self.tool(
             name="analyze_company_forecast_assumptions",
             description="Get forecast assumptions and methodology for company financial projections",
             parameters={
@@ -2134,7 +2082,6 @@ CRITICAL TOOL SELECTION RULES:
 **Real Estate Project Tools:**
 - Basic info: list_real_estate_projects, get_project_details, rank_projects_by_metric
 - Financial details: get_project_financial_statements (comprehensive statements, cash flows, presales)
-- Location: get_project_location_details (coordinates, Google Maps links)
 - RNAV valuation: All tools now include rnav_value (Revalued Net Asset Value)
 - Available for: KDH, TAL, TCH projects in MongoDB (24 total projects)
 
