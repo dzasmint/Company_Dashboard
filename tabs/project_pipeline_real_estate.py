@@ -5,6 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime
 import time
+from utils.decimal_input import decimal_input, percentage_input, currency_input
 
 
 class ProjectPipelineRealEstateTab:
@@ -742,12 +743,10 @@ class ProjectPipelineRealEstateTab:
             ownership_decimal = float(project_data.get('project_ownership', 1.0) or 1.0)
             ownership_percentage = ownership_decimal * 100
             
-            ownership_input = st.number_input(
-                "Project Ownership (%)",
+            ownership_input = percentage_input(
+                label="Project Ownership (%)",
                 value=ownership_percentage,
-                min_value=0.0,
                 max_value=100.0,
-                step=0.1,
                 key="edit_ownership_pct",
                 label_visibility="collapsed"
             )
@@ -789,15 +788,14 @@ class ProjectPipelineRealEstateTab:
             with col1:
                 st.markdown("**Low-Rise Units**")
             with col2:
-                low_rise_units = st.number_input(
-                    "Low-Rise Units",
-                    value=int(project_data.get('low_rise_units', 0) or 0),
-                    min_value=0,
-                    step=1,
-                    format="%d",
+                low_rise_units = int(decimal_input(
+                    label="Low-Rise Units",
+                    value=float(project_data.get('low_rise_units', 0) or 0),
+                    min_value=0.0,
                     key="edit_low_rise_units",
-                    label_visibility="collapsed"
-                )
+                    label_visibility="collapsed",
+                    help="Number of low-rise units"
+                ))
             st.session_state.edited_project['low_rise_units'] = low_rise_units
             
             # Low-Rise Average Unit Size
@@ -805,15 +803,14 @@ class ProjectPipelineRealEstateTab:
             with col1:
                 st.markdown("**Low-Rise Avg Unit Size (m²)**")
             with col2:
-                low_rise_avg_unit_size = st.number_input(
-                    "Low-Rise Average Unit Size (m²)",
-                    value=int(project_data.get('low_rise_avg_unit_size', 0) or 0),
-                    min_value=0,
-                    step=1,
-                    format="%d",
+                low_rise_avg_unit_size = int(decimal_input(
+                    label="Low-Rise Average Unit Size (m²)",
+                    value=float(project_data.get('low_rise_avg_unit_size', 0) or 0),
+                    min_value=0.0,
                     key="edit_low_rise_avg_unit_size",
-                    label_visibility="collapsed"
-                )
+                    label_visibility="collapsed",
+                    help="Average unit size in square meters"
+                ))
             st.session_state.edited_project['low_rise_avg_unit_size'] = low_rise_avg_unit_size
             
             # Calculate and display Low-Rise NSA
@@ -839,13 +836,13 @@ class ProjectPipelineRealEstateTab:
                 low_rise_asp_raw = float(project_data.get('low_rise_asp', 0) or 0)
                 low_rise_asp_million = low_rise_asp_raw / 1_000_000
                 
-                low_rise_asp_million_input = st.number_input(
-                    "Low-Rise Average Selling Price (VND mn/m²)",
+                low_rise_asp_million_input = decimal_input(
+                    label="Low-Rise Average Selling Price (VND mn/m²)",
                     value=low_rise_asp_million,
                     min_value=0.0,
-                    step=0.1,
                     key="edit_low_rise_asp",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
+                    help="Selling price in million VND per square meter"
                 )
                 low_rise_asp_value = low_rise_asp_million_input * 1_000_000
             st.session_state.edited_project['low_rise_asp'] = low_rise_asp_value
@@ -856,15 +853,14 @@ class ProjectPipelineRealEstateTab:
             with col1:
                 st.markdown("**High-Rise Units**")
             with col2:
-                high_rise_units = st.number_input(
-                    "High-Rise Units",
-                    value=int(project_data.get('high_rise_units', 0) or 0),
-                    min_value=0,
-                    step=1,
-                    format="%d",
+                high_rise_units = int(decimal_input(
+                    label="High-Rise Units",
+                    value=float(project_data.get('high_rise_units', 0) or 0),
+                    min_value=0.0,
                     key="edit_high_rise_units",
-                    label_visibility="collapsed"
-                )
+                    label_visibility="collapsed",
+                    help="Number of high-rise units"
+                ))
             st.session_state.edited_project['high_rise_units'] = high_rise_units
             
             # High-Rise Average Unit Size
@@ -872,15 +868,14 @@ class ProjectPipelineRealEstateTab:
             with col1:
                 st.markdown("**High-Rise Avg Unit Size (m²)**")
             with col2:
-                high_rise_avg_unit_size = st.number_input(
-                    "High-Rise Average Unit Size (m²)",
-                    value=int(project_data.get('high_rise_avg_unit_size', 0) or 0),
-                    min_value=0,
-                    step=1,
-                    format="%d",
+                high_rise_avg_unit_size = int(decimal_input(
+                    label="High-Rise Average Unit Size (m²)",
+                    value=float(project_data.get('high_rise_avg_unit_size', 0) or 0),
+                    min_value=0.0,
                     key="edit_high_rise_avg_unit_size",
-                    label_visibility="collapsed"
-                )
+                    label_visibility="collapsed",
+                    help="Average unit size in square meters"
+                ))
             st.session_state.edited_project['high_rise_avg_unit_size'] = high_rise_avg_unit_size
             
             # Calculate and display High-Rise NSA
@@ -906,13 +901,13 @@ class ProjectPipelineRealEstateTab:
                 high_rise_asp_raw = float(project_data.get('high_rise_asp', 0) or 0)
                 high_rise_asp_million = high_rise_asp_raw / 1_000_000
                 
-                high_rise_asp_million_input = st.number_input(
-                    "High-Rise Average Selling Price (VND mn/m²)",
+                high_rise_asp_million_input = decimal_input(
+                    label="High-Rise Average Selling Price (VND mn/m²)",
                     value=high_rise_asp_million,
                     min_value=0.0,
-                    step=0.1,
                     key="edit_high_rise_asp",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
+                    help="Selling price in million VND per square meter"
                 )
                 high_rise_asp_value = high_rise_asp_million_input * 1_000_000
             st.session_state.edited_project['high_rise_asp'] = high_rise_asp_value
@@ -999,13 +994,10 @@ class ProjectPipelineRealEstateTab:
             # Convert to percentage for display
             price_increment_pct = price_increment_raw * 100
             
-            price_increment_input = st.number_input(
-                "Price Annual Increment (%)",
+            price_increment_input = percentage_input(
+                label="Price Annual Increment (%)",
                 value=price_increment_pct,
-                min_value=0.0,
                 max_value=100.0,
-                step=1.0,
-                format="%.0f",
                 key="edit_price_increment",
                 label_visibility="collapsed",
                 help="Annual percentage increase in selling price (e.g., 5 for 5% annual increase)"
@@ -1023,15 +1015,14 @@ class ProjectPipelineRealEstateTab:
         with col1:
             st.markdown("**Land Area (m²)**")
         with col2:
-            land_area = st.number_input(
-                "Land Area (m²)",
-                value=int(project_data.get('land_area', 0) or 0),
-                min_value=0,
-                step=1,
-                format="%d",
+            land_area = int(decimal_input(
+                label="Land Area (m²)",
+                value=float(project_data.get('land_area', 0) or 0),
+                min_value=0.0,
                 key="edit_land_area",
-                label_visibility="collapsed"
-            )
+                label_visibility="collapsed",
+                help="Total land area in square meters"
+            ))
             if ai_suggestions.get("land_area_sqm"):
                 try:
                     ai_land = float(ai_suggestions['land_area_sqm'])
@@ -1049,11 +1040,10 @@ class ProjectPipelineRealEstateTab:
             land_cost_raw = float(project_data.get('land_cost_per_sqm', 0) or 0)
             land_cost_million = land_cost_raw / 1_000_000  # Convert to million VND
             
-            land_cost_million_input = st.number_input(
-                "Land Cost (VND mn/m²)",
+            land_cost_million_input = decimal_input(
+                label="Land Cost (VND mn/m²)",
                 value=land_cost_million,
                 min_value=0.0,
-                step=0.1,
                 key="edit_land_cost",
                 label_visibility="collapsed",
                 help="Enter cost in million VND per m² (e.g., 25.5 for 25.5 million VND/m²)"
@@ -1096,15 +1086,14 @@ class ProjectPipelineRealEstateTab:
         with col1:
             st.markdown("**Gross Floor Area (m²)**")
         with col2:
-            gfa = st.number_input(
-                "Gross Floor Area (m²)",
-                value=int(project_data.get('gross_floor_area', 0) or 0),
-                min_value=0,
-                step=1,
-                format="%d",
+            gfa = int(decimal_input(
+                label="Gross Floor Area (m²)",
+                value=float(project_data.get('gross_floor_area', 0) or 0),
+                min_value=0.0,
                 key="edit_gfa",
-                label_visibility="collapsed"
-            )
+                label_visibility="collapsed",
+                help="Gross floor area in square meters"
+            ))
             if ai_suggestions.get("total_area_sqm"):
                 try:
                     ai_gfa = float(ai_suggestions['total_area_sqm'])
@@ -1122,11 +1111,10 @@ class ProjectPipelineRealEstateTab:
             const_cost_raw = float(project_data.get('construction_cost_per_sqm', 0) or 0)
             const_cost_million = const_cost_raw / 1_000_000  # Convert to million VND
             
-            const_cost_million_input = st.number_input(
-                "Construction Cost (VND mn/m²)",
+            const_cost_million_input = decimal_input(
+                label="Construction Cost (VND mn/m²)",
                 value=const_cost_million,
                 min_value=0.0,
-                step=0.1,
                 key="edit_const_cost",
                 label_visibility="collapsed",
                 help="Enter cost in million VND per m² (e.g., 15.5 for 15.5 million VND/m²)"
@@ -1209,11 +1197,10 @@ class ProjectPipelineRealEstateTab:
                 f"Enter debt amount in billions VND (e.g., 500 for 500 billion VND)"
             )
             
-            total_debt_bn_input = st.number_input(
-                "Total Debt (VND bn)",
+            total_debt_bn_input = decimal_input(
+                label="Total Debt (VND bn)",
                 value=existing_total_debt_bn,
                 min_value=0.0,
-                step=1.0,  # 1 billion VND steps
                 key="edit_total_debt",
                 label_visibility="collapsed",
                 help=tooltip_text
@@ -1644,13 +1631,12 @@ class ProjectPipelineRealEstateTab:
                     widget_key = f"low_revenue_dist_{year}"
                     default_val = existing_low_dist.get(str(year), 100.0/len(years))
                     
-                    pct = st.number_input(
-                        f"Year {year} (%)",
+                    pct = percentage_input(
+                        label=f"Year {year} (%)",
                         value=float(default_val),
-                        min_value=0.0,
                         max_value=100.0,
-                        step=0.1,
-                        key=widget_key
+                        key=widget_key,
+                        help=f"Percentage of revenue to recognize in {year}"
                     )
                     low_rise_distribution[str(year)] = pct
                     
@@ -1691,13 +1677,12 @@ class ProjectPipelineRealEstateTab:
                     widget_key = f"high_revenue_dist_{year}"
                     default_val = existing_high_dist.get(str(year), 100.0/len(years))
                     
-                    pct = st.number_input(
-                        f"Year {year} (%)",
+                    pct = percentage_input(
+                        label=f"Year {year} (%)",
                         value=float(default_val),
-                        min_value=0.0,
                         max_value=100.0,
-                        step=0.1,
-                        key=widget_key
+                        key=widget_key,
+                        help=f"Percentage of revenue to recognize in {year}"
                     )
                     high_rise_distribution[str(year)] = pct
                     
@@ -1856,13 +1841,12 @@ class ProjectPipelineRealEstateTab:
                     widget_key = f"low_presales_dist_{year}"
                     default_val = existing_low_dist.get(str(year), 100.0/len(years))
                     
-                    pct = st.number_input(
-                        f"Year {year} (%)",
+                    pct = percentage_input(
+                        label=f"Year {year} (%)",
                         value=float(default_val),
-                        min_value=0.0,
                         max_value=100.0,
-                        step=0.1,
-                        key=widget_key
+                        key=widget_key,
+                        help=f"Percentage of revenue to recognize in {year}"
                     )
                     low_rise_distribution[str(year)] = pct
                     
@@ -1919,13 +1903,12 @@ class ProjectPipelineRealEstateTab:
                     widget_key = f"high_presales_dist_{year}"
                     default_val = existing_high_dist.get(str(year), 100.0/len(years))
                     
-                    pct = st.number_input(
-                        f"Year {year} (%)",
+                    pct = percentage_input(
+                        label=f"Year {year} (%)",
                         value=float(default_val),
-                        min_value=0.0,
                         max_value=100.0,
-                        step=0.1,
-                        key=widget_key
+                        key=widget_key,
+                        help=f"Percentage of revenue to recognize in {year}"
                     )
                     high_rise_distribution[str(year)] = pct
                     
@@ -2171,12 +2154,10 @@ class ProjectPipelineRealEstateTab:
             current_pct = st.session_state.relative_collection_schedule.get(relative_year, 0.0)
             
             with cols[col_idx]:
-                pct = st.number_input(
-                    f"Year {relative_year}",
-                    min_value=0.0,
-                    max_value=100.0,
+                pct = percentage_input(
+                    label=f"Year {relative_year}",
                     value=float(current_pct),
-                    step=5.0,
+                    max_value=100.0,
                     key=f"collect_relative_year_{relative_year}",
                     help=f"% collected in year {relative_year} after presale"
                 )

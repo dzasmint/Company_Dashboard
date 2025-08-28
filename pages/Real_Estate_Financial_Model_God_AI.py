@@ -243,7 +243,7 @@ class RealEstateFinancialModel:
                 "Valuation",
                 "Research Insights",
                 "Export Model",
-                "God AI Assistant",
+                # "God AI Assistant",  # Hidden per user request
                 "Enhanced AI",
                 "Generate Report"
             ]
@@ -591,11 +591,11 @@ class RealEstateFinancialModel:
             self.render_research_insights()
         elif selected_tab == tab_names[7]:  # Export Model
             self.render_export_interface()
-        elif selected_tab == tab_names[8]:  # God AI Assistant
-            self.render_god_ai_assistant()
-        elif selected_tab == tab_names[9]:  # Enhanced AI
+        # elif selected_tab == "God AI Assistant":  # Hidden per user request
+        #     self.render_god_ai_assistant()
+        elif selected_tab == tab_names[8]:  # Enhanced AI (was index 9)
             self.render_enhanced_ai()
-        elif selected_tab == tab_names[10]:  # Generate Report
+        elif selected_tab == tab_names[9]:  # Generate Report (was index 10)
             self.render_generate_report()
         
     
