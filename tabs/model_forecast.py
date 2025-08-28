@@ -3025,7 +3025,25 @@ class ModelForecastTab:
                                 'revenue': {p: convert_to_native(project_revenue_breakdown.get(p, {}).get(year, 0)) for p in project_revenue_breakdown},
                                 'cogs': {p: convert_to_native(project_cogs_breakdown.get(p, {}).get(year, 0)) for p in project_cogs_breakdown},
                                 'sga': {p: convert_to_native(project_sga_breakdown.get(p, {}).get(year, 0)) for p in project_sga_breakdown},
-                                'interest': {p: convert_to_native(project_interest_breakdown.get(p, {}).get(year, 0)) for p in project_interest_breakdown}
+                                'interest': {p: convert_to_native(project_interest_breakdown.get(p, {}).get(year, 0)) for p in project_interest_breakdown},
+                                'pat': {p: convert_to_native(project_pat_breakdown.get(p, {}).get(year, 0)) for p in project_pat_breakdown},
+                                'patmi': {p: convert_to_native(project_patmi_breakdown.get(p, {}).get(year, 0)) for p in project_patmi_breakdown},
+                                'minority_interest': {p: convert_to_native(project_minority_interest_breakdown.get(p, {}).get(year, {})) for p in project_minority_interest_breakdown if year in project_minority_interest_breakdown.get(p, {})}
+                            },
+                            'profitability_metrics': {
+                                'project_margins': {
+                                    p: {
+                                        'gross_margin': convert_to_native((project_revenue_breakdown.get(p, {}).get(year, 0) + project_cogs_breakdown.get(p, {}).get(year, 0)) / project_revenue_breakdown.get(p, {}).get(year, 1) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0,
+                                        'pat_margin': convert_to_native(project_pat_breakdown.get(p, {}).get(year, 0) / project_revenue_breakdown.get(p, {}).get(year, 1) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0,
+                                        'patmi_margin': convert_to_native(project_patmi_breakdown.get(p, {}).get(year, 0) / project_revenue_breakdown.get(p, {}).get(year, 1) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0
+                                    } for p in project_revenue_breakdown if project_revenue_breakdown.get(p, {}).get(year, 0) > 0
+                                },
+                                'consolidated_margins': {
+                                    'gross_margin': convert_to_native((pnl_data['gross_profit'] / pnl_data['net_revenue'] * 100)) if pnl_data.get('net_revenue', 0) > 0 else 0,
+                                    'ebitda_margin': convert_to_native((pnl_data['ebitda'] / pnl_data['net_revenue'] * 100)) if pnl_data.get('net_revenue', 0) > 0 else 0,
+                                    'pat_margin': convert_to_native((pnl_data['pat'] / pnl_data['net_revenue'] * 100)) if pnl_data.get('net_revenue', 0) > 0 else 0,
+                                    'patmi_margin': convert_to_native((pnl_data['npatmi'] / pnl_data['net_revenue'] * 100)) if pnl_data.get('net_revenue', 0) > 0 else 0
+                                }
                             }
                         }
                 

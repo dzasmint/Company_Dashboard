@@ -20,7 +20,7 @@ FINANCIAL_CONFIG = {
 
 # Data file mappings
 DATA_FILES = {
-    'financial_statements': 'FA_processed.csv',
+    'financial_statements': 'FA_A_processed.csv',
     'valuation': 'Val_processed.csv',
     'market_cap': 'MktCap_processed.csv',
     'bank_supplement': 'BankSupp_processed.csv',

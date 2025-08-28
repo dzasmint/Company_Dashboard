@@ -43,9 +43,13 @@ def init_mongodb_connection():
         print(f"❌ Error connecting to MongoDB: {e}")
         return None
 
+# DEPRECATED: FinancialStatements collection is no longer used
+# The application now loads financial data directly from CSV files via data_loader.py
+# Keeping this function commented for reference only
+'''
 def upload_fa_data_to_mongodb(ticker=None, collection_name='FinancialStatements'):
     """
-    Upload FA_processed.csv data to MongoDB
+    Upload FA_A_processed.csv data to MongoDB
     
     Args:
         ticker: Specific ticker to upload (None for all)
@@ -53,7 +57,7 @@ def upload_fa_data_to_mongodb(ticker=None, collection_name='FinancialStatements'
     """
     try:
         # Load CSV file
-        csv_path = os.path.join(parent_dir, 'data', 'FA_processed.csv')
+        csv_path = os.path.join(parent_dir, 'data', 'FA_A_processed.csv')
         print(f"📂 Loading data from: {csv_path}")
         
         if not os.path.exists(csv_path):
@@ -97,7 +101,7 @@ def upload_fa_data_to_mongodb(ticker=None, collection_name='FinancialStatements'
         # Add upload metadata to each record
         for record in records:
             record['uploaded_at'] = datetime.now()
-            record['source'] = 'FA_processed.csv'
+            record['source'] = 'FA_A_processed.csv'
             
             # Convert NaN values to None for MongoDB
             for key, value in record.items():
@@ -139,7 +143,12 @@ def upload_fa_data_to_mongodb(ticker=None, collection_name='FinancialStatements'
         import traceback
         traceback.print_exc()
         return False
+'''
 
+# DEPRECATED: ValuationMetrics collection is no longer used
+# The application now loads valuation data directly from CSV files via data_loader.py
+# Keeping this function commented for reference only
+'''
 def upload_valuation_data_to_mongodb(ticker=None, collection_name='ValuationMetrics'):
     """
     Upload Val_processed.csv data to MongoDB
@@ -206,72 +215,43 @@ def upload_valuation_data_to_mongodb(ticker=None, collection_name='ValuationMetr
     except Exception as e:
         print(f"❌ Error uploading valuation data: {e}")
         return False
+'''
 
 def verify_upload(ticker='DXG'):
     """Verify that data was uploaded correctly"""
-    try:
-        client = init_mongodb_connection()
-        if not client:
-            return
-        
-        db = client['VietnamStocks']
-        
-        # Check FinancialStatements collection
-        fa_collection = db['FinancialStatements']
-        fa_count = fa_collection.count_documents({'TICKER': ticker})
-        print(f"\n📊 Verification Results:")
-        print(f"  FinancialStatements: {fa_count} documents for {ticker}")
-        
-        # Get unique dates
-        dates = fa_collection.distinct('DATE', {'TICKER': ticker})
-        print(f"  Date range: {min(dates) if dates else 'N/A'} to {max(dates) if dates else 'N/A'}")
-        
-        # Get unique keycodes
-        keycodes = fa_collection.distinct('KEYCODE', {'TICKER': ticker})
-        print(f"  Number of unique metrics: {len(keycodes)}")
-        print(f"  Sample metrics: {keycodes[:5] if keycodes else 'N/A'}")
-        
-        # Check ValuationMetrics collection
-        val_collection = db['ValuationMetrics']
-        val_count = val_collection.count_documents({'TICKER': ticker})
-        print(f"  ValuationMetrics: {val_count} documents for {ticker}")
-        
-    except Exception as e:
-        print(f"❌ Error verifying upload: {e}")
+    # DEPRECATED: Both FinancialStatements and ValuationMetrics collections are no longer used
+    print(f"\n📊 Verification Results:")
+    print("  ⚠️ MongoDB collections FinancialStatements and ValuationMetrics are deprecated")
+    print("  ✅ Data is now loaded directly from CSV files:")
+    print("     - Financial data: FA_A_processed.csv")
+    print("     - Valuation data: Val_processed.csv")
+    print("     - Use core/data_loader.py for data access")
 
 def main():
-    """Main function to upload DXG data to MongoDB"""
+    """Main function - DEPRECATED"""
     print("=" * 60)
-    print("📤 UPLOADING CSV DATA TO MONGODB")
+    print("⚠️  DEPRECATED UPLOAD UTILITY")
     print("=" * 60)
     
-    ticker = 'DXG'  # Test with DXG only
-    
-    print(f"\n🎯 Target ticker: {ticker}")
-    print("-" * 60)
-    
-    # Upload FA data
-    print("\n1️⃣ Uploading Financial Statements data...")
-    success_fa = upload_fa_data_to_mongodb(ticker=ticker)
-    
-    # Upload Valuation data
-    print("\n2️⃣ Uploading Valuation data...")
-    success_val = upload_valuation_data_to_mongodb(ticker=ticker)
-    
-    # Verify the upload
-    if success_fa or success_val:
-        print("\n3️⃣ Verifying upload...")
-        verify_upload(ticker)
-        
-        print("\n" + "=" * 60)
-        print("✅ UPLOAD COMPLETED SUCCESSFULLY!")
-        print("=" * 60)
-        print("\n📌 Next steps:")
-        print("  1. Update Real_Estate_Financial_Model.py to read from MongoDB")
-        print("  2. This will eliminate CSV file reading performance issues")
-        print("  3. Test with ticker 'DXG' first")
-    else:
-        print("\n❌ Upload failed. Please check the errors above.")
+    print("\n📌 Important Notice:")
+    print("  Both FinancialStatements and ValuationMetrics collections are deprecated!")
+    print("")
+    print("  The application now loads data directly from CSV files:")
+    print("  - Financial data: data/FA_A_processed.csv")
+    print("  - Valuation data: data/Val_processed.csv")
+    print("")
+    print("  Active MongoDB collections still in use:")
+    print("  - RealEstateProjects")
+    print("  - CompanyForecast") 
+    print("  - ProjectDiscovery")
+    print("  - ProjectVersions")
+    print("  - Assumptions")
+    print("")
+    print("  To access financial/valuation data, use:")
+    print("  - core/data_loader.py")
+    print("")
+    print("  Both deprecated collections can be safely deleted from MongoDB.")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()

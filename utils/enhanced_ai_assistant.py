@@ -572,9 +572,13 @@ class EnhancedAIToolSystem:
                     else:
                         result_data[year] = {statement_type: year_data.get(statement_type, {})}
                     
-                    # Add project breakdown if requested
+                    # Add project breakdown if requested (includes PAT/PATMI now)
                     if include_breakdown and 'project_breakdown' in year_data:
                         result_data[year]['project_breakdown'] = year_data['project_breakdown']
+                        
+                        # Add profitability metrics if available
+                        if 'profitability_metrics' in year_data:
+                            result_data[year]['profitability_metrics'] = year_data['profitability_metrics']
                 
                 # Extract key metrics for summary
                 summary = {}
@@ -1001,6 +1005,392 @@ class EnhancedAIToolSystem:
                                     }
                 
                 return result
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+    
+        # New profitability analysis tools
+        @self.tool(
+            name="get_project_profitability_details",
+            description="Get detailed PAT and PATMI data for real estate projects from RealEstateProjects collection",
+            parameters={
+                "project_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of project names to analyze",
+                    "required": True
+                },
+                "years": {
+                    "type": "array", 
+                    "items": {"type": "string"},
+                    "description": "Years to retrieve (e.g., ['2025', '2026'])",
+                    "required": False
+                },
+                "include_ownership": {
+                    "type": "boolean",
+                    "description": "Include ownership and minority interest details",
+                    "required": False
+                }
+            }
+        )
+        def get_project_profitability_details(project_names: List[str], years: List[str] = None, 
+                                             include_ownership: bool = True) -> Dict:
+            """Get detailed profitability from RealEstateProjects comprehensive_financial_statements"""
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            try:
+                collection = self.vietnam_stocks_db['RealEstateProjects']
+                results = []
+                
+                for project_name in project_names:
+                    project = collection.find_one(
+                        {"project_name": {"$regex": f"^{project_name}$", "$options": "i"}},
+                        {'_id': 0}
+                    )
+                    
+                    if not project:
+                        continue
+                    
+                    project_data = {
+                        "project_name": project['project_name'],
+                        "company_ticker": project.get('company_ticker'),
+                        "ownership": project.get('project_ownership', 1.0),
+                        "profitability": {}
+                    }
+                    
+                    # Extract from comprehensive_financial_statements
+                    if 'comprehensive_financial_statements' in project:
+                        statements = project['comprehensive_financial_statements']
+                        
+                        for year_str, year_data in statements.items():
+                            if years and year_str not in years:
+                                continue
+                                
+                            project_data['profitability'][year_str] = {
+                                'revenue': year_data.get('revenue_recognition', 0) / 1e9,
+                                'pbt': year_data.get('pbt', 0) / 1e9,
+                                'pat': year_data.get('pat', 0) / 1e9,
+                                'tax': year_data.get('tax', 0) / 1e9
+                            }
+                            
+                            # Calculate PATMI if ownership is provided
+                            if include_ownership:
+                                pat = year_data.get('pat', 0) / 1e9
+                                ownership = project.get('project_ownership', 1.0)
+                                minority_interest = pat * (1 - ownership) if pat > 0 else 0
+                                patmi = pat - minority_interest
+                                
+                                project_data['profitability'][year_str].update({
+                                    'minority_interest': minority_interest,
+                                    'patmi': patmi,
+                                    'pat_margin': (pat / (year_data.get('revenue_recognition', 1) / 1e9) * 100) if year_data.get('revenue_recognition', 0) > 0 else 0,
+                                    'patmi_margin': (patmi / (year_data.get('revenue_recognition', 1) / 1e9) * 100) if year_data.get('revenue_recognition', 0) > 0 else 0
+                                })
+                    
+                    # Add RNAV if available
+                    if 'rnav_value' in project:
+                        project_data['rnav_value'] = project['rnav_value'] / 1e9
+                    
+                    results.append(project_data)
+                
+                return {
+                    "projects": results,
+                    "count": len(results),
+                    "source": "RealEstateProjects",
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
+            name="compare_project_vs_company_profitability", 
+            description="Compare project-level profitability with company-level aggregated data",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker to analyze",
+                    "required": True
+                },
+                "year": {
+                    "type": "string",
+                    "description": "Year to compare (e.g., '2025')",
+                    "required": True
+                }
+            }
+        )
+        def compare_project_vs_company_profitability(ticker: str, year: str) -> Dict:
+            """Compare individual project PAT/PATMI with company totals"""
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            ticker = ticker.upper()
+            
+            try:
+                # Get company forecast
+                forecast_collection = self.vietnam_stocks_db['CompanyForecast']
+                company_doc = forecast_collection.find_one({'ticker': ticker}, {'_id': 0})
+                
+                if not company_doc or year not in company_doc.get('forecast_data', {}):
+                    return {"error": f"No forecast data for {ticker} in {year}", "status": "failed"}
+                
+                year_data = company_doc['forecast_data'][year]
+                company_pnl = year_data.get('pnl', {})
+                project_breakdown = year_data.get('project_breakdown', {})
+                
+                # Get project details from RealEstateProjects
+                projects_collection = self.vietnam_stocks_db['RealEstateProjects']
+                projects = list(projects_collection.find({'company_ticker': ticker}, {'_id': 0}))
+                
+                comparison = {
+                    "ticker": ticker,
+                    "year": year,
+                    "company_level": {
+                        "total_revenue": company_pnl.get('net_revenue', 0) / 1e9,
+                        "total_pat": company_pnl.get('pat', 0) / 1e9,
+                        "total_patmi": company_pnl.get('npatmi', 0) / 1e9,
+                        "minority_interest": company_pnl.get('minority_interest', 0) / 1e9
+                    },
+                    "project_breakdown": {},
+                    "variance_analysis": {}
+                }
+                
+                # Add project-level data
+                total_project_pat = 0
+                total_project_patmi = 0
+                
+                if 'pat' in project_breakdown:
+                    for project_name, pat_value in project_breakdown['pat'].items():
+                        pat_billions = pat_value / 1e9
+                        patmi_billions = project_breakdown.get('patmi', {}).get(project_name, 0) / 1e9
+                        
+                        comparison['project_breakdown'][project_name] = {
+                            'pat': pat_billions,
+                            'patmi': patmi_billions,
+                            'pat_contribution': (pat_billions / comparison['company_level']['total_pat'] * 100) if comparison['company_level']['total_pat'] != 0 else 0
+                        }
+                        
+                        total_project_pat += pat_billions
+                        total_project_patmi += patmi_billions
+                
+                # Calculate variance
+                comparison['variance_analysis'] = {
+                    'projects_total_pat': total_project_pat,
+                    'projects_total_patmi': total_project_patmi,
+                    'other_business_pat': comparison['company_level']['total_pat'] - total_project_pat,
+                    'other_business_patmi': comparison['company_level']['total_patmi'] - total_project_patmi,
+                    'projects_contribution_pct': (total_project_pat / comparison['company_level']['total_pat'] * 100) if comparison['company_level']['total_pat'] != 0 else 0
+                }
+                
+                return {
+                    "comparison": comparison,
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+                
+        @self.tool(
+            name="analyze_minority_interest_impact",
+            description="Analyze minority interest impact on profitability",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "year": {
+                    "type": "string", 
+                    "description": "Year to analyze",
+                    "required": False
+                }
+            }
+        )
+        def analyze_minority_interest_impact(ticker: str, year: str = None) -> Dict:
+            """Analyze minority interest impact on PAT to PATMI conversion"""
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            ticker = ticker.upper()
+            
+            try:
+                # Get projects with ownership data
+                projects_collection = self.vietnam_stocks_db['RealEstateProjects']
+                projects = list(projects_collection.find({'company_ticker': ticker}, {'_id': 0}))
+                
+                analysis = {
+                    "ticker": ticker,
+                    "projects_with_minority": [],
+                    "ownership_summary": {},
+                    "minority_impact": {}
+                }
+                
+                for project in projects:
+                    ownership = project.get('project_ownership', 1.0)
+                    
+                    if ownership < 1.0:
+                        project_analysis = {
+                            "project_name": project['project_name'],
+                            "ownership": ownership * 100,
+                            "minority_stake": (1 - ownership) * 100
+                        }
+                        
+                        # Get PAT data if year specified
+                        if year and 'comprehensive_financial_statements' in project:
+                            if year in project['comprehensive_financial_statements']:
+                                year_data = project['comprehensive_financial_statements'][year]
+                                pat = year_data.get('pat', 0) / 1e9
+                                minority_interest = pat * (1 - ownership) if pat > 0 else 0
+                                
+                                project_analysis.update({
+                                    'pat': pat,
+                                    'minority_interest': minority_interest,
+                                    'patmi': pat - minority_interest,
+                                    'dilution_pct': (minority_interest / pat * 100) if pat > 0 else 0
+                                })
+                        
+                        analysis['projects_with_minority'].append(project_analysis)
+                
+                # Summary statistics
+                if analysis['projects_with_minority']:
+                    avg_ownership = sum(p['ownership'] for p in analysis['projects_with_minority']) / len(analysis['projects_with_minority'])
+                    
+                    analysis['ownership_summary'] = {
+                        'total_projects': len(projects),
+                        'projects_with_minority': len(analysis['projects_with_minority']),
+                        'average_ownership': avg_ownership,
+                        'average_minority_stake': 100 - avg_ownership
+                    }
+                    
+                    if year:
+                        total_minority = sum(p.get('minority_interest', 0) for p in analysis['projects_with_minority'])
+                        total_pat = sum(p.get('pat', 0) for p in analysis['projects_with_minority'])
+                        
+                        analysis['minority_impact'][year] = {
+                            'total_minority_interest': total_minority,
+                            'total_pat': total_pat,
+                            'impact_on_pat': (total_minority / total_pat * 100) if total_pat > 0 else 0
+                        }
+                
+                return {
+                    "analysis": analysis,
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
+            name="get_consolidated_profitability_breakdown",
+            description="Get waterfall breakdown from Revenue to PATMI from CompanyForecast",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "year": {
+                    "type": "string",
+                    "description": "Year to analyze",
+                    "required": True
+                },
+                "include_project_details": {
+                    "type": "boolean",
+                    "description": "Include project-level breakdown",
+                    "required": False
+                }
+            }
+        )
+        def get_consolidated_profitability_breakdown(ticker: str, year: str, 
+                                                    include_project_details: bool = True) -> Dict:
+            """Get comprehensive profitability waterfall from CompanyForecast"""
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            ticker = ticker.upper()
+            
+            try:
+                # Get company forecast
+                collection = self.vietnam_stocks_db['CompanyForecast']
+                company_doc = collection.find_one({'ticker': ticker}, {'_id': 0})
+                
+                if not company_doc or year not in company_doc.get('forecast_data', {}):
+                    return {"error": f"No forecast data for {ticker} in {year}", "status": "failed"}
+                
+                year_data = company_doc['forecast_data'][year]
+                pnl = year_data.get('pnl', {})
+                project_breakdown = year_data.get('project_breakdown', {})
+                profitability_metrics = year_data.get('profitability_metrics', {})
+                
+                # Build waterfall
+                waterfall = {
+                    "ticker": ticker,
+                    "year": year,
+                    "waterfall": [
+                        {"step": "Net Revenue", "value": pnl.get('net_revenue', 0) / 1e9},
+                        {"step": "- Total COGS", "value": pnl.get('total_cogs', 0) / 1e9},
+                        {"step": "= Gross Profit", "value": pnl.get('gross_profit', 0) / 1e9},
+                        {"step": "- SG&A", "value": pnl.get('sga', 0) / 1e9},
+                        {"step": "= EBITDA", "value": pnl.get('ebitda', 0) / 1e9},
+                        {"step": "- Interest Expense", "value": pnl.get('interest_expense', 0) / 1e9},
+                        {"step": "= PBT", "value": pnl.get('pbt', 0) / 1e9},
+                        {"step": "- Tax", "value": pnl.get('tax', 0) / 1e9},
+                        {"step": "= PAT", "value": pnl.get('pat', 0) / 1e9},
+                        {"step": "- Minority Interest", "value": pnl.get('minority_interest', 0) / 1e9},
+                        {"step": "= PATMI", "value": pnl.get('npatmi', 0) / 1e9}
+                    ],
+                    "margins": profitability_metrics.get('consolidated_margins', {})
+                }
+                
+                # Add project breakdown if requested
+                if include_project_details and project_breakdown:
+                    project_summary = {}
+                    
+                    # Aggregate by project
+                    for metric in ['revenue', 'pat', 'patmi']:
+                        if metric in project_breakdown:
+                            for project, value in project_breakdown[metric].items():
+                                if project not in project_summary:
+                                    project_summary[project] = {}
+                                project_summary[project][metric] = value / 1e9
+                    
+                    # Calculate margins for each project
+                    for project, metrics in project_summary.items():
+                        if metrics.get('revenue', 0) > 0:
+                            metrics['pat_margin'] = (metrics.get('pat', 0) / metrics['revenue'] * 100)
+                            metrics['patmi_margin'] = (metrics.get('patmi', 0) / metrics['revenue'] * 100)
+                    
+                    waterfall['project_details'] = project_summary
+                    
+                    # Add project vs other split
+                    total_project_revenue = sum(p.get('revenue', 0) for p in project_summary.values())
+                    total_project_pat = sum(p.get('pat', 0) for p in project_summary.values())
+                    total_project_patmi = sum(p.get('patmi', 0) for p in project_summary.values())
+                    
+                    waterfall['business_split'] = {
+                        'projects': {
+                            'revenue': total_project_revenue,
+                            'pat': total_project_pat,
+                            'patmi': total_project_patmi,
+                            'revenue_contribution': (total_project_revenue / (pnl.get('net_revenue', 1) / 1e9) * 100) if pnl.get('net_revenue', 0) > 0 else 0
+                        },
+                        'other_business': {
+                            'revenue': pnl.get('net_revenue', 0) / 1e9 - total_project_revenue,
+                            'pat': pnl.get('pat', 0) / 1e9 - total_project_pat,
+                            'patmi': pnl.get('npatmi', 0) / 1e9 - total_project_patmi
+                        }
+                    }
+                
+                return {
+                    "breakdown": waterfall,
+                    "source": "CompanyForecast",
+                    "status": "success"
+                }
                 
             except Exception as e:
                 return {"error": str(e), "status": "failed"}
