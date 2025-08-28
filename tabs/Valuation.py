@@ -28,16 +28,27 @@ class ValuationTab:
                 valuation_rows = []
                 
                 # Add individual project rows
+                total_rnav_to_company = 0  # Track RNAV attributable to company
                 for _, project in st.session_state.project_data.iterrows():
+                    # Get ownership percentage if available, default to 100%
+                    ownership_pct = project.get('project_ownership', 100) if 'project_ownership' in project else 100
+                    rnav_value_billions = project['rnav_value'] / 1e9
+                    rnav_to_company = rnav_value_billions * (ownership_pct / 100)
+                    total_rnav_to_company += rnav_to_company
+                    
                     valuation_rows.append({
                         'Item': f"  {project['project_name']}",
-                        'Value (B VND)': project['rnav_value'] / 1e9
+                        'RNAV Value (B VND)': rnav_value_billions,
+                        'Ownership (%)': ownership_pct,
+                        'RNAV to Company (B VND)': rnav_to_company
                     })
                 
-                # Add Sub-total row for RNAV
+                # Add Sub-total row for RNAV (using RNAV to Company values)
                 valuation_rows.append({
                     'Item': 'SUB-TOTAL RNAV',
-                    'Value (B VND)': total_rnav / 1e9
+                    'RNAV Value (B VND)': total_rnav / 1e9,
+                    'Ownership (%)': None,  # No ownership % for subtotal
+                    'RNAV to Company (B VND)': total_rnav_to_company
                 })
                 
                 # Load balance sheet items from FA_A_processed.csv
@@ -108,50 +119,66 @@ class ValuationTab:
                 
                 valuation_rows.append({
                     'Item': 'Cash & Equivalent',
-                    'Value (B VND)': cash_equivalent
+                    'RNAV Value (B VND)': cash_equivalent,
+                    'Ownership (%)': None,
+                    'RNAV to Company (B VND)': cash_equivalent
                 })
                 
                 valuation_rows.append({
                     'Item': 'Short-term Investment',
-                    'Value (B VND)': short_term_investment
+                    'RNAV Value (B VND)': short_term_investment,
+                    'Ownership (%)': None,
+                    'RNAV to Company (B VND)': short_term_investment
                 })
                 
                 valuation_rows.append({
                     'Item': 'Short-term Debt',
-                    'Value (B VND)': -short_term_debt  # Display as negative
+                    'RNAV Value (B VND)': -short_term_debt,  # Display as negative
+                    'Ownership (%)': None,
+                    'RNAV to Company (B VND)': -short_term_debt
                 })
                 
                 valuation_rows.append({
                     'Item': 'Long-term Debt',
-                    'Value (B VND)': -long_term_debt  # Display as negative
+                    'RNAV Value (B VND)': -long_term_debt,  # Display as negative
+                    'Ownership (%)': None,
+                    'RNAV to Company (B VND)': -long_term_debt
                 })
                 
                 # Add separator
                 valuation_rows.append({
                     'Item': '',
-                    'Value (B VND)': None
+                    'RNAV Value (B VND)': None,
+                    'Ownership (%)': None,
+                    'RNAV to Company (B VND)': None
                 })
                 
-                # Calculate Total Equity
+                # Calculate Total Equity (using RNAV to Company values)
                 # Since debt values are already negative, we add them directly
-                total_equity = (total_rnav / 1e9) + cash_equivalent + short_term_investment + (-short_term_debt) + (-long_term_debt)
+                total_equity = total_rnav_to_company + cash_equivalent + short_term_investment + (-short_term_debt) + (-long_term_debt)
                 
                 valuation_rows.append({
                     'Item': 'TOTAL EQUITY',
-                    'Value (B VND)': total_equity
+                    'RNAV Value (B VND)': total_equity,
+                    'Ownership (%)': None,
+                    'RNAV to Company (B VND)': total_equity
                 })
                 
                 # Add Outstanding Shares row
                 valuation_rows.append({
                     'Item': 'Total Outstanding Shares (millions)',
-                    'Value (B VND)': outstanding_shares  # Display in millions
+                    'RNAV Value (B VND)': outstanding_shares,  # Display in millions
+                    'Ownership (%)': None,
+                    'RNAV to Company (B VND)': outstanding_shares
                 })
                 
                 # Calculate and add RNAV per share
                 rnav_per_share = (total_equity * 1e9 / (outstanding_shares * 1e6)) if outstanding_shares > 0 else 0
                 valuation_rows.append({
                     'Item': 'RNAV/share (VND)',
-                    'Value (B VND)': rnav_per_share  # This will be formatted differently
+                    'RNAV Value (B VND)': rnav_per_share,  # This will be formatted differently
+                    'Ownership (%)': None,
+                    'RNAV to Company (B VND)': rnav_per_share
                 })
                 
                 # Create DataFrame
@@ -164,32 +191,60 @@ class ValuationTab:
                 with col2:
                     st.metric("Total Equity", f"{total_equity:,.0f}B VND")
                 
-                # Create formatted values column
-                formatted_values = []
+                # Create formatted columns for display
+                display_data = []
                 for idx, row in valuation_df.iterrows():
-                    val = row['Value (B VND)']
                     item = row['Item']
+                    rnav_val = row['RNAV Value (B VND)']
+                    ownership = row['Ownership (%)']
+                    rnav_to_company = row['RNAV to Company (B VND)']
                     
-                    if pd.isna(val):
-                        formatted_values.append('')
+                    # Format RNAV Value
+                    if pd.isna(rnav_val):
+                        formatted_rnav = ''
                     elif 'Outstanding Shares' in str(item):
-                        formatted_values.append(f'{val:,.0f}M')
+                        formatted_rnav = f'{rnav_val:,.0f}M'
                     elif 'RNAV/share' in str(item):
-                        formatted_values.append(f'{val:,.0f}')
+                        formatted_rnav = f'{rnav_val:,.0f}'
                     else:
-                        formatted_values.append(f'{val:,.0f}B')
+                        formatted_rnav = f'{rnav_val:,.0f}B'
+                    
+                    # Format Ownership
+                    if pd.isna(ownership):
+                        formatted_ownership = ''
+                    else:
+                        formatted_ownership = f'{ownership:.1f}%'
+                    
+                    # Format RNAV to Company
+                    if pd.isna(rnav_to_company):
+                        formatted_rnav_to_company = ''
+                    elif 'Outstanding Shares' in str(item):
+                        formatted_rnav_to_company = f'{rnav_to_company:,.0f}M'
+                    elif 'RNAV/share' in str(item):
+                        formatted_rnav_to_company = f'{rnav_to_company:,.0f}'
+                    else:
+                        formatted_rnav_to_company = f'{rnav_to_company:,.0f}B'
+                    
+                    display_data.append({
+                        'Item': item,
+                        'RNAV Value': formatted_rnav,
+                        'Ownership (%)': formatted_ownership,
+                        'RNAV to Company': formatted_rnav_to_company
+                    })
                 
-                # Add formatted column
-                valuation_df['Formatted Value'] = formatted_values
+                # Create display DataFrame
+                display_df = pd.DataFrame(display_data)
                 
-                # Display only Item and Formatted Value columns
-                display_df = valuation_df[['Item', 'Formatted Value']].copy()
-                display_df.columns = ['Item', 'Value']
+                # Apply styling with bold for important rows
+                def style_important_rows(val):
+                    if isinstance(val, str):
+                        if any(keyword in val for keyword in ['SUB-TOTAL', 'TOTAL EQUITY', 'RNAV/share']):
+                            return 'font-weight: bold'
+                    return ''
                 
-                # Apply styling
                 st.dataframe(
                     display_df.style.applymap(
-                        lambda x: 'font-weight: bold' if isinstance(x, str) and ('SUB-TOTAL' in x or 'TOTAL EQUITY' in x or 'RNAV/share' in x) else '',
+                        style_important_rows,
                         subset=['Item']
                     ),
                     use_container_width=True,
