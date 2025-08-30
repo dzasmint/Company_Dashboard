@@ -2761,6 +2761,12 @@ class ModelForecastTab:
             inventory_breakdown = {}
             prepayment_breakdown = {}
             cash_breakdown = {}
+            
+            # Initialize change breakdown variables at broader scope for save function
+            debt_change_breakdown = {}
+            inventory_change_breakdown = {}
+            prepayment_change_breakdown = {}
+            cash_change_breakdown = {}
         
             # Populate breakdown data from the aggregation loop above
             # All detail balance sheet code has been moved inside tab_detail_bs above
@@ -2839,8 +2845,7 @@ class ModelForecastTab:
                 # Total rows show cumulative company-wide balance (historical + all project changes)
             
                 # DEBT SECTION - Show changes for each project
-                # Calculate debt changes for each project
-                debt_change_breakdown = {}
+                # Calculate debt changes for each project (use broader scope variable)
                 for project_name in debt_breakdown.keys():
                     debt_change_breakdown[project_name] = {}
                     prev_value = 0  # Projects start with 0 debt in historical year
@@ -2882,8 +2887,7 @@ class ModelForecastTab:
                 bs_rows.append(debt_row)
             
                 # INVENTORY SECTION - Show changes for each project
-                # Calculate inventory changes for each project
-                inventory_change_breakdown = {}
+                # Calculate inventory changes for each project (use broader scope variable)
                 for project_name in inventory_breakdown.keys():
                     inventory_change_breakdown[project_name] = {}
                     prev_value = 0  # Projects start with 0 inventory in historical year
@@ -2925,8 +2929,7 @@ class ModelForecastTab:
                 bs_rows.append(inventory_row)
             
                 # CUSTOMER PREPAYMENT SECTION - Show changes for each project
-                # Calculate prepayment changes for each project
-                prepayment_change_breakdown = {}
+                # Calculate prepayment changes for each project (use broader scope variable)
                 for project_name in prepayment_breakdown.keys():
                     prepayment_change_breakdown[project_name] = {}
                     prev_value = 0  # Projects start with 0 prepayment in historical year
@@ -2968,8 +2971,7 @@ class ModelForecastTab:
                 bs_rows.append(prepayment_row)
             
                 # CASH SECTION - Show changes for each project
-                # Calculate cash changes for each project
-                cash_change_breakdown = {}
+                # Calculate cash changes for each project (use broader scope variable)
                 for project_name in cash_breakdown.keys():
                     cash_change_breakdown[project_name] = {}
                     prev_value = 0  # Projects start with 0 cash in historical year
@@ -3992,7 +3994,7 @@ class ModelForecastTab:
                     for year in years:
                         year_str = str(year)
                     
-                        # Consolidated P&L Statement
+                        # Complete Consolidated P&L Statement (including interest income)
                         pnl_data = {
                             'real_estate_revenue': convert_to_native(re_revenue_row.get(year_str, 0)),
                             'other_revenue': convert_to_native(revenue_row.get(year_str, 0) - re_revenue_row.get(year_str, 0)),
@@ -4003,6 +4005,7 @@ class ModelForecastTab:
                             'gross_profit': convert_to_native(gp_row.get(year_str, 0)),
                             'sga': convert_to_native(sga_row.get(year_str, 0)),
                             'ebitda': convert_to_native(ebitda_row.get(year_str, 0)),
+                            'interest_income': convert_to_native(interest_income_row.get(year_str, 0)),  # Added interest income
                             'project_interest_expense': convert_to_native(project_interest_pnl_row.get(year_str, 0)),
                             'existing_debt_interest_expense': convert_to_native(existing_interest_pnl_row.get(year_str, 0)),
                             'interest_expense': convert_to_native(interest_row.get(year_str, 0)),
@@ -4013,39 +4016,59 @@ class ModelForecastTab:
                             'npatmi': convert_to_native(npatmi_row.get(year_str, 0))
                         }
                     
-                        # Consolidated Balance Sheet
+                        # Complete Consolidated Balance Sheet (all line items)
                         balance_sheet_data = {
-                            # Assets
-                            'total_debt': convert_to_native(total_debt_by_year.get(year_str, 0)),
-                            'total_inventory': convert_to_native(inventory_row.get(year_str, 0)),
-                            'total_customer_prepayment': convert_to_native(total_customer_prepayment_by_year.get(year_str, 0)),
-                            'total_cash': convert_to_native(cash_row.get(year_str, 0)),
+                            'assets': {
+                                'cash_and_equivalents': convert_to_native(cash_row.get(year_str, 0)),
+                                'account_receivable': convert_to_native(ar_row.get(year_str, 0)),
+                                'inventory': convert_to_native(inventory_row.get(year_str, 0)),
+                                'other_assets': convert_to_native(other_assets_row.get(year_str, 0)),
+                                'total_assets': convert_to_native(total_assets_row.get(year_str, 0))
+                            },
+                            'liabilities': {
+                                'account_payable': convert_to_native(ap_row.get(year_str, 0)),
+                                'customer_prepayment': convert_to_native(customer_prepayment_row.get(year_str, 0)),
+                                'short_term_debt': convert_to_native(st_debt_row.get(year_str, 0)),
+                                'long_term_debt': convert_to_native(lt_debt_row.get(year_str, 0)),
+                                'total_debt': convert_to_native(total_debt_by_year.get(year_str, 0)),
+                                'other_liabilities': convert_to_native(other_liab_row.get(year_str, 0)),
+                                'total_liabilities': convert_to_native(total_liab_row.get(year_str, 0))
+                            },
+                            'equity': {
+                                'retained_earnings': convert_to_native(retained_earnings_row.get(year_str, 0)),
+                                'minority_interest': convert_to_native(minority_interest_bs_row.get(year_str, 0)),
+                                'other_equity': convert_to_native(other_equity_row.get(year_str, 0)),
+                                'total_equity': convert_to_native(total_equity_row.get(year_str, 0))
+                            },
+                            # Derived metrics
                             'net_debt': convert_to_native(total_debt_by_year.get(year_str, 0) - cash_row.get(year_str, 0)),
-                            'working_capital': convert_to_native(inventory_row.get(year_str, 0) + cash_row.get(year_str, 0) - total_customer_prepayment_by_year.get(year_str, 0)),
-                            # Equity
-                            'retained_earnings': convert_to_native(retained_earnings_row.get(year_str, 0)),
-                            'minority_interest_bs': convert_to_native(minority_interest_bs_row.get(year_str, 0)),
-                            'total_equity': convert_to_native(total_equity_row.get(year_str, 0))
+                            'working_capital': convert_to_native(inventory_row.get(year_str, 0) + cash_row.get(year_str, 0) - customer_prepayment_row.get(year_str, 0))
                         }
                     
-                        # Consolidated Cash Flow Statement
+                        # Complete Consolidated Cash Flow Statement
                         cash_flow_data = {
-                            'operating_cf': convert_to_native(operating_cf_by_year.get(year_str, 0)),
-                            'investing_cf': convert_to_native(investing_cf_by_year.get(year_str, 0)),
-                            'financing_cf': convert_to_native(financing_cf_by_year.get(year_str, 0)),
-                            'net_cf': convert_to_native(net_cf_by_year.get(year_str, 0)),
-                            # Operating CF breakdown
-                            'other_segment_revenue_cf': convert_to_native(other_segment_revenue_cf.get(year_str, 0)),
-                            'other_segment_cogs_cf': convert_to_native(other_segment_cogs_cf.get(year_str, 0)),
-                            'presales_cf': convert_to_native(sum(presales_cf_breakdown.get(p, {}).get(year_str, 0) for p in presales_cf_breakdown)),
-                            'interest_outflow': convert_to_native(sum(interest_outflow_breakdown.get(p, {}).get(year_str, 0) for p in interest_outflow_breakdown)),
-                            'sga_outflow': convert_to_native(sum(sga_outflow_breakdown.get(p, {}).get(year_str, 0) for p in sga_outflow_breakdown)),
-                            'tax_outflow': convert_to_native(sum(tax_outflow_breakdown.get(p, {}).get(year_str, 0) for p in tax_outflow_breakdown)),
-                            # Investing CF breakdown
-                            'land_outflow': convert_to_native(sum(land_outflow_breakdown.get(p, {}).get(year_str, 0) for p in land_outflow_breakdown)),
-                            'construction_outflow': convert_to_native(sum(construction_outflow_breakdown.get(p, {}).get(year_str, 0) for p in construction_outflow_breakdown)),
-                            # Financing CF breakdown
-                            'debt_changes': convert_to_native(sum(financing_cf_breakdown.get(p, {}).get(year_str, 0) for p in financing_cf_breakdown))
+                            'operating': {
+                                'presales_inflow': convert_to_native(sum(presales_cf_breakdown.get(p, {}).get(year_str, 0) for p in presales_cf_breakdown)),
+                                'other_segment_revenue': convert_to_native(other_segment_revenue_cf.get(year_str, 0)),
+                                'other_segment_cogs': convert_to_native(other_segment_cogs_cf.get(year_str, 0)),
+                                'project_interest_expense': convert_to_native(sum(interest_outflow_breakdown.get(p, {}).get(year_str, 0) for p in interest_outflow_breakdown)),
+                                'existing_debt_interest': convert_to_native(existing_debt_interest_row.get(year_str, 0)),
+                                'project_sga': convert_to_native(sum(sga_outflow_breakdown.get(p, {}).get(year_str, 0) for p in sga_outflow_breakdown)),
+                                'other_segment_sga': convert_to_native(other_sga_cf_row.get(year_str, 0)),
+                                'tax': convert_to_native(sum(tax_outflow_breakdown.get(p, {}).get(year_str, 0) for p in tax_outflow_breakdown)),
+                                'total_operating': convert_to_native(operating_cf_by_year.get(year_str, 0))
+                            },
+                            'investing': {
+                                'land_outflow': convert_to_native(sum(land_outflow_breakdown.get(p, {}).get(year_str, 0) for p in land_outflow_breakdown)),
+                                'construction_outflow': convert_to_native(sum(construction_outflow_breakdown.get(p, {}).get(year_str, 0) for p in construction_outflow_breakdown)),
+                                'interest_income': convert_to_native(interest_income_row.get(year_str, 0)),  # Interest income in investing
+                                'total_investing': convert_to_native(investing_cf_by_year.get(year_str, 0))
+                            },
+                            'financing': {
+                                'debt_changes': convert_to_native(sum(financing_cf_breakdown.get(p, {}).get(year_str, 0) for p in financing_cf_breakdown)),
+                                'total_financing': convert_to_native(financing_cf_by_year.get(year_str, 0))
+                            },
+                            'net_cash_flow': convert_to_native(net_cf_by_year.get(year_str, 0))
                         }
                     
                         # Business segments detail
@@ -4058,11 +4081,47 @@ class ModelForecastTab:
                                     'gross_profit': convert_to_native(segment_revenue_data[segment_name].get(year_str, 0) + segment_cogs_data[segment_name].get(year_str, 0))
                                 }
                     
+                        # NEW: Detail Project Breakdown Balance Sheet (changes)
+                        balance_sheet_detail_data = {
+                            'debt_changes': {p: convert_to_native(debt_change_breakdown.get(p, {}).get(year_str, 0)) for p in debt_change_breakdown},
+                            'inventory_changes': {p: convert_to_native(inventory_change_breakdown.get(p, {}).get(year_str, 0)) for p in inventory_change_breakdown},
+                            'prepayment_changes': {p: convert_to_native(prepayment_change_breakdown.get(p, {}).get(year_str, 0)) for p in prepayment_change_breakdown},
+                            'cash_changes': {p: convert_to_native(cash_change_breakdown.get(p, {}).get(year_str, 0)) for p in cash_change_breakdown}
+                        }
+                    
+                        # NEW: Detail Project Breakdown Cash Flow
+                        cash_flow_detail_data = {
+                            'by_project': {}
+                        }
+                        
+                        # Extract project-level cash flow data from cf_rows
+                        for project_name in presales_cf_breakdown.keys():
+                            cash_flow_detail_data['by_project'][project_name] = {
+                                'presales_inflow': convert_to_native(presales_cf_breakdown.get(project_name, {}).get(year_str, 0)),
+                                'land_outflow': convert_to_native(land_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
+                                'construction_outflow': convert_to_native(construction_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
+                                'interest_outflow': convert_to_native(interest_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
+                                'sga_outflow': convert_to_native(sga_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
+                                'tax_outflow': convert_to_native(tax_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
+                                'debt_changes': convert_to_native(financing_cf_breakdown.get(project_name, {}).get(year_str, 0)),
+                                'net_cash_flow': convert_to_native(
+                                    presales_cf_breakdown.get(project_name, {}).get(year_str, 0) +
+                                    land_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
+                                    construction_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
+                                    interest_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
+                                    sga_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
+                                    tax_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
+                                    financing_cf_breakdown.get(project_name, {}).get(year_str, 0)
+                                )
+                            }
+                        
                         # Combine all statements for this year
                         consolidated_data['financial_statements'][year_str] = {
                             'pnl': pnl_data,
                             'balance_sheet': balance_sheet_data,
+                            'balance_sheet_detail': balance_sheet_detail_data,  # NEW
                             'cash_flow': cash_flow_data,
+                            'cash_flow_detail': cash_flow_detail_data,  # NEW
                             'business_segments': business_segments_data,
                             'project_breakdown': {
                                 'revenue': {p: convert_to_native(project_revenue_breakdown.get(p, {}).get(year, 0)) for p in project_revenue_breakdown},
@@ -4090,22 +4149,13 @@ class ModelForecastTab:
                             }
                         }
                 
-                    # Add historical data for reference - convert all values
-                    consolidated_data['historical'] = {
-                        'debt': convert_to_native(hist_debt),
-                        'inventory': convert_to_native(hist_inventory),
-                        'cash': convert_to_native(hist_cash),
-                        'customer_prepayment': convert_to_native(hist_customer_prepayment),
-                        'retained_earnings': convert_to_native(hist_retained_earnings),
-                        'minority_interest': convert_to_native(hist_minority_interest),
-                        'pnl_items': {k: convert_to_native(v) for k, v in hist_values.items()}
-                    }
+                    # No historical data saved - only forecast data
                 
                     # Save to MongoDB with new collection structure
                     # Apply deep conversion to entire consolidated_data to ensure all numpy types are converted
                     consolidated_data = convert_to_native(consolidated_data)
                     
-                    # Save all three financial statements to CompanyForecast collection
+                    # Save all financial statements to CompanyForecast collection
                     from utils.mongodb_utils import save_company_forecast
                     
                     # Extract all financial statements data for CompanyForecast collection
@@ -4114,10 +4164,27 @@ class ModelForecastTab:
                         forecast_data[year_str] = {
                             'pnl': year_data.get('pnl', {}),
                             'balance_sheet': year_data.get('balance_sheet', {}),
+                            'balance_sheet_detail': year_data.get('balance_sheet_detail', {}),  # NEW
                             'cash_flow': year_data.get('cash_flow', {}),
+                            'cash_flow_detail': year_data.get('cash_flow_detail', {}),  # NEW
                             'business_segments': year_data.get('business_segments', {}),
-                            'project_breakdown': year_data.get('project_breakdown', {})
+                            'project_breakdown': year_data.get('project_breakdown', {}),
+                            'profitability_metrics': year_data.get('profitability_metrics', {})
                         }
+                    
+                    # Debug: Check if interest_income is present in the data
+                    has_interest_income = False
+                    for year_str in forecast_data.keys():
+                        if 'pnl' in forecast_data[year_str] and 'interest_income' in forecast_data[year_str]['pnl']:
+                            interest_val = forecast_data[year_str]['pnl']['interest_income']
+                            if interest_val != 0:
+                                st.info(f"💡 Interest Income for {year_str}: {interest_val:,.2f}B VND")
+                                has_interest_income = True
+                        else:
+                            st.warning(f"⚠️ Interest Income missing or zero for {year_str}")
+                    
+                    if not has_interest_income:
+                        st.warning("⚠️ No interest income values found in any year. Check if cash balances are positive.")
                     
                     # Save to CompanyForecast collection
                     result = save_company_forecast(selected_ticker, forecast_data)

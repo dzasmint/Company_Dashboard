@@ -1,6 +1,65 @@
 """
 Enhanced AI Assistant - Comprehensive MCP Framework for Financial Analysis
 Integrates all data sources: CSV files, MongoDB collections, and AI services
+
+## NEW CAPABILITIES (Updated: December 2024)
+
+### Enhanced Data Access:
+- **Quarterly Historical Data**: Access quarterly financial statements from FA_processed.parquet
+- **Annual Historical Data**: Access annual financial statements from FA_A_processed.parquet  
+- **MongoDB Integration**: Direct access to CompanyForecast and RealEstateProjects collections
+- **Comprehensive Forecast Data**: All saved forecast data including interest income calculations
+
+### New Analysis Tools:
+
+1. **get_historical_financials** - Enhanced with quarterly data support
+   - Parameters: tickers, metrics, years, period_type (annual/quarterly/both), quarters
+   - Returns both annual and quarterly financial data with growth rates
+
+2. **get_comprehensive_forecast_details** - Complete forecast analysis
+   - Access all financial statements (P&L, BS, CF) with project breakdowns
+   - Includes interest income calculations and growth rate analysis
+   - Parameters: ticker, years, include_project_breakdown, include_assumptions
+
+3. **analyze_balance_sheet_changes** - Detailed BS movement analysis
+   - Track inventory, debt, prepayment, and cash changes by project
+   - Shows both project-level and consolidated changes
+   - Parameters: ticker, year, change_type (inventory/debt/prepayment/cash/all)
+
+4. **get_project_details** - Enhanced with MongoDB RealEstateProjects
+   - Access complete project information including AI assumptions
+   - Parameters: project_names, ticker, include_financials, include_assumptions
+   - Fallback to CSV if MongoDB unavailable
+
+5. **get_project_cash_flow_breakdown** - Project-level cash flow analysis
+   - Detailed presales, cash collection, and operating CF by project
+   - Includes cash conversion rates and consolidated comparison
+   - Parameters: ticker, year, project_names
+
+6. **analyze_financial_trends** - Enhanced with quarterly support
+   - Calculate YoY, QoQ, TTM (trailing twelve months), and CAGR
+   - Support for both annual and quarterly data frequencies
+   - Parameters: ticker, metrics, period_type, data_frequency
+
+7. **create_financial_chart** - Interactive Plotly visualizations
+   - Chart types: line, bar, waterfall, scatter, area, combo
+   - Auto-detects data structure from other tools
+   - Parameters: chart_type, data, title, x_axis, y_axis, options
+   - Automatically displays in Streamlit context
+
+### Data Sources:
+- Historical Financial Data: FA_A_processed.parquet (annual), FA_processed.parquet (quarterly)
+- Forecast Data: MongoDB CompanyForecast collection
+- Project Details: MongoDB RealEstateProjects collection
+- Market Data: MongoDB MoC collections
+- Valuation Metrics: Val_processed.csv
+
+### Key Features:
+- Automatic fallback to CSV when MongoDB unavailable
+- Smart data caching for performance
+- Comprehensive error handling
+- Support for complex financial calculations (interest income, RNAV, cash flows)
+- Integration with AI services (Perplexity, OpenAI/Anthropic)
 """
 
 import pandas as pd
@@ -18,6 +77,8 @@ import streamlit as st
 from pymongo import MongoClient
 import anthropic
 from openai import OpenAI
+import plotly.graph_objects as go
+import plotly.express as px
 
 # Import utilities
 from .mongodb_utils import (
@@ -84,7 +145,7 @@ class EnhancedAIToolSystem:
     
     @lru_cache(maxsize=1)
     def _load_financial_statements_csv(self):
-        """Load financial statements from parquet"""
+        """Load annual financial statements from parquet"""
         if 'financial_csv' not in self.data:
             fa_path = self.data_dir / 'FA_A_processed.parquet'
             if fa_path.exists():
@@ -93,6 +154,18 @@ class EnhancedAIToolSystem:
             else:
                 return pd.DataFrame()
         return self.data.get('financial_csv', pd.DataFrame())
+    
+    @lru_cache(maxsize=1)
+    def _load_quarterly_financial_statements(self):
+        """Load quarterly financial statements from parquet"""
+        if 'quarterly_csv' not in self.data:
+            fa_path = self.data_dir / 'FA_processed.parquet'
+            if fa_path.exists():
+                self.data['quarterly_csv'] = pd.read_parquet(fa_path)
+                self._data_loaded['quarterly_csv'] = True
+            else:
+                return pd.DataFrame()
+        return self.data.get('quarterly_csv', pd.DataFrame())
     
     @lru_cache(maxsize=1)
     def _load_valuation_csv(self):
@@ -176,16 +249,18 @@ class EnhancedAIToolSystem:
         """Register all available tools"""
         self._register_financial_tools()
         self._register_real_estate_tools()
+        self._register_forecast_analysis_tools()
         self._register_market_tools()
         self._register_portfolio_tools()
         self._register_ai_tools()
+        self._register_visualization_tools()
     
     def _register_financial_tools(self):
         """Register company financial analysis tools"""
         
         @self.tool(
             name="get_historical_financials",
-            description="Get historical financial statements from CSV data (2016-2024)",
+            description="Get historical financial statements from parquet data (2016-2024, quarterly and annual)",
             parameters={
                 "tickers": {
                     "type": "array",
@@ -204,18 +279,56 @@ class EnhancedAIToolSystem:
                     "items": {"type": "integer"},
                     "description": "Historical years to retrieve (2016-2024)",
                     "required": False
+                },
+                "period_type": {
+                    "type": "string",
+                    "enum": ["annual", "quarterly", "both"],
+                    "description": "Period type: 'annual' for yearly data, 'quarterly' for quarterly data, 'both' for all",
+                    "required": False
+                },
+                "quarters": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Specific quarters (e.g., ['2024Q1', '2024Q2', '2024Q3'])",
+                    "required": False
                 }
             }
         )
         def get_historical_financials(tickers: List[str], metrics: List[str] = None, 
-                                     years: List[int] = None) -> Dict:
-            """Get historical financial statements from CSV data only"""
+                                     years: List[int] = None, period_type: str = "annual",
+                                     quarters: List[str] = None) -> Dict:
+            """Get historical financial statements from CSV data (annual or quarterly)"""
             
             # Normalize tickers
             tickers = [t.upper() for t in tickers]
             
-            # Load CSV data
-            df = self._load_financial_statements_csv()
+            # Load appropriate data based on period_type
+            if period_type == "quarterly" or quarters:
+                # Load quarterly data
+                df = self._load_quarterly_financial_statements()
+                data_type = "quarterly"
+            elif period_type == "both":
+                # Load both annual and quarterly data
+                df_annual = self._load_financial_statements_csv()
+                df_quarterly = self._load_quarterly_financial_statements()
+                
+                # Combine both datasets
+                if not df_annual.empty and not df_quarterly.empty:
+                    # Add period type column for clarity
+                    df_annual['PERIOD'] = 'Annual'
+                    df_quarterly['PERIOD'] = 'Quarterly'
+                    df = pd.concat([df_annual, df_quarterly], ignore_index=True)
+                    data_type = "both"
+                elif not df_annual.empty:
+                    df = df_annual
+                    data_type = "annual"
+                else:
+                    df = df_quarterly
+                    data_type = "quarterly"
+            else:
+                # Default to annual data
+                df = self._load_financial_statements_csv()
+                data_type = "annual"
             
             if df.empty:
                 return {"error": "Historical financial data not available", "status": "failed"}
@@ -229,9 +342,30 @@ class EnhancedAIToolSystem:
                     "status": "failed"
                 }
             
-            # Filter by years if specified
-            if years:
-                df = df[df['DATE'].isin(years)]
+            # Filter by years if specified (for annual data)
+            if years and data_type in ["annual", "both"]:
+                if data_type == "annual":
+                    df = df[df['DATE'].isin(years)]
+                else:
+                    # For combined data, filter annual records by years
+                    mask = (df['PERIOD'] == 'Quarterly') | (df['DATE'].isin(years))
+                    df = df[mask]
+            
+            # Filter by quarters if specified (for quarterly data)
+            if quarters and data_type in ["quarterly", "both"]:
+                if data_type == "quarterly":
+                    df = df[df['DATE'].isin(quarters)]
+                else:
+                    # For combined data, filter quarterly records by quarters
+                    mask = (df['PERIOD'] == 'Annual') | (df['DATE'].isin(quarters))
+                    df = df[mask]
+            
+            # Filter by year from quarters (e.g., get all quarters for specific years)
+            if years and data_type == "quarterly" and not quarters:
+                # Extract year from quarterly DATE (e.g., '2024Q1' -> 2024)
+                df['YEAR_NUM'] = df['DATE'].str[:4].astype(int)
+                df = df[df['YEAR_NUM'].isin(years)]
+                df = df.drop('YEAR_NUM', axis=1)
             
             # Filter by metrics if specified
             if metrics:
@@ -245,7 +379,13 @@ class EnhancedAIToolSystem:
                     'gross_margin': 'Gross_Margin',
                     'operating_cash_flow': 'Opt_CF',
                     'ebitda_margin': 'EBITDA_Margin',
-                    'npat_margin': 'NPAT_Margin'
+                    'npat_margin': 'NPAT_Margin',
+                    'total_assets': 'Total_Assets',
+                    'total_debt': 'Total_Debt',
+                    'equity': 'Equity',
+                    'cogs': 'COGS',
+                    'sga': 'SGA',
+                    'interest_expense': 'Interest_Expense'
                 }
                 
                 mapped_metrics = []
@@ -257,8 +397,13 @@ class EnhancedAIToolSystem:
             
             # Pivot data for better readability
             if not df.empty and len(df['KEYCODE'].unique()) > 1:
+                # Determine index columns based on data type
+                index_cols = ['TICKER', 'DATE']
+                if 'PERIOD' in df.columns:
+                    index_cols.append('PERIOD')
+                
                 pivot_df = df.pivot_table(
-                    index=['TICKER', 'DATE'],
+                    index=index_cols,
                     columns='KEYCODE',
                     values='VALUE',
                     aggfunc='first'
@@ -266,17 +411,19 @@ class EnhancedAIToolSystem:
                 
                 return {
                     "data": pivot_df.to_dict('records'),
-                    "source": "historical_csv",
+                    "source": f"historical_{data_type}",
                     "records": len(pivot_df),
-                    "years_range": f"{df['DATE'].min()}-{df['DATE'].max()}",
+                    "period_type": data_type,
+                    "date_range": f"{df['DATE'].min()}-{df['DATE'].max()}",
                     "status": "success"
                 }
             else:
                 return {
                     "data": df.to_dict('records'),
-                    "source": "historical_csv",
+                    "source": f"historical_{data_type}",
                     "records": len(df),
-                    "years_range": f"{df['DATE'].min()}-{df['DATE'].max()}" if not df.empty else "N/A",
+                    "period_type": data_type,
+                    "date_range": f"{df['DATE'].min()}-{df['DATE'].max()}" if not df.empty else "N/A",
                     "status": "success"
                 }
         
@@ -349,7 +496,7 @@ class EnhancedAIToolSystem:
         
         @self.tool(
             name="analyze_financial_trends",
-            description="Analyze financial trends and calculate growth rates",
+            description="Analyze financial trends and calculate growth rates (annual and quarterly)",
             parameters={
                 "ticker": {
                     "type": "string",
@@ -364,30 +511,43 @@ class EnhancedAIToolSystem:
                 },
                 "period_type": {
                     "type": "string",
-                    "enum": ["yoy", "cagr", "qoq"],
-                    "description": "Type of growth calculation",
+                    "enum": ["yoy", "cagr", "qoq", "ttm"],
+                    "description": "Type of growth calculation (yoy=year-over-year, qoq=quarter-over-quarter, ttm=trailing twelve months)",
+                    "required": False
+                },
+                "data_frequency": {
+                    "type": "string",
+                    "enum": ["annual", "quarterly"],
+                    "description": "Use annual or quarterly data",
                     "required": False
                 }
             }
         )
         def analyze_financial_trends(ticker: str, metrics: List[str] = None,
-                                    period_type: str = "yoy") -> Dict:
-            """Analyze financial trends"""
+                                    period_type: str = "yoy", 
+                                    data_frequency: str = "annual") -> Dict:
+            """Analyze financial trends with support for quarterly data"""
             
             ticker = ticker.upper()
             
-            # Load financial data
-            df = self._load_financial_statements_csv()
+            # Load appropriate data based on frequency
+            if data_frequency == "quarterly":
+                df = self._load_quarterly_financial_statements()
+            else:
+                df = self._load_financial_statements_csv()
             
             if df.empty:
-                return {"error": "Financial data not available", "status": "failed"}
+                return {"error": f"{data_frequency.capitalize()} financial data not available", "status": "failed"}
             
             # Filter by ticker
             df = df[df['TICKER'] == ticker]
             
+            if df.empty:
+                return {"error": f"No data found for {ticker}", "status": "failed"}
+            
             # Default metrics if not specified
             if not metrics:
-                metrics = ['Net_Revenue', 'EBITDA', 'NPATMI']
+                metrics = ['Net_Revenue', 'EBITDA', 'NPATMI', 'Gross_Profit']
             
             trends = {}
             
@@ -395,31 +555,90 @@ class EnhancedAIToolSystem:
                 metric_df = df[df['KEYCODE'] == metric].sort_values('DATE')
                 
                 if not metric_df.empty:
-                    values = metric_df[['DATE', 'VALUE', 'YoY']].to_dict('records')
-                    
-                    # Calculate CAGR if requested
-                    if period_type == "cagr" and len(values) > 1:
-                        first_val = values[0]['VALUE']
-                        last_val = values[-1]['VALUE']
-                        n_years = values[-1]['DATE'] - values[0]['DATE']
+                    if data_frequency == "quarterly":
+                        # Handle quarterly data
+                        values = []
+                        for _, row in metric_df.iterrows():
+                            date_str = row['DATE']
+                            value = row['VALUE']
+                            
+                            # Calculate QoQ if requested
+                            qoq_growth = None
+                            if period_type == "qoq" and len(values) > 0:
+                                prev_value = values[-1]['VALUE']
+                                if prev_value != 0:
+                                    qoq_growth = ((value - prev_value) / abs(prev_value)) * 100
+                            
+                            # Calculate YoY for quarterly data
+                            yoy_growth = None
+                            if period_type in ["yoy", "ttm"]:
+                                # Find same quarter last year
+                                year = int(date_str[:4])
+                                quarter = date_str[4:]
+                                prev_year_date = f"{year-1}{quarter}"
+                                prev_year_row = metric_df[metric_df['DATE'] == prev_year_date]
+                                if not prev_year_row.empty:
+                                    prev_value = prev_year_row.iloc[0]['VALUE']
+                                    if prev_value != 0:
+                                        yoy_growth = ((value - prev_value) / abs(prev_value)) * 100
+                            
+                            values.append({
+                                'DATE': date_str,
+                                'VALUE': value,
+                                'YoY': yoy_growth,
+                                'QoQ': qoq_growth
+                            })
                         
-                        if first_val > 0 and n_years > 0:
-                            cagr = (pow(last_val / first_val, 1/n_years) - 1) * 100
+                        # Calculate TTM if requested
+                        if period_type == "ttm" and len(values) >= 4:
+                            ttm_values = []
+                            for i in range(3, len(values)):
+                                ttm_sum = sum(values[j]['VALUE'] for j in range(i-3, i+1))
+                                ttm_values.append({
+                                    'DATE': values[i]['DATE'],
+                                    'TTM_VALUE': ttm_sum,
+                                    'TTM_YoY': values[i].get('YoY')
+                                })
+                            
                             trends[metric] = {
-                                "values": values,
-                                "cagr": round(cagr, 2),
-                                "period": f"{values[0]['DATE']}-{values[-1]['DATE']}"
+                                "values": values[-8:],  # Last 2 years of quarterly data
+                                "ttm_values": ttm_values[-4:],  # Last year of TTM
+                                "latest_ttm": ttm_values[-1]['TTM_VALUE'] if ttm_values else None
+                            }
+                        else:
+                            trends[metric] = {
+                                "values": values[-8:],  # Last 2 years of quarterly data
+                                "latest_qoq": values[-1].get('QoQ') if values else None,
+                                "latest_yoy": values[-1].get('YoY') if values else None
                             }
                     else:
-                        trends[metric] = {
-                            "values": values,
-                            "latest_yoy": values[-1].get('YoY') if values else None
-                        }
+                        # Handle annual data (existing logic)
+                        values = metric_df[['DATE', 'VALUE', 'YoY']].to_dict('records')
+                        
+                        # Calculate CAGR if requested
+                        if period_type == "cagr" and len(values) > 1:
+                            first_val = values[0]['VALUE']
+                            last_val = values[-1]['VALUE']
+                            n_years = values[-1]['DATE'] - values[0]['DATE']
+                            
+                            if first_val > 0 and n_years > 0:
+                                cagr = (pow(last_val / first_val, 1/n_years) - 1) * 100
+                                trends[metric] = {
+                                    "values": values,
+                                    "cagr": round(cagr, 2),
+                                    "period": f"{values[0]['DATE']}-{values[-1]['DATE']}"
+                                }
+                        else:
+                            trends[metric] = {
+                                "values": values,
+                                "latest_yoy": values[-1].get('YoY') if values else None
+                            }
             
             return {
                 "ticker": ticker,
                 "trends": trends,
                 "period_type": period_type,
+                "data_frequency": data_frequency,
                 "status": "success"
             }
         
@@ -501,7 +720,7 @@ class EnhancedAIToolSystem:
         
         @self.tool(
             name="get_financial_forecasts",
-            description="Get financial forecast data from MongoDB CompanyForecast (2025-2030+)",
+            description="Get financial forecast data from MongoDB CompanyForecast (2025-2030+). ALL VALUES ARE IN BILLIONS VND",
             parameters={
                 "ticker": {
                     "type": "string",
@@ -686,53 +905,158 @@ class EnhancedAIToolSystem:
         
         @self.tool(
             name="get_project_details",
-            description="Get detailed information about specific projects",
+            description="Get detailed information about specific projects from MongoDB RealEstateProjects collection",
             parameters={
                 "project_names": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Project names to retrieve",
-                    "required": True
+                    "required": False
+                },
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker to filter projects",
+                    "required": False
                 },
                 "include_financials": {
                     "type": "boolean",
-                    "description": "Include financial projections",
+                    "description": "Include detailed financial projections and schedules",
+                    "required": False
+                },
+                "include_assumptions": {
+                    "type": "boolean",
+                    "description": "Include AI-generated assumptions",
                     "required": False
                 }
             }
         )
-        def get_project_details(project_names: List[str], include_financials: bool = True) -> Dict:
-            """Get detailed project information"""
+        def get_project_details(project_names: List[str] = None, ticker: str = None,
+                              include_financials: bool = True, 
+                              include_assumptions: bool = False) -> Dict:
+            """Get detailed project information from MongoDB RealEstateProjects collection"""
             
+            # Try MongoDB first
+            if self.vietnam_stocks_db is not None:
+                try:
+                    collection = self.vietnam_stocks_db['RealEstateProjects']
+                    
+                    # Build query
+                    query = {}
+                    if project_names:
+                        # Case-insensitive search
+                        query['project_name'] = {
+                            "$in": [{"$regex": f"^{name}$", "$options": "i"} for name in project_names]
+                        }
+                    if ticker:
+                        query['company_ticker'] = ticker.upper()
+                    
+                    # Retrieve projects
+                    projects = list(collection.find(query, {'_id': 0}))
+                    
+                    if not projects:
+                        # Fallback to CSV
+                        df = self._load_real_estate_projects()
+                        if not df.empty:
+                            if project_names:
+                                mask = df['project_name'].str.lower().isin([p.lower() for p in project_names])
+                                df = df[mask]
+                            if ticker:
+                                df = df[df['company_ticker'] == ticker.upper()]
+                            
+                            if not df.empty:
+                                return {
+                                    "projects": df.to_dict('records'),
+                                    "count": len(df),
+                                    "source": "csv_fallback",
+                                    "status": "success"
+                                }
+                        
+                        return {"error": f"No projects found", "status": "failed"}
+                    
+                    # Process retrieved projects
+                    result_projects = []
+                    for project in projects:
+                        project_data = {
+                            "project_name": project.get('project_name'),
+                            "company_ticker": project.get('company_ticker'),
+                            "location": project.get('location'),
+                            "total_units": project.get('total_units'),
+                            "net_sellable_area": project.get('net_sellable_area'),
+                            "average_selling_price": project.get('average_selling_price'),
+                            "construction_start_year": project.get('construction_start_year'),
+                            "project_completion_year": project.get('project_completion_year'),
+                            "project_type": project.get('project_type'),
+                            "ownership_percentage": project.get('ownership_percentage', 100),
+                            "land_cost_per_sqm": project.get('land_cost_per_sqm'),
+                            "construction_cost_per_sqm": project.get('construction_cost_per_sqm'),
+                            "last_updated": project.get('last_updated')
+                        }
+                        
+                        # Add financial details if requested
+                        if include_financials:
+                            project_data.update({
+                                "presales_distribution": project.get('presales_distribution', {}),
+                                "revenue_distribution": project.get('revenue_distribution', {}),
+                                "cash_collection_schedule": project.get('cash_collection_schedule', {}),
+                                "construction_schedule": project.get('construction_schedule', {}),
+                                "total_revenue": project.get('total_revenue'),
+                                "total_cogs": project.get('total_cogs'),
+                                "gross_margin": project.get('gross_margin'),
+                                "rnav_value": project.get('rnav_value'),
+                                "npv": project.get('npv'),
+                                "irr": project.get('irr')
+                            })
+                        
+                        # Add AI assumptions if requested
+                        if include_assumptions:
+                            project_data["ai_assumptions"] = project.get('ai_assumptions', {})
+                        
+                        result_projects.append(project_data)
+                    
+                    return {
+                        "projects": result_projects,
+                        "count": len(result_projects),
+                        "source": "RealEstateProjects",
+                        "include_financials": include_financials,
+                        "include_assumptions": include_assumptions,
+                        "status": "success"
+                    }
+                    
+                except Exception as e:
+                    # Fallback to CSV on error
+                    pass
+            
+            # Fallback to CSV
             df = self._load_real_estate_projects()
             
             if df.empty:
                 return {"error": "No projects data available", "status": "failed"}
             
-            # Filter projects (case-insensitive)
-            mask = df['project_name'].str.lower().isin([p.lower() for p in project_names])
-            projects_df = df[mask]
+            # Filter projects
+            if project_names:
+                mask = df['project_name'].str.lower().isin([p.lower() for p in project_names])
+                df = df[mask]
+            if ticker:
+                df = df[df['company_ticker'] == ticker.upper()]
             
-            if projects_df.empty:
-                return {"error": f"Projects not found: {project_names}", "status": "failed"}
+            if df.empty:
+                return {"error": f"Projects not found", "status": "failed"}
             
             # Select columns based on request
             if include_financials:
-                # Include all financial columns
-                cols = projects_df.columns.tolist()
+                cols = df.columns.tolist()
             else:
-                # Basic info only (including RNAV)
                 cols = ['project_name', 'company_ticker', 'location', 'total_units',
                        'net_sellable_area', 'average_selling_price', 'rnav_value',
                        'construction_start_year', 'project_completion_year']
-                # Filter cols to only include those that exist
-                cols = [c for c in cols if c in projects_df.columns]
+                cols = [c for c in cols if c in df.columns]
             
-            projects_data = projects_df[cols].to_dict('records')
+            projects_data = df[cols].to_dict('records')
             
             return {
                 "projects": projects_data,
                 "count": len(projects_data),
+                "source": "csv",
                 "include_financials": include_financials,
                 "status": "success"
             }
@@ -1342,13 +1666,418 @@ class EnhancedAIToolSystem:
                 
             except Exception as e:
                 return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
+            name="get_comprehensive_forecast_details",
+            description="Get comprehensive forecast data including all financial statements, project details, and interest income calculations. ALL VALUES ARE IN BILLIONS VND",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "years": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Forecast years to retrieve (2025-2030)",
+                    "required": False
+                },
+                "include_project_breakdown": {
+                    "type": "boolean",
+                    "description": "Include detailed project-level breakdown",
+                    "required": False
+                },
+                "include_assumptions": {
+                    "type": "boolean",
+                    "description": "Include all forecast assumptions",
+                    "required": False
+                }
+            }
+        )
+        def get_comprehensive_forecast_details(ticker: str, years: List[int] = None, 
+                                              include_project_breakdown: bool = True,
+                                              include_assumptions: bool = True) -> Dict:
+            """Get comprehensive forecast details from MongoDB CompanyForecast collection"""
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            ticker = ticker.upper()
+            
+            try:
+                collection = self.vietnam_stocks_db['CompanyForecast']
+                
+                # Get forecast document
+                doc = collection.find_one({'ticker': ticker}, {'_id': 0})
+                
+                if not doc:
+                    return {"error": f"No forecast data found for {ticker}", "status": "failed"}
+                
+                # Filter years if specified
+                if years:
+                    years_str = [str(y) for y in years]
+                else:
+                    # Get all available years
+                    years_str = list(doc.get('forecast_data', {}).keys())
+                
+                result = {
+                    "ticker": ticker,
+                    "company_name": doc.get('company_name', ticker),
+                    "last_updated": doc.get('last_updated', 'N/A'),
+                    "years": years_str
+                }
+                
+                # Add assumptions if requested
+                if include_assumptions:
+                    result['assumptions'] = doc.get('assumptions', {})
+                
+                # Process each year's data
+                forecast_data = {}
+                for year in years_str:
+                    if year not in doc.get('forecast_data', {}):
+                        continue
+                    
+                    year_data = doc['forecast_data'][year]
+                    
+                    # Get P&L data (stored as 'pnl' not 'consolidated_pnl')
+                    pnl_data = year_data.get('pnl', year_data.get('consolidated_pnl', {}))
+                    
+                    # Get balance sheet data
+                    bs_data = year_data.get('balance_sheet', year_data.get('consolidated_balance_sheet', {}))
+                    
+                    # Get cash flow data
+                    cf_data = year_data.get('cash_flow', year_data.get('consolidated_cash_flow', {}))
+                    
+                    # Comprehensive financial statements
+                    forecast_data[year] = {
+                        'consolidated_pnl': pnl_data,
+                        'consolidated_balance_sheet': bs_data,
+                        'consolidated_cash_flow': cf_data,
+                        'interest_income': pnl_data.get('interest_income', 0),
+                        'key_metrics': {
+                            'revenue': pnl_data.get('net_revenue', pnl_data.get('revenue', 0)),
+                            'gross_profit': pnl_data.get('gross_profit', 0),
+                            'ebitda': pnl_data.get('ebitda', 0),
+                            'npat': pnl_data.get('pat', pnl_data.get('npat', 0)),
+                            'npatmi': pnl_data.get('npatmi', 0),
+                            'total_assets': bs_data.get('total_assets', bs_data.get('assets', {}).get('total_assets', 0)),
+                            'total_equity': bs_data.get('total_equity', bs_data.get('equity', {}).get('total_equity', 0)),
+                            'total_debt': bs_data.get('total_debt', bs_data.get('liabilities', {}).get('total_debt', 0)),
+                            'cash_balance': bs_data.get('cash', bs_data.get('assets', {}).get('cash', 0)),
+                            'operating_cash_flow': cf_data.get('operating_cash_flow', cf_data.get('operating_activities', {}).get('total', 0))
+                        },
+                        'units': 'billion_vnd'  # Clarify units
+                    }
+                    
+                    # Add project breakdown if requested
+                    if include_project_breakdown and 'project_breakdown' in year_data:
+                        project_breakdown = year_data['project_breakdown']
+                        
+                        # Summarize project data
+                        project_summary = {}
+                        for project_name, project_data in project_breakdown.items():
+                            project_summary[project_name] = {
+                                'revenue': project_data.get('revenue', 0),
+                                'cogs': project_data.get('cogs', 0),
+                                'gross_profit': project_data.get('gross_profit', 0),
+                                'inventory_change': project_data.get('inventory_change', 0),
+                                'debt_change': project_data.get('debt_change', 0),
+                                'prepayment_change': project_data.get('prepayment_change', 0),
+                                'cash_change': project_data.get('cash_change', 0),
+                                'presales': project_data.get('presales', 0),
+                                'cash_collection': project_data.get('cash_collection', 0)
+                            }
+                        
+                        forecast_data[year]['project_breakdown'] = project_summary
+                
+                result['forecast_data'] = forecast_data
+                
+                # Calculate growth rates
+                if len(years_str) > 1:
+                    growth_rates = {}
+                    sorted_years = sorted(years_str)
+                    for i in range(1, len(sorted_years)):
+                        prev_year = sorted_years[i-1]
+                        curr_year = sorted_years[i]
+                        
+                        prev_revenue = forecast_data.get(prev_year, {}).get('key_metrics', {}).get('revenue', 0)
+                        curr_revenue = forecast_data.get(curr_year, {}).get('key_metrics', {}).get('revenue', 0)
+                        
+                        if prev_revenue > 0:
+                            growth_rates[f"{prev_year}-{curr_year}"] = {
+                                'revenue_growth': ((curr_revenue - prev_revenue) / prev_revenue) * 100,
+                                'npat_growth': self._calculate_growth(
+                                    forecast_data.get(prev_year, {}).get('key_metrics', {}).get('npat', 0),
+                                    forecast_data.get(curr_year, {}).get('key_metrics', {}).get('npat', 0)
+                                )
+                            }
+                    
+                    result['growth_rates'] = growth_rates
+                
+                return {
+                    "data": result,
+                    "source": "CompanyForecast",
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+    
+    def _calculate_growth(self, prev_value: float, curr_value: float) -> float:
+        """Helper to calculate growth rate"""
+        if prev_value == 0:
+            return 0 if curr_value == 0 else 100
+        return ((curr_value - prev_value) / abs(prev_value)) * 100
+    
+    def _register_forecast_analysis_tools(self):
+        """Register additional forecast analysis tools"""
+        
+        @self.tool(
+            name="analyze_balance_sheet_changes",
+            description="Analyze balance sheet changes including inventory, debt, prepayment, and cash movements by project. ALL VALUES ARE IN BILLIONS VND",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "year": {
+                    "type": "integer",
+                    "description": "Year to analyze (2025-2030)",
+                    "required": True
+                },
+                "change_type": {
+                    "type": "string",
+                    "enum": ["inventory", "debt", "prepayment", "cash", "all"],
+                    "description": "Type of change to analyze",
+                    "required": False
+                }
+            }
+        )
+        def analyze_balance_sheet_changes(ticker: str, year: int, change_type: str = "all") -> Dict:
+            """Analyze balance sheet changes from CompanyForecast collection"""
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            ticker = ticker.upper()
+            year_str = str(year)
+            
+            try:
+                collection = self.vietnam_stocks_db['CompanyForecast']
+                
+                # Get forecast document
+                doc = collection.find_one({'ticker': ticker}, {'_id': 0})
+                
+                if not doc or year_str not in doc.get('forecast_data', {}):
+                    return {"error": f"No forecast data found for {ticker} in {year}", "status": "failed"}
+                
+                year_data = doc['forecast_data'][year_str]
+                project_breakdown = year_data.get('project_breakdown', {})
+                
+                if not project_breakdown:
+                    return {"error": f"No project breakdown available for {ticker} in {year}", "status": "failed"}
+                
+                # Analyze changes
+                result = {
+                    "ticker": ticker,
+                    "year": year,
+                    "changes": {}
+                }
+                
+                # Define change types to analyze
+                if change_type == "all":
+                    change_types = ["inventory", "debt", "prepayment", "cash"]
+                else:
+                    change_types = [change_type]
+                
+                for change in change_types:
+                    change_key = f"{change}_change"
+                    project_changes = {}
+                    total_change = 0
+                    
+                    for project_name, project_data in project_breakdown.items():
+                        change_value = project_data.get(change_key, 0)
+                        if change_value != 0:  # Only include non-zero changes
+                            project_changes[project_name] = {
+                                "value": change_value,
+                                "direction": "increase" if change_value > 0 else "decrease",
+                                "percentage_of_total": 0  # Will calculate after totaling
+                            }
+                            total_change += change_value
+                    
+                    # Calculate percentages
+                    if total_change != 0:
+                        for project in project_changes:
+                            project_changes[project]["percentage_of_total"] = \
+                                (project_changes[project]["value"] / abs(total_change)) * 100
+                    
+                    result["changes"][change] = {
+                        "total_change": total_change,
+                        "project_breakdown": project_changes,
+                        "num_projects": len(project_changes),
+                        "largest_contributor": max(project_changes.items(), 
+                                                  key=lambda x: abs(x[1]["value"]))[0] if project_changes else None
+                    }
+                
+                # Add consolidated balance sheet changes
+                consolidated_bs = year_data.get('consolidated_balance_sheet', {})
+                result["consolidated_changes"] = {
+                    "total_assets": consolidated_bs.get('assets', {}).get('total_assets', 0),
+                    "total_liabilities": consolidated_bs.get('liabilities', {}).get('total_liabilities', 0),
+                    "total_equity": consolidated_bs.get('equity', {}).get('total_equity', 0),
+                    "cash": consolidated_bs.get('assets', {}).get('cash', 0),
+                    "inventory": consolidated_bs.get('assets', {}).get('inventory', 0),
+                    "total_debt": consolidated_bs.get('liabilities', {}).get('total_debt', 0),
+                    "customer_prepayment": consolidated_bs.get('liabilities', {}).get('customer_prepayment', 0)
+                }
+                
+                return {
+                    "data": result,
+                    "source": "CompanyForecast",
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
+            name="get_project_cash_flow_breakdown",
+            description="Get detailed cash flow breakdown by project including presales, cash collection, and operating cash flow. ALL VALUES ARE IN BILLIONS VND",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "year": {
+                    "type": "integer",
+                    "description": "Year to analyze (2025-2030)",
+                    "required": True
+                },
+                "project_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Specific projects to analyze (optional)",
+                    "required": False
+                }
+            }
+        )
+        def get_project_cash_flow_breakdown(ticker: str, year: int, 
+                                           project_names: List[str] = None) -> Dict:
+            """Get detailed project cash flow breakdown from CompanyForecast"""
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            ticker = ticker.upper()
+            year_str = str(year)
+            
+            try:
+                collection = self.vietnam_stocks_db['CompanyForecast']
+                
+                # Get forecast document
+                doc = collection.find_one({'ticker': ticker}, {'_id': 0})
+                
+                if not doc or year_str not in doc.get('forecast_data', {}):
+                    return {"error": f"No forecast data found for {ticker} in {year}", "status": "failed"}
+                
+                year_data = doc['forecast_data'][year_str]
+                project_breakdown = year_data.get('project_breakdown', {})
+                
+                if not project_breakdown:
+                    return {"error": f"No project breakdown available for {ticker} in {year}", "status": "failed"}
+                
+                # Filter projects if specified
+                if project_names:
+                    project_breakdown = {
+                        name: data for name, data in project_breakdown.items()
+                        if name in project_names
+                    }
+                
+                # Analyze cash flows by project
+                result = {
+                    "ticker": ticker,
+                    "year": year,
+                    "projects": {}
+                }
+                
+                total_presales = 0
+                total_cash_collection = 0
+                total_operating_cf = 0
+                
+                for project_name, project_data in project_breakdown.items():
+                    # Extract cash flow components
+                    presales = project_data.get('presales', 0)
+                    cash_collection = project_data.get('cash_collection', 0)
+                    revenue = project_data.get('revenue', 0)
+                    cogs = project_data.get('cogs', 0)
+                    
+                    # Calculate operating cash flow components
+                    inventory_change = project_data.get('inventory_change', 0)
+                    prepayment_change = project_data.get('prepayment_change', 0)
+                    debt_change = project_data.get('debt_change', 0)
+                    
+                    # Operating CF = Cash collection - COGS paid
+                    # Note: This is simplified; actual may include other working capital changes
+                    operating_cf = cash_collection - (cogs - inventory_change)
+                    
+                    project_cf = {
+                        "presales": presales,
+                        "cash_collection": cash_collection,
+                        "revenue_recognized": revenue,
+                        "cogs": cogs,
+                        "gross_profit": revenue - cogs if revenue > 0 else 0,
+                        "inventory_change": inventory_change,
+                        "prepayment_change": prepayment_change,
+                        "debt_change": debt_change,
+                        "operating_cash_flow": operating_cf,
+                        "cash_conversion_rate": (cash_collection / revenue * 100) if revenue > 0 else 0
+                    }
+                    
+                    result["projects"][project_name] = project_cf
+                    
+                    # Add to totals
+                    total_presales += presales
+                    total_cash_collection += cash_collection
+                    total_operating_cf += operating_cf
+                
+                # Add summary
+                result["summary"] = {
+                    "total_presales": total_presales,
+                    "total_cash_collection": total_cash_collection,
+                    "total_operating_cash_flow": total_operating_cf,
+                    "num_projects": len(result["projects"]),
+                    "average_cash_conversion": (total_cash_collection / sum(
+                        p["revenue_recognized"] for p in result["projects"].values()
+                    ) * 100) if sum(p["revenue_recognized"] for p in result["projects"].values()) > 0 else 0
+                }
+                
+                # Add consolidated cash flow for comparison
+                consolidated_cf = year_data.get('consolidated_cash_flow', {})
+                if consolidated_cf:
+                    result["consolidated_comparison"] = {
+                        "operating_activities_total": consolidated_cf.get('operating_activities', {}).get('total', 0),
+                        "investing_activities_total": consolidated_cf.get('investing_activities', {}).get('total', 0),
+                        "financing_activities_total": consolidated_cf.get('financing_activities', {}).get('total', 0),
+                        "net_cash_flow": consolidated_cf.get('net_cash_flow', 0)
+                    }
+                
+                return {
+                    "data": result,
+                    "source": "CompanyForecast",
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
     
     def _register_market_tools(self):
         """Register market analysis tools (MoC data)"""
         
         @self.tool(
             name="get_transaction_volumes",
-            description="Get real estate transaction volumes from MoC data",
+            description="Get real estate transaction volumes from MoC data (quarterly)",
             parameters={
                 "metric_type": {
                     "type": "string",
@@ -1359,13 +2088,25 @@ class EnhancedAIToolSystem:
                 "quarters": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Quarters to retrieve (e.g., ['2024-Q1', '2024-Q2'])",
+                    "description": "Quarters to retrieve (formats: '1Q24', '2Q23' or '2024-Q1', '2023-Q2')",
+                    "required": False
+                },
+                "years": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Years to filter (e.g., [2023, 2024])",
+                    "required": False
+                },
+                "last_n_quarters": {
+                    "type": "integer",
+                    "description": "Get last N quarters of data",
                     "required": False
                 }
             }
         )
-        def get_transaction_volumes(metric_type: str = None, quarters: List[str] = None) -> Dict:
-            """Get transaction volume data"""
+        def get_transaction_volumes(metric_type: str = None, quarters: List[str] = None,
+                                   years: List[int] = None, last_n_quarters: int = None) -> Dict:
+            """Get transaction volume data with enhanced quarterly extraction"""
             
             if self.moc_db is None:
                 # Fallback to CSV
@@ -1385,26 +2126,102 @@ class EnhancedAIToolSystem:
             query = {}
             if metric_type:
                 query['metric_type'] = metric_type
+            
+            # Handle different quarter formats
             if quarters:
-                query['quarter'] = {"$in": quarters}
+                # Convert formats like '2024-Q1' to '1Q24'
+                converted_quarters = []
+                for q in quarters:
+                    if '-Q' in q:
+                        # Format: 2024-Q1 -> 1Q24
+                        year, quarter = q.split('-Q')
+                        converted_q = f"{quarter}Q{year[-2:]}"
+                        converted_quarters.append(converted_q)
+                    else:
+                        # Already in format like 1Q24
+                        converted_quarters.append(q)
+                query['quarter'] = {"$in": converted_quarters}
+            
+            # Filter by years if specified
+            if years:
+                query['year'] = {"$in": years}
+            
+            # Get all data first for last_n_quarters processing
+            if last_n_quarters:
+                # Get all quarters sorted by date
+                all_quarters = collection.distinct('quarter')
+                all_quarters_sorted = sorted(all_quarters, 
+                                            key=lambda x: (int('20' + x[2:]), int(x[0])))
+                last_quarters = all_quarters_sorted[-last_n_quarters:]
+                if 'quarter' in query:
+                    # Combine with existing quarter filter
+                    existing = query['quarter'].get('$in', [])
+                    query['quarter'] = {"$in": list(set(existing + last_quarters))}
+                else:
+                    query['quarter'] = {"$in": last_quarters}
             
             # Execute query
             cursor = collection.find(query, {"_id": 0}).sort("date", 1)
             data = list(cursor)
             
-            # Calculate QoQ growth
+            # Enhance data with formatted quarter and QoQ growth
             if data:
-                for i in range(1, len(data)):
-                    if data[i-1].get('value') and data[i].get('value'):
+                for i, record in enumerate(data):
+                    # Add formatted quarter (e.g., 1Q24 -> 2024-Q1)
+                    if 'quarter' in record:
+                        q = record['quarter']
+                        quarter_num = q[0]
+                        year = '20' + q[2:]
+                        record['formatted_quarter'] = f"{year}-Q{quarter_num}"
+                    
+                    # Calculate QoQ growth
+                    if i > 0 and data[i-1].get('value') and record.get('value'):
                         prev_val = data[i-1]['value']
-                        curr_val = data[i]['value']
+                        curr_val = record['value']
                         if prev_val > 0:
-                            data[i]['qoq_growth'] = round((curr_val - prev_val) / prev_val * 100, 2)
+                            record['qoq_growth'] = round((curr_val - prev_val) / prev_val * 100, 2)
+                        else:
+                            record['qoq_growth'] = None
+                    else:
+                        record['qoq_growth'] = None
+                    
+                    # Add YoY growth if same quarter last year exists
+                    if 'quarter' in record and 'year' in record:
+                        quarter_num = record['quarter'][0]
+                        curr_year = record['year']
+                        prev_year_quarter = f"{quarter_num}Q{str(curr_year-1)[-2:]}"
+                        
+                        # Find previous year same quarter
+                        for prev_record in data:
+                            if prev_record.get('quarter') == prev_year_quarter:
+                                if prev_record.get('value') and record.get('value'):
+                                    prev_val = prev_record['value']
+                                    curr_val = record['value']
+                                    if prev_val > 0:
+                                        record['yoy_growth'] = round((curr_val - prev_val) / prev_val * 100, 2)
+                                break
+            
+            # Calculate summary statistics
+            summary = {}
+            if data:
+                values = [d['value'] for d in data if d.get('value')]
+                if values:
+                    summary = {
+                        'total_records': len(data),
+                        'min_value': min(values),
+                        'max_value': max(values),
+                        'avg_value': round(sum(values) / len(values), 2),
+                        'latest_quarter': data[-1].get('formatted_quarter', data[-1].get('quarter')),
+                        'latest_value': data[-1].get('value'),
+                        'latest_qoq': data[-1].get('qoq_growth'),
+                        'latest_yoy': data[-1].get('yoy_growth')
+                    }
             
             return {
                 "data": data,
                 "metric_type": metric_type,
-                "quarters": len(data),
+                "summary": summary,
+                "source": "MoCDB",
                 "status": "success"
             }
         
@@ -1466,18 +2283,30 @@ class EnhancedAIToolSystem:
         
         @self.tool(
             name="get_inventory_levels",
-            description="Get real estate inventory levels",
+            description="Get real estate inventory levels (quarterly data)",
             parameters={
                 "inventory_type": {
                     "type": "string",
                     "enum": ["apartment", "individual_house", "land", "total"],
                     "description": "Type of inventory",
                     "required": False
+                },
+                "quarters": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Quarters to retrieve (formats: '1Q24' or '2024-Q1')",
+                    "required": False
+                },
+                "last_n_quarters": {
+                    "type": "integer",
+                    "description": "Get last N quarters of data",
+                    "required": False
                 }
             }
         )
-        def get_inventory_levels(inventory_type: str = None) -> Dict:
-            """Get inventory level data"""
+        def get_inventory_levels(inventory_type: str = None, quarters: List[str] = None,
+                               last_n_quarters: int = None) -> Dict:
+            """Get inventory level data with enhanced quarterly extraction"""
             
             if self.moc_db is None:
                 return {"error": "MoC database not available", "status": "failed"}
@@ -1489,21 +2318,95 @@ class EnhancedAIToolSystem:
             if inventory_type:
                 query['inventory_type'] = inventory_type
             
+            # Handle different quarter formats
+            if quarters:
+                # Convert formats like '2024-Q1' to '1Q24'
+                converted_quarters = []
+                for q in quarters:
+                    if '-Q' in q:
+                        # Format: 2024-Q1 -> 1Q24
+                        year, quarter = q.split('-Q')
+                        converted_q = f"{quarter}Q{year[-2:]}"
+                        converted_quarters.append(converted_q)
+                    else:
+                        # Already in format like 1Q24
+                        converted_quarters.append(q)
+                query['quarter'] = {"$in": converted_quarters}
+            
+            # Get last N quarters if specified
+            if last_n_quarters:
+                # Get all quarters sorted by date
+                all_quarters = collection.distinct('quarter')
+                all_quarters_sorted = sorted(all_quarters, 
+                                            key=lambda x: (int('20' + x[2:]), int(x[0])))
+                last_quarters = all_quarters_sorted[-last_n_quarters:]
+                if 'quarter' in query:
+                    # Combine with existing quarter filter
+                    existing = query['quarter'].get('$in', [])
+                    query['quarter'] = {"$in": list(set(existing + last_quarters))}
+                else:
+                    query['quarter'] = {"$in": last_quarters}
+            
             # Execute query
             cursor = collection.find(query, {"_id": 0}).sort("date", 1)
             data = list(cursor)
             
-            # Get latest values
+            # Enhance data with formatted quarter and growth metrics
+            if data:
+                for i, record in enumerate(data):
+                    # Add formatted quarter
+                    if 'quarter' in record:
+                        q = record['quarter']
+                        quarter_num = q[0]
+                        year = '20' + q[2:]
+                        record['formatted_quarter'] = f"{year}-Q{quarter_num}"
+                    
+                    # Calculate QoQ change
+                    if i > 0 and data[i-1].get('value') and record.get('value'):
+                        if data[i-1].get('inventory_type') == record.get('inventory_type'):
+                            prev_val = data[i-1]['value']
+                            curr_val = record['value']
+                            record['qoq_change'] = curr_val - prev_val
+                            if prev_val > 0:
+                                record['qoq_growth'] = round((curr_val - prev_val) / prev_val * 100, 2)
+            
+            # Get latest values by type
             latest_by_type = {}
             for record in data:
                 inv_type = record.get('inventory_type')
                 if inv_type:
                     latest_by_type[inv_type] = record
             
+            # Calculate summary
+            summary = {}
+            if data:
+                # Group by inventory type for summary
+                by_type = {}
+                for record in data:
+                    inv_type = record.get('inventory_type', 'unknown')
+                    if inv_type not in by_type:
+                        by_type[inv_type] = []
+                    by_type[inv_type].append(record)
+                
+                for inv_type, records in by_type.items():
+                    values = [r['value'] for r in records if r.get('value')]
+                    if values and records:
+                        summary[inv_type] = {
+                            'latest_quarter': records[-1].get('formatted_quarter', records[-1].get('quarter')),
+                            'latest_value': records[-1].get('value'),
+                            'latest_qoq_change': records[-1].get('qoq_change'),
+                            'latest_qoq_growth': records[-1].get('qoq_growth'),
+                            'min_value': min(values),
+                            'max_value': max(values),
+                            'avg_value': round(sum(values) / len(values), 2)
+                        }
+            
             return {
                 "data": data,
                 "latest_by_type": latest_by_type,
+                "summary": summary,
                 "records": len(data),
+                "source": "MoCDB",
                 "status": "success"
             }
         
@@ -1854,6 +2757,182 @@ Be concise and data-driven."""
             return result
         except Exception as e:
             return {"error": f"Error executing {tool_name}: {str(e)}", "status": "failed"}
+    
+    def _register_visualization_tools(self):
+        """Register data visualization tools"""
+        
+        @self.tool(
+            name="create_financial_chart",
+            description="Create interactive financial charts using Plotly",
+            parameters={
+                "chart_type": {
+                    "type": "string",
+                    "enum": ["line", "bar", "waterfall", "scatter", "area", "combo"],
+                    "description": "Type of chart to create",
+                    "required": True
+                },
+                "data": {
+                    "type": "object",
+                    "description": "Data to visualize (as returned by other tools)",
+                    "required": True
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Chart title",
+                    "required": False
+                },
+                "x_axis": {
+                    "type": "string",
+                    "description": "Column name for x-axis",
+                    "required": False
+                },
+                "y_axis": {
+                    "type": "string",
+                    "description": "Column name(s) for y-axis",
+                    "required": False
+                },
+                "options": {
+                    "type": "object",
+                    "description": "Additional chart options",
+                    "required": False
+                }
+            }
+        )
+        def create_financial_chart(chart_type: str, data: Dict = None, title: str = None,
+                                  x_axis: str = None, y_axis: str = None,
+                                  options: Dict = None) -> Dict:
+            """Create interactive financial charts"""
+            
+            try:
+                # Validate data parameter
+                if data is None:
+                    return {"error": "Data parameter is required", "status": "failed"}
+                
+                if not data:
+                    return {"error": "Data parameter cannot be empty", "status": "failed"}
+                
+                # Convert data to DataFrame if needed
+                if isinstance(data, dict):
+                    if 'data' in data:
+                        df = pd.DataFrame(data['data'])
+                    elif 'values' in data:
+                        df = pd.DataFrame(data['values'])
+                    else:
+                        df = pd.DataFrame([data])
+                else:
+                    df = pd.DataFrame(data)
+                
+                # Determine axes if not specified
+                if x_axis is None and 'DATE' in df.columns:
+                    x_axis = 'DATE'
+                elif x_axis is None and len(df.columns) > 0:
+                    x_axis = df.columns[0]
+                
+                if y_axis is None and 'VALUE' in df.columns:
+                    y_axis = 'VALUE'
+                elif y_axis is None and len(df.columns) > 1:
+                    y_axis = df.columns[1]
+                
+                # Create chart based on type
+                if chart_type == "line":
+                    fig = go.Figure()
+                    if isinstance(y_axis, list):
+                        for col in y_axis:
+                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[col], 
+                                                    mode='lines+markers', name=col))
+                    else:
+                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], 
+                                                mode='lines+markers', name=y_axis))
+                
+                elif chart_type == "bar":
+                    fig = go.Figure()
+                    if isinstance(y_axis, list):
+                        for col in y_axis:
+                            fig.add_trace(go.Bar(x=df[x_axis], y=df[col], name=col))
+                    else:
+                        fig.add_trace(go.Bar(x=df[x_axis], y=df[y_axis], name=y_axis))
+                
+                elif chart_type == "waterfall":
+                    # Calculate deltas for waterfall
+                    values = df[y_axis].tolist() if not isinstance(y_axis, list) else df[y_axis[0]].tolist()
+                    measure = ["absolute"] + ["relative"] * (len(values) - 2) + ["total"]
+                    
+                    fig = go.Figure(go.Waterfall(
+                        x=df[x_axis].tolist(),
+                        y=values,
+                        measure=measure,
+                        text=[f"{v:,.0f}" for v in values],
+                        textposition="outside"
+                    ))
+                
+                elif chart_type == "scatter":
+                    fig = px.scatter(df, x=x_axis, y=y_axis, title=title)
+                
+                elif chart_type == "area":
+                    fig = go.Figure()
+                    if isinstance(y_axis, list):
+                        for col in y_axis:
+                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[col], 
+                                                    mode='lines', fill='tozeroy', name=col))
+                    else:
+                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], 
+                                                mode='lines', fill='tozeroy', name=y_axis))
+                
+                elif chart_type == "combo":
+                    # Line and bar combo chart
+                    fig = go.Figure()
+                    if isinstance(y_axis, list) and len(y_axis) >= 2:
+                        # First series as bar
+                        fig.add_trace(go.Bar(x=df[x_axis], y=df[y_axis[0]], 
+                                            name=y_axis[0], yaxis='y'))
+                        # Second series as line on secondary axis
+                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis[1]], 
+                                                mode='lines+markers', name=y_axis[1], 
+                                                yaxis='y2'))
+                        
+                        fig.update_layout(
+                            yaxis2=dict(
+                                title=y_axis[1],
+                                overlaying='y',
+                                side='right'
+                            )
+                        )
+                
+                # Update layout
+                fig.update_layout(
+                    title=title or f"{chart_type.capitalize()} Chart",
+                    xaxis_title=x_axis,
+                    yaxis_title=y_axis if isinstance(y_axis, str) else "Value",
+                    hovermode='x unified',
+                    template='plotly_white'
+                )
+                
+                # Apply additional options if provided
+                if options:
+                    if 'height' in options:
+                        fig.update_layout(height=options['height'])
+                    if 'width' in options:
+                        fig.update_layout(width=options['width'])
+                    if 'showlegend' in options:
+                        fig.update_layout(showlegend=options['showlegend'])
+                
+                # Convert to JSON for storage/display
+                chart_json = fig.to_json()
+                
+                # Display in Streamlit if in Streamlit context
+                if 'st' in globals() or 'streamlit' in sys.modules:
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                return {
+                    "chart": chart_json,
+                    "type": chart_type,
+                    "title": title,
+                    "status": "success",
+                    "message": "Chart created successfully. Use st.plotly_chart to display."
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
     
     def get_openai_tools(self) -> List[Dict]:
         """Get tool schemas for OpenAI"""
