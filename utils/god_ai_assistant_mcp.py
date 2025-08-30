@@ -83,9 +83,9 @@ class RealEstateToolSystem:
     def _load_financial_data(self):
         """Lazy load financial statements data"""
         if 'financial' not in self.data:
-            fa_path = self.data_dir / 'FA_A_processed.csv'
+            fa_path = self.data_dir / 'FA_A_processed.parquet'
             if fa_path.exists():
-                self.data['financial'] = pd.read_csv(fa_path)
+                self.data['financial'] = pd.read_parquet(fa_path)
                 self._data_loaded['financial'] = True
             else:
                 return pd.DataFrame()

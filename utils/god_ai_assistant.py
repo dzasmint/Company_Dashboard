@@ -274,9 +274,9 @@ Respond with ONLY the intent name."""
                 sys.path.append(str(current_dir))
                 
                 # Load financial data to get all valid tickers
-                csv_path = current_dir / 'data' / 'FA_A_processed.csv'
+                csv_path = current_dir / 'data' / 'FA_A_processed.parquet'
                 if csv_path.exists():
-                    df_fa = pd.read_csv(csv_path)
+                    df_fa = pd.read_parquet(csv_path)
                     if 'TICKER' in df_fa.columns:
                         csv_tickers = set(df_fa['TICKER'].unique())
                     else:

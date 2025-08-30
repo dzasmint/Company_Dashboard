@@ -209,16 +209,9 @@ class RealEstateFinancialModel:
                     
                 # Auto-load data if ticker has changed or data not loaded
                 if st.session_state.get('needs_data_refresh', False) or st.session_state.historical_data is None:
-                    # Automatically load financial data from CSV if not already loaded
-                    if st.session_state.historical_data is None:
-                        with st.spinner(f"Loading financial data for {ticker}..."):
-                            data = self.load_historical_data_from_csv(ticker)
-                            if not data.empty:
-                                st.session_state.historical_data = data
-                                st.success(f"✅ Loaded financial data for {ticker}", icon="📊")
-                            else:
-                                st.session_state.historical_data = None
-                                st.warning(f"No financial data found for {ticker}")
+                    # Historical data will be loaded by the HistoricalAnalysisTab when needed
+                    # Just set the flag that data needs refresh
+                    st.session_state.historical_data = None
                     
                     # Automatically sync project data from MongoDB if not already loaded
                     if st.session_state.project_data is None:
@@ -378,55 +371,17 @@ class RealEstateFinancialModel:
         finally:
             st.session_state.loading_projects = False
     
-    @st.cache_data(ttl=600)  # Cache for 10 minutes
-    def load_historical_data_from_csv(_self, ticker):
-        """Load historical financial data from FA_A_processed.csv."""
-        try:
-            # Use FA_A_processed.csv for all tickers
-            fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.csv')
-            
-            if not os.path.exists(fa_path):
-                st.warning("Financial data file not found")
-                return pd.DataFrame()
-            
-            # Read only necessary columns first
-            df_fa = pd.read_csv(fa_path, 
-                                usecols=['TICKER', 'DATE', 'KEYCODE', 'VALUE'],
-                                dtype={'TICKER': str, 'KEYCODE': str, 'DATE': int})
-            
-            # Filter for selected ticker
-            ticker_data = df_fa[df_fa['TICKER'] == ticker].copy()
-            
-            if ticker_data.empty:
-                return pd.DataFrame()
-            
-            # Pivot data to create time series
-            pivot_data = ticker_data.pivot_table(
-                index='DATE',
-                columns='KEYCODE',
-                values='VALUE',
-                aggfunc='first'
-            )
-            
-            # Sort by date
-            pivot_data.sort_index(inplace=True)
-            
-            return pivot_data
-            
-        except Exception as e:
-            st.error(f"Error loading historical data: {str(e)}")
-            return pd.DataFrame()
     
     @st.cache_data(ttl=3600)  # Cache for 1 hour
     def load_real_estate_companies(_self):
-        """Load list of all companies from FA_A_processed.csv."""
+        """Load list of all companies from FA_A_processed.parquet."""
         try:
-            fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.csv')
+            fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.parquet')
             if not os.path.exists(fa_path):
                 return []  # Return empty list if file not found
             
-            # Read only the TICKER column to speed up loading
-            df_fa = pd.read_csv(fa_path, usecols=['TICKER'])
+            # Read parquet file
+            df_fa = pd.read_parquet(fa_path)
             
             # Get all unique tickers
             tickers = sorted(df_fa['TICKER'].unique().tolist())
@@ -456,24 +411,16 @@ class RealEstateFinancialModel:
             return []
     
     def refresh_financial_data(self):
-        """Refresh financial data from FA_A_processed.csv"""
+        """Refresh financial data - now handled by HistoricalAnalysisTab"""
         if not st.session_state.selected_company:
             st.warning("Please select a company first")
             return
             
         ticker = st.session_state.selected_company
         
-        with st.spinner(f"Loading financial data for {ticker}..."):
-            # Clear cache for this specific ticker
-            self.load_historical_data_from_csv.clear()
-            # Load fresh data
-            data = self.load_historical_data_from_csv(ticker)
-            if not data.empty:
-                st.session_state.historical_data = data
-                st.success(f"✅ Loaded financial data for {ticker}")
-            else:
-                st.session_state.historical_data = None
-                st.warning(f"No financial data found for {ticker}")
+        # Clear the historical data to force reload
+        st.session_state.historical_data = None
+        st.success(f"✅ Financial data cache cleared for {ticker}. Data will reload when you visit Historical Analysis tab.")
     
     def process_financial_data(self, ssi_data, mongo_data):
         """Process and combine financial data from multiple sources"""
@@ -600,177 +547,13 @@ class RealEstateFinancialModel:
         
     
     def render_historical_analysis(self):
-        """Render historical financial analysis - Simple P&L Table"""
+        """Render historical financial analysis using the new tab module"""
+        from tabs.historical_analysis import HistoricalAnalysisTab
         
-        # Load data if not already loaded
-        if st.session_state.historical_data is None and st.session_state.selected_company:
-            with st.spinner(f"Loading data for {st.session_state.selected_company}..."):
-                data = self.load_historical_data_from_csv(st.session_state.selected_company)
-                if not data.empty:
-                    st.session_state.historical_data = data
-        
-        if st.session_state.historical_data is None:
-            st.info("👈 Select a company to view historical data")
-            return
-            
-        df = st.session_state.historical_data
-        
-        # Get current year to filter out future data
-        import datetime
-        current_year = datetime.datetime.now().year
-        
-        # Filter to only show historical years (no future data)
-        if df.index.dtype in ['int64', 'int32']:
-            df = df[df.index <= current_year]
-        
-        if df.empty:
-            st.warning("No historical data available for this company")
-            return
-        
-        # Create P&L table with years as columns
-        st.subheader("Historical Profit & Loss Statement")
-        st.markdown("*All values in Billion VND*")
-        
-        # Define P&L line items and their corresponding column names in FA_A_processed.csv
-        pnl_mapping = {
-            'Net Revenue': 'Net_Revenue',
-            'Cost of Goods Sold': 'COGS',
-            'Gross Profit': 'Gross_Profit',
-            'EBITDA': 'EBITDA',
-            'Depreciation & Amortization': 'Dep_Expense',
-            'EBIT': 'EBIT',
-            'Financial Income': 'Financial_Income',
-            'Financial Expense': 'Financial_Expense',
-            'Profit Before Tax': 'PBT',
-            'Tax Expense': 'Tax',
-            'Profit After Tax': 'NPAT',
-            'Minority Interest': 'Minority_Interest_In_Earning',
-            'NPATMI': 'NPATMI'
-        }
-        
-        # Create the P&L dataframe
-        pnl_data = {}
-        years = sorted(df.index.tolist())
-        
-        for display_name, column_name in pnl_mapping.items():
-            row_data = []
-            for year in years:
-                if column_name in df.columns:
-                    value = df.loc[year, column_name] if year in df.index else 0
-                    # Convert to billions
-                    row_data.append(value / 1e9 if pd.notna(value) else 0)
-                else:
-                    row_data.append(0)
-            pnl_data[display_name] = row_data
-        
-        # Create DataFrame with years as columns
-        pnl_df = pd.DataFrame(pnl_data, index=years).T
-        
-        # Calculate margins as percentages
-        margin_rows = {}
-        for year in years:
-            if pnl_df.loc['Net Revenue', year] != 0:
-                margin_rows[f'{year}'] = {
-                    'Gross Profit Margin %': (pnl_df.loc['Gross Profit', year] / pnl_df.loc['Net Revenue', year] * 100) if pnl_df.loc['Net Revenue', year] != 0 else 0,
-                    'EBITDA Margin %': (pnl_df.loc['EBITDA', year] / pnl_df.loc['Net Revenue', year] * 100) if pnl_df.loc['Net Revenue', year] != 0 else 0,
-                    'Net Margin %': (pnl_df.loc['NPATMI', year] / pnl_df.loc['Net Revenue', year] * 100) if pnl_df.loc['Net Revenue', year] != 0 else 0
-                }
-        
-        # Format the P&L dataframe for display
-        def format_pnl_value(val):
-            if pd.isna(val) or val == 0:
-                return "-"
-            elif abs(val) < 1:
-                return f"{val:.2f}"  # Keep decimal for percentages
-            else:
-                return f"{int(val):,}"  # Integer with comma separator
-        
-        # Apply formatting
-        styled_pnl = pnl_df.style.format(format_pnl_value)
-        
-        # Highlight important rows
-        def highlight_rows(row):
-            if row.name in ['Net Revenue', 'Gross Profit', 'EBITDA', 'NPATMI']:
-                return ['background-color: #f0f2f6'] * len(row)
-            return [''] * len(row)
-        
-        styled_pnl = styled_pnl.apply(highlight_rows, axis=1)
-        
-        # Display the P&L table
-        st.dataframe(styled_pnl, use_container_width=True, height=500)
-        
-        # Add a section to highlight key P&L items requested
-        st.subheader("Key Financial Metrics")
-        col1, col2, col3 = st.columns(3)
-        
-        # Get the latest year available
-        latest_year = years[-1] if years else None
-        
-        if latest_year and latest_year in pnl_df.columns:
-            with col1:
-                st.metric(
-                    "Financial Income (Latest Year)",
-                    f"{pnl_df.loc['Financial Income', latest_year]:,.1f}B VND" if 'Financial Income' in pnl_df.index else "N/A"
-                )
-            
-            with col2:
-                st.metric(
-                    "Profit Before Tax (Latest Year)",
-                    f"{pnl_df.loc['Profit Before Tax', latest_year]:,.1f}B VND" if 'Profit Before Tax' in pnl_df.index else "N/A"
-                )
-            
-            with col3:
-                st.metric(
-                    "Tax Expense (Latest Year)",
-                    f"{pnl_df.loc['Tax Expense', latest_year]:,.1f}B VND" if 'Tax Expense' in pnl_df.index else "N/A"
-                )
-        
-        # Add margin analysis below
-        if margin_rows:
-            st.subheader("Profitability Margins")
-            margin_df = pd.DataFrame(margin_rows)
-            
-            # Format margin percentages
-            def format_margin(val):
-                if pd.isna(val) or val == 0:
-                    return "-"
-                return f"{val:.1f}%"
-            
-            styled_margins = margin_df.style.format(format_margin)
-            st.dataframe(styled_margins, use_container_width=True)
-        
-        # Add growth rates
-        st.subheader("Year-over-Year Growth Rates")
-        growth_data = {}
-        
-        for metric in ['Net Revenue', 'Gross Profit', 'EBITDA', 'NPATMI']:
-            growth_row = []
-            for i, year in enumerate(years):
-                if i == 0:
-                    growth_row.append(None)  # No growth rate for first year
-                else:
-                    prev_val = pnl_df.loc[metric, years[i-1]]
-                    curr_val = pnl_df.loc[metric, year]
-                    if prev_val != 0 and not pd.isna(prev_val) and not pd.isna(curr_val):
-                        growth = ((curr_val - prev_val) / abs(prev_val)) * 100
-                        growth_row.append(growth)
-                    else:
-                        growth_row.append(None)
-            growth_data[metric] = growth_row
-        
-        growth_df = pd.DataFrame(growth_data, index=years).T
-        
-        # Format growth rates
-        def format_growth(val):
-            if pd.isna(val) or val is None:
-                return "-"
-            color = 'green' if val > 0 else 'red' if val < 0 else 'black'
-            return f"<span style='color: {color}'>{val:+.1f}%</span>"
-        
-        # Display growth rates with HTML formatting
-        growth_html = growth_df.to_html(escape=False, 
-                                       float_format=lambda x: format_growth(x) if not pd.isna(x) else "-")
-        st.markdown(growth_html, unsafe_allow_html=True)
+        # Initialize and render the historical analysis tab
+        historical_tab = HistoricalAnalysisTab(parent=self)
+        historical_tab.render()
+        return
     
     def render_ai_discovery(self):
         """Render AI-powered project discovery interface"""

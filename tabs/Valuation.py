@@ -52,7 +52,7 @@ class ValuationTab:
                     'RNAV to Company (B VND)': total_rnav_to_company
                 })
                 
-                # Load balance sheet items from FA_A_processed.csv
+                # Load balance sheet items from FA_A_processed.parquet
                 cash_equivalent = 0
                 short_term_investment = 0
                 short_term_debt = 0
@@ -66,9 +66,9 @@ class ValuationTab:
                     try:
                         # Load financial data
                         import os
-                        fa_path = os.path.join('data', 'FA_A_processed.csv')
+                        fa_path = os.path.join('data', 'FA_A_processed.parquet')
                         if os.path.exists(fa_path):
-                            fa_df = pd.read_csv(fa_path)
+                            fa_df = pd.read_parquet(fa_path)
                             
                             # Filter for selected ticker
                             ticker_data = fa_df[fa_df['TICKER'] == selected_ticker]
@@ -90,7 +90,7 @@ class ValuationTab:
                                             return value / 1e9  # Convert from VND to billions VND
                                     return default
                                 
-                                # Load balance sheet items using correct keycodes from FA_A_processed.csv
+                                # Load balance sheet items using correct keycodes from FA_A_processed.parquet
                                 # Only load Cash_Equivalent field as requested
                                 cash_equivalent = get_balance_sheet_value('Cash_Equivalent', 0)
                                 

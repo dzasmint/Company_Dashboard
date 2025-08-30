@@ -84,11 +84,11 @@ class EnhancedAIToolSystem:
     
     @lru_cache(maxsize=1)
     def _load_financial_statements_csv(self):
-        """Load financial statements from CSV"""
+        """Load financial statements from parquet"""
         if 'financial_csv' not in self.data:
-            fa_path = self.data_dir / 'FA_A_processed.csv'
+            fa_path = self.data_dir / 'FA_A_processed.parquet'
             if fa_path.exists():
-                self.data['financial_csv'] = pd.read_csv(fa_path)
+                self.data['financial_csv'] = pd.read_parquet(fa_path)
                 self._data_loaded['financial_csv'] = True
             else:
                 return pd.DataFrame()

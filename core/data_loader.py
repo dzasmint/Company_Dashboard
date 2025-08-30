@@ -27,10 +27,19 @@ class DataLoader:
             return pd.read_excel(file_path, sheet_name=sheet_name)
         return pd.read_excel(file_path)
     
+    @st.cache_data
+    def _load_parquet_cached(_self, file_path: str) -> pd.DataFrame:
+        """Load parquet with Streamlit caching"""
+        return pd.read_parquet(file_path)
+    
     def load_financial_statements(self) -> pd.DataFrame:
         """Load financial statements data"""
         file_path = get_data_path(DATA_FILES['financial_statements'])
-        return self._load_csv_cached(file_path)
+        # Check if it's a parquet file
+        if file_path.endswith('.parquet'):
+            return self._load_parquet_cached(file_path)
+        else:
+            return self._load_csv_cached(file_path)
     
     def load_valuation_data(self) -> pd.DataFrame:
         """Load valuation metrics data"""

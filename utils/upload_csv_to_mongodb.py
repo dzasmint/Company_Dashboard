@@ -49,23 +49,23 @@ def init_mongodb_connection():
 '''
 def upload_fa_data_to_mongodb(ticker=None, collection_name='FinancialStatements'):
     """
-    Upload FA_A_processed.csv data to MongoDB
+    Upload FA_A_processed.parquet data to MongoDB
     
     Args:
         ticker: Specific ticker to upload (None for all)
         collection_name: Name of MongoDB collection to create/update
     """
     try:
-        # Load CSV file
-        csv_path = os.path.join(parent_dir, 'data', 'FA_A_processed.csv')
+        # Load parquet file
+        csv_path = os.path.join(parent_dir, 'data', 'FA_A_processed.parquet')
         print(f"📂 Loading data from: {csv_path}")
         
         if not os.path.exists(csv_path):
             print(f"❌ File not found: {csv_path}")
             return False
         
-        # Read CSV
-        df = pd.read_csv(csv_path)
+        # Read parquet
+        df = pd.read_parquet(csv_path)
         print(f"✅ Loaded {len(df)} rows from CSV")
         
         # Filter for specific ticker if provided
@@ -101,7 +101,7 @@ def upload_fa_data_to_mongodb(ticker=None, collection_name='FinancialStatements'
         # Add upload metadata to each record
         for record in records:
             record['uploaded_at'] = datetime.now()
-            record['source'] = 'FA_A_processed.csv'
+            record['source'] = 'FA_A_processed.parquet'
             
             # Convert NaN values to None for MongoDB
             for key, value in record.items():
@@ -223,7 +223,7 @@ def verify_upload(ticker='DXG'):
     print(f"\n📊 Verification Results:")
     print("  ⚠️ MongoDB collections FinancialStatements and ValuationMetrics are deprecated")
     print("  ✅ Data is now loaded directly from CSV files:")
-    print("     - Financial data: FA_A_processed.csv")
+    print("     - Financial data: FA_A_processed.parquet")
     print("     - Valuation data: Val_processed.csv")
     print("     - Use core/data_loader.py for data access")
 
@@ -237,7 +237,7 @@ def main():
     print("  Both FinancialStatements and ValuationMetrics collections are deprecated!")
     print("")
     print("  The application now loads data directly from CSV files:")
-    print("  - Financial data: data/FA_A_processed.csv")
+    print("  - Financial data: data/FA_A_processed.parquet")
     print("  - Valuation data: data/Val_processed.csv")
     print("")
     print("  Active MongoDB collections still in use:")
