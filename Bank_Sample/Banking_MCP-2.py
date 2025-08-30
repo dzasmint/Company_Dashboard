@@ -43,7 +43,7 @@ class BankingToolSystem:
     def _load_historical_year(self):
         """Lazy load historical year data"""
         if 'historical_year' not in self.data:
-            self.data['historical_year'] = pd.read_csv(self.data_dir / 'dfsectoryear.csv')
+            self.data['historical_year'] = pd.read_parquet(self.data_dir / 'dfsectoryear.parquet')
             self._data_loaded['historical_year'] = True
         return self.data['historical_year']
     
@@ -51,7 +51,7 @@ class BankingToolSystem:
     def _load_historical_quarter(self):
         """Lazy load historical quarter data"""
         if 'historical_quarter' not in self.data:
-            self.data['historical_quarter'] = pd.read_csv(self.data_dir / 'dfsectorquarter.csv')
+            self.data['historical_quarter'] = pd.read_parquet(self.data_dir / 'dfsectorquarter.parquet')
             self._data_loaded['historical_quarter'] = True
         return self.data['historical_quarter']
     
@@ -59,7 +59,7 @@ class BankingToolSystem:
     def _load_forecast(self):
         """Lazy load forecast data"""
         if 'forecast' not in self.data:
-            self.data['forecast'] = pd.read_csv(self.data_dir / 'dfsectorforecast.csv')
+            self.data['forecast'] = pd.read_parquet(self.data_dir / 'dfsectorforecast.parquet')
             self._data_loaded['forecast'] = True
         return self.data['forecast']
     
@@ -75,8 +75,8 @@ class BankingToolSystem:
     def _load_comments(self):
         """Lazy load comments data"""
         if 'comments' not in self.data:
-            if (self.data_dir / 'banking_comments.xlsx').exists():
-                self.data['comments'] = pd.read_excel(self.data_dir / 'banking_comments.xlsx')
+            if (self.data_dir / 'banking_comments.parquet').exists():
+                self.data['comments'] = pd.read_parquet(self.data_dir / 'banking_comments.parquet')
                 self._data_loaded['comments'] = True
             else:
                 return None
@@ -86,8 +86,8 @@ class BankingToolSystem:
     def _load_quarterly_analysis(self):
         """Lazy load quarterly analysis data"""
         if 'quarterly_analysis' not in self.data:
-            if (self.data_dir / 'quarterly_analysis_results.xlsx').exists():
-                self.data['quarterly_analysis'] = pd.read_excel(self.data_dir / 'quarterly_analysis_results.xlsx')
+            if (self.data_dir / 'quarterly_analysis_results.parquet').exists():
+                self.data['quarterly_analysis'] = pd.read_parquet(self.data_dir / 'quarterly_analysis_results.parquet')
                 self._data_loaded['quarterly_analysis'] = True
             else:
                 return None
@@ -97,12 +97,34 @@ class BankingToolSystem:
     def _load_valuation(self):
         """Lazy load valuation data - this is a large file (52K lines)"""
         if 'valuation' not in self.data:
-            if (self.data_dir / 'Valuation_banking.csv').exists():
-                self.data['valuation'] = pd.read_csv(self.data_dir / 'Valuation_banking.csv')
+            if (self.data_dir / 'Valuation_banking.parquet').exists():
+                self.data['valuation'] = pd.read_parquet(self.data_dir / 'Valuation_banking.parquet')
                 self._data_loaded['valuation'] = True
             else:
                 return None
         return self.data.get('valuation')
+    
+    @lru_cache(maxsize=1)
+    def _load_earnings_quality_quarterly(self):
+        """Lazy load quarterly earnings quality data"""
+        if 'earnings_quality_quarterly' not in self.data:
+            if (self.data_dir / 'earnings_quality_quarterly.parquet').exists():
+                self.data['earnings_quality_quarterly'] = pd.read_parquet(self.data_dir / 'earnings_quality_quarterly.parquet')
+                self._data_loaded['earnings_quality_quarterly'] = True
+            else:
+                return None
+        return self.data.get('earnings_quality_quarterly')
+    
+    @lru_cache(maxsize=1)
+    def _load_earnings_quality_yearly(self):
+        """Lazy load yearly earnings quality data"""
+        if 'earnings_quality_yearly' not in self.data:
+            if (self.data_dir / 'earnings_quality_yearly.parquet').exists():
+                self.data['earnings_quality_yearly'] = pd.read_parquet(self.data_dir / 'earnings_quality_yearly.parquet')
+                self._data_loaded['earnings_quality_yearly'] = True
+            else:
+                return None
+        return self.data.get('earnings_quality_yearly')
     
     def tool(self, name: str, description: str, parameters: Dict = None):
         """
@@ -188,26 +210,8 @@ class BankingToolSystem:
             }
         
         
-        # Tool 3: List All Banks
-        @self.tool(
-            name="list_all_banks",
-            description="List all available banks grouped by sector",
-            parameters={}
-        )
-        def list_all_banks() -> Dict:
-            """List all banks by sector"""
-            bank_types = self._load_bank_types()
-            
-            sectors = {}
-            for sector in bank_types['Type'].unique():
-                banks = bank_types[bank_types['Type'] == sector]['TICKER'].tolist()
-                sectors[sector] = banks
-            
-            return {
-                "sectors": sectors,
-                "total_banks": len(bank_types),
-                "status": "success"
-            }
+        # Tool 2: List All Banks (Deprecated - merged into get_bank_info)
+        # Use get_bank_info() with no parameters instead
         
         # Tool 4: Query Historical Data (Universal - handles single or multiple)
         @self.tool(
@@ -226,45 +230,112 @@ class BankingToolSystem:
                     "description": "List of bank tickers - use [\"VCB\"] for single, [\"VCB\", \"ACB\"] for multiple",
                     "required": False
                 },
-                "period": {"type": "string", "description": "Period like 2024-Q3 or 2024", "required": False},
+                "period": {"type": "string", "description": "Single period like 2024-Q3, 2024, or YTD format like 2025-YTD", "required": False},
+                "periods": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Multiple periods like [\"2025-Q1\", \"2025-Q2\", \"2025-Q3\"] for getting multiple quarters at once",
+                    "required": False
+                },
+                "metric": {
+                    "type": "string",
+                    "description": "Single metric to query (e.g., 'NIM', 'NPL', 'PBT', 'ROA'). Use this OR metric_group for efficiency.",
+                    "required": False
+                },
                 "metric_group": {
                     "type": "string", 
-                    "description": "Metric group: all, profitability, asset_quality, growth",
+                    "description": "Metric group: all, profitability, asset_quality, growth. Use metric for single indicators to save cost.",
                     "enum": ["all", "profitability", "asset_quality", "growth"],
                     "required": False
                 }
             }
         )
-        def query_historical_data(frequency: str, tickers = None, period: str = None, metric_group: str = "all") -> Dict:
+        def query_historical_data(frequency: str, tickers = None, period: str = None, periods = None, metric: str = None, metric_group: str = "all") -> Dict:
             """Query historical data for one or multiple banks"""
+            # Check if YTD format is being used - force quarterly if so
+            has_ytd = (period and "YTD" in period) or (periods and any("YTD" in str(p) for p in periods if p))
+            
             # Determine if quarterly or yearly based on frequency parameter
-            is_quarterly = (frequency == "quarterly")
-            df = self._load_historical_quarter() if is_quarterly else self._load_historical_year()
+            # Override to quarterly if YTD is detected
+            if has_ytd:
+                is_quarterly = True  # Force quarterly for YTD queries
+                df = self._load_historical_quarter()
+            else:
+                is_quarterly = (frequency == "quarterly")
+                df = self._load_historical_quarter() if is_quarterly else self._load_historical_year()
             
             # Apply ticker filter if specified
             if tickers:
                 if isinstance(tickers, str):
                     tickers = [tickers]
-                tickers = [t.upper() for t in tickers]
-                df = df[df['TICKER'].isin(tickers)]
+                # Special handling for sector tickers which use mixed case
+                processed_tickers = []
+                for t in tickers:
+                    if t.lower() == 'sector':
+                        processed_tickers.append('Sector')
+                    elif t.upper() == 'SOCB':
+                        processed_tickers.append('SOCB')
+                    elif t.upper() in ['PRIVATE_1', 'PRIVATE_2', 'PRIVATE_3']:
+                        # Private sectors use underscore format
+                        processed_tickers.append(t.title())  # Converts to Private_1, Private_2, etc.
+                    else:
+                        processed_tickers.append(t.upper())
+                df = df[df['TICKER'].isin(processed_tickers)]
             
-            if period:
+            # Handle YTD format in period
+            if period and "YTD" in period and is_quarterly:
+                year = period.split("-")[0]
+                # Get current date to determine which quarters to include
+                from datetime import datetime
+                current_month = datetime.now().month
+                current_year = datetime.now().year
+                
+                # Determine quarters to include based on current date
+                if int(year) == current_year:
+                    # For current year, only include completed quarters
+                    if current_month >= 10:
+                        periods = [f"{year}-Q1", f"{year}-Q2", f"{year}-Q3"]
+                    elif current_month >= 7:
+                        periods = [f"{year}-Q1", f"{year}-Q2"]
+                    elif current_month >= 4:
+                        periods = [f"{year}-Q1"]
+                    else:
+                        periods = []  # No completed quarters yet
+                else:
+                    # For past years, get all available quarters
+                    periods = [f"{year}-Q1", f"{year}-Q2", f"{year}-Q3", f"{year}-Q4"]
+            
+            
+            # Handle multiple periods
+            if periods and is_quarterly:
+                df = df[df['Date_Quarter'].isin(periods)]
+            elif period:
                 if is_quarterly:
                     df = df[df['Date_Quarter'] == period]
                 else:
-                    df = df[df['Year'] == int(period)]
+                    # For yearly, period should be a year number
+                    # Skip if it contains YTD (should have been handled above)
+                    if "YTD" not in period:
+                        df = df[df['Year'] == int(period)]
             
             if df.empty:
                 return {"error": "No data found", "status": "failed"}
             
-            # Select metrics based on group
-            metric_groups = {
-                "profitability": ["ROA", "ROE", "NIM", "CIR"],
-                "asset_quality": ["NPL", "NPL Coverage ratio", "Provision/ Total Loan", "GROUP 2"],
-                "growth": ["Loan", "Deposit", "Total Assets", "NPATMI"]
-            }
-            
-            if metric_group != "all":
+            # Select metrics - single metric takes precedence over metric_group
+            if metric:
+                # Query single metric for efficiency
+                if metric in df.columns:
+                    id_cols = ['TICKER', 'Year' if 'Year' in df.columns else 'Date_Quarter']
+                    df = df[id_cols + [metric]]
+                else:
+                    return {"error": f"Metric '{metric}' not found in data", "status": "failed"}
+            elif metric_group != "all":
+                # Query metric group
+                metric_groups = {
+                    "profitability": ["ROA", "ROE", "NIM", "CIR", "PBT", "TOI"],
+                    "asset_quality": ["NPL", "New NPL", "NPL Coverage ratio", "GROUP 2"],
+                    "growth": ["Loan", "Deposit", "Total Assets", "NPATMI", "PBT"]
+                }
                 metrics = metric_groups.get(metric_group, [])
                 available_metrics = [m for m in metrics if m in df.columns]
                 if available_metrics:
@@ -272,12 +343,18 @@ class BankingToolSystem:
                     df = df[id_cols + available_metrics]
             
             # Return summary
-            return {
+            result = {
                 "records": len(df),
-                "data": df.head(10).to_dict('records'),
+                "data": df.to_dict('records'),  # Return all records, not just head
                 "columns": df.columns.tolist(),
                 "status": "success"
             }
+            
+            # Add period information if multiple periods were queried
+            if periods:
+                result["periods_included"] = periods
+            
+            return result
         
         # Tool 5: Query Forecast Data (Universal - handles single or multiple)
         @self.tool(
@@ -382,133 +459,11 @@ class BankingToolSystem:
             return response
         
         
-        
-        # Tool 10: Compare Banks
-        @self.tool(
-            name="compare_banks",
-            description="Compare multiple banks on specific metrics",
-            parameters={
-                "tickers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of bank tickers to compare"
-                },
-                "metrics": {
-                    "type": "array", 
-                    "items": {"type": "string"},
-                    "description": "List of metrics to compare",
-                    "required": False
-                },
-                "period": {"type": "string", "description": "Period for comparison", "required": False}
-            }
-        )
-        def compare_banks(tickers: List[str], metrics: List[str] = None, period: str = None) -> Dict:
-            """Compare multiple banks"""
-            if not metrics:
-                metrics = ["ROA", "ROE", "NPL", "NIM", "Loan", "Deposit"]
-            
-            tickers = [t.upper() for t in tickers]
-            
-            # Get data
-            df = self._load_historical_year()
-            
-            if period:
-                df = df[df['Year'] == int(period)]
-            else:
-                # Get latest year for each bank
-                df = df.sort_values('Year').groupby('TICKER').last()
-                df = df.reset_index()
-            
-            # Filter for requested banks
-            df = df[df['TICKER'].isin(tickers)]
-            
-            if df.empty:
-                return {"error": "No data found for comparison", "status": "failed"}
-            
-            # Select available metrics
-            available_metrics = [m for m in metrics if m in df.columns]
-            comparison_df = df[['TICKER'] + available_metrics]
-            
-            # Calculate rankings
-            rankings = {}
-            for metric in available_metrics:
-                if metric in ["NPL", "CIR"]:  # Lower is better
-                    rankings[metric] = comparison_df[metric].rank(ascending=True)
-                else:  # Higher is better
-                    rankings[metric] = comparison_df[metric].rank(ascending=False)
-            
-            rankings_df = pd.DataFrame(rankings)
-            rankings_df['TICKER'] = comparison_df['TICKER'].values
-            
-            return {
-                "comparison": comparison_df.to_dict('records'),
-                "rankings": rankings_df.to_dict('records'),
-                "metrics_compared": available_metrics,
-                "status": "success"
-            }
-        
-        
-        # Tool 11: Get Sector Performance
-        @self.tool(
-            name="get_sector_performance",
-            description="Get aggregated performance metrics for a sector",
-            parameters={
-                "sector": {"type": "string", "description": "Sector name (SOCB, Private_1, Private_2, Private_3, Sector)"},
-                "period": {"type": "string", "description": "Period for analysis", "required": False}
-            }
-        )
-        def get_sector_performance(sector: str, period: str = None) -> Dict:
-            """Get sector performance"""
-            df = self._load_historical_year()
-            
-            # Filter by sector
-            if sector != "Sector":
-                # Get banks in this sector
-                bank_types = self._load_bank_types()
-                sector_banks = bank_types[bank_types['Type'] == sector]['TICKER'].tolist()
-                df = df[df['TICKER'].isin(sector_banks)]
-            else:
-                # Use the pre-aggregated Sector row
-                df = df[df['TICKER'] == 'Sector']
-            
-            if period:
-                df = df[df['Year'] == int(period)]
-            else:
-                df = df[df['Year'] == df['Year'].max()]
-            
-            if df.empty:
-                return {"error": f"No data for sector {sector}", "status": "failed"}
-            
-            # Key sector metrics
-            metrics = ["Total Assets", "Loan", "Deposit", "NPL", "ROA", "ROE", "NIM"]
-            available = [m for m in metrics if m in df.columns]
-            
-            if sector != "Sector" and len(df) > 1:
-                # Calculate averages for the sector
-                result = {
-                    "sector": sector,
-                    "banks_count": len(df),
-                    "period": period or str(df['Year'].iloc[0]),
-                    "metrics": {}
-                }
-                
-                for metric in available:
-                    result["metrics"][metric] = {
-                        "mean": float(df[metric].mean()),
-                        "median": float(df[metric].median()),
-                        "min": float(df[metric].min()),
-                        "max": float(df[metric].max())
-                    }
-            else:
-                # Return the aggregated data
-                result = {
-                    "sector": sector,
-                    "period": period or str(df['Year'].iloc[0]),
-                    "data": df[available].iloc[0].to_dict()
-                }
-            
-            result["status"] = "success"
-            return result
+        # Tool 10 removed - get_sector_performance is now redundant
+        # Use query_historical_data with sector tickers instead:
+        # - 'Sector' for overall banking sector
+        # - 'SOCB' for state-owned banks
+        # - 'Private_1', 'Private_2', 'Private_3' for private bank tiers
         
         # Helper function for single stock performance (internal use)
         def get_stock_performance_single(ticker: str, start_date: str, end_date: str) -> Dict:
@@ -613,10 +568,10 @@ class BankingToolSystem:
             except Exception as e:
                 return {"error": f"Unexpected error: {str(e)}", "status": "failed"}
         
-        # Tool 7: Get AI Commentary (Universal - handles single or multiple)
+        # Tool 7: Get Commentary (Universal - handles single or multiple)
         @self.tool(
-            name="get_ai_commentary",
-            description="Get AI-generated commentary for one or multiple banks",
+            name="get_commentary",
+            description="Get detailed commentary by analysts for one or multiple banks for fundamental insights",
             parameters={
                 "tickers": {
                     "type": "array",
@@ -871,153 +826,373 @@ class BankingToolSystem:
                 "status": "success" if performance_comparison else "failed"
             }
         
-        # Tool 2: Get Bank Information (Universal - handles single or multiple)
+        # Tool 2: Get Bank/Sector Information (handles banks, sectors, and component queries)
         @self.tool(
-            name="get_bank_info",
-            description="Get bank sector classification for one or multiple banks",
+            name="get_bank_sector_info",
+            description="Get bank sector information. Can: 1) List all banks by sector (no params), 2) Get sector for specific banks, 3) Get component banks within a sector (pass SOCB, Private_1, Private_2, Private_3, or Sector)",
             parameters={
                 "tickers": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of bank tickers - use [\"VCB\"] for single, [\"VCB\", \"ACB\"] for multiple"
+                    "description": "Bank tickers OR sector names (SOCB, Private_1, etc.) - omit to list all banks by sector",
+                    "required": False
                 }
             }
         )
-        def get_bank_info(tickers) -> Dict:
-            """Get sector classification for one or multiple banks"""
+        def get_bank_sector_info(tickers=None) -> Dict:
+            """Get bank/sector information with component bank queries"""
+            bank_types = self._load_bank_types()
+            
+            # Define known sector names
+            sector_names = ['SOCB', 'Private_1', 'Private_2', 'Private_3', 'Sector']
+            
+            # If no tickers provided, return all banks grouped by sector
+            if tickers is None:
+                sectors = {}
+                for sector in bank_types['Type'].unique():
+                    # Get component banks (excluding the sector aggregate ticker itself)
+                    all_banks = bank_types[bank_types['Type'] == sector]['TICKER'].tolist()
+                    # Filter out the sector aggregate ticker if it exists
+                    component_banks = [b for b in all_banks if b not in sector_names]
+                    sectors[sector] = component_banks
+                
+                return {
+                    "sectors": sectors,
+                    "total_banks": len([b for b in bank_types['TICKER'] if b not in sector_names]),
+                    "status": "success"
+                }
+            
             # Convert single ticker to list for uniform processing
             if isinstance(tickers, str):
                 tickers = [tickers]
             
-            bank_types = self._load_bank_types()
-            
-            results = {}
-            by_sector = {}
+            results = []
             
             for ticker in tickers:
-                ticker = ticker.upper()
-                bank_info = bank_types[bank_types['TICKER'] == ticker]
-                
-                if not bank_info.empty:
-                    sector = bank_info.iloc[0]['Type']
-                    results[ticker] = sector
+                # Handle case variations for sectors
+                if ticker.upper() in [s.upper() for s in sector_names]:
+                    # Find the correct case version
+                    correct_sector = next((s for s in sector_names if s.upper() == ticker.upper()), ticker)
                     
-                    # Group by sector
-                    if sector not in by_sector:
-                        by_sector[sector] = []
-                    by_sector[sector].append(ticker)
+                    if correct_sector == 'Sector':
+                        # Special case: 'Sector' means all banks
+                        all_banks = bank_types['TICKER'].tolist()
+                        component_banks = [b for b in all_banks if b not in sector_names]
+                        results.append({
+                            "query": ticker,
+                            "type": "sector",
+                            "sector_name": "Sector (All Banks)",
+                            "component_banks": component_banks,
+                            "bank_count": len(component_banks)
+                        })
+                    else:
+                        # Get banks in this specific sector
+                        sector_banks = bank_types[bank_types['Type'] == correct_sector]['TICKER'].tolist()
+                        # Remove the sector aggregate ticker itself
+                        component_banks = [b for b in sector_banks if b != correct_sector]
+                        results.append({
+                            "query": ticker,
+                            "type": "sector",
+                            "sector_name": correct_sector,
+                            "component_banks": component_banks,
+                            "bank_count": len(component_banks)
+                        })
+                else:
+                    # It's a bank ticker - get its sector
+                    ticker_upper = ticker.upper()
+                    bank_info = bank_types[bank_types['TICKER'] == ticker_upper]
+                    
+                    if not bank_info.empty:
+                        sector = bank_info.iloc[0]['Type']
+                        results.append({
+                            "query": ticker,
+                            "type": "bank",
+                            "ticker": ticker_upper,
+                            "sector": sector
+                        })
+                    else:
+                        results.append({
+                            "query": ticker,
+                            "type": "error",
+                            "error": f"'{ticker}' not found"
+                        })
             
-            # Return simplified format for single ticker
-            if len(tickers) == 1:
-                if len(results) == 1:
-                    ticker = tickers[0]
+            # Return simplified format for single query
+            if len(tickers) == 1 and len(results) == 1:
+                result = results[0]
+                if result["type"] == "error":
+                    return {"error": result["error"], "status": "failed"}
+                elif result["type"] == "sector":
                     return {
-                        "ticker": ticker,
-                        "sector": results[ticker],
+                        "sector": result["sector_name"],
+                        "component_banks": result["component_banks"],
+                        "bank_count": result["bank_count"],
                         "status": "success"
                     }
-                else:
-                    return {"error": f"Bank {tickers[0]} not found", "status": "failed"}
+                else:  # bank
+                    return {
+                        "ticker": result["ticker"],
+                        "sector": result["sector"],
+                        "status": "success"
+                    }
             
-            # Return batch format for multiple tickers
+            # Return batch format for multiple queries
             return {
-                "banks": results,
-                "by_sector": by_sector,
+                "results": results,
                 "requested": len(tickers),
-                "found": len(results),
-                "status": "success" if results else "failed"
+                "successful": len([r for r in results if r["type"] != "error"]),
+                "status": "success" if any(r["type"] != "error" for r in results) else "failed"
             }
         
-        # Tool 6: Calculate Growth Metrics (Universal - handles single or multiple)
+        # Tool 6: Calculate Growth Metrics (Removed - redundant)
+        # OpenAI can calculate growth from raw data returned by query_historical_data
+        # For pre-calculated growth metrics, use get_earnings_drivers which has QoQ, YoY, T12M impacts
+        
+        # Tool 10: Get Earnings Drivers
         @self.tool(
-            name="calculate_growth_metrics",
-            description="Calculate growth rates and CAGR for metrics for one or multiple banks",
+            name="get_earnings_drivers",
+            description="Get detailed earnings drivers impact analysis showing what's driving profit changes for one or multiple banks. For cost items, positive score means less cost (good), negative means more cost (bad).",
             parameters={
                 "tickers": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "List of bank tickers - use [\"VCB\"] for single, [\"VCB\", \"ACB\"] for multiple"
                 },
-                "metric": {"type": "string", "description": "Metric name (e.g., Loan, Deposit)"},
-                "periods": {"type": "integer", "description": "Number of periods to analyze", "required": False}
+                "period": {
+                    "type": "string",
+                    "description": "Period in format YYYY-Q# for quarterly (e.g., 2025-Q2) or YYYY for yearly (e.g., 2024)"
+                },
+                "timeframe": {
+                    "type": "string",
+                    "description": "Comparison timeframe",
+                    "enum": ["QoQ", "YoY", "T12M"],
+                    "required": False
+                },
+                "frequency": {
+                    "type": "string",
+                    "description": "Data frequency",
+                    "enum": ["quarterly", "yearly"],
+                    "required": False
+                }
             }
         )
-        def calculate_growth_metrics(tickers, metric: str, periods: int = 5) -> Dict:
-            """Calculate growth metrics for one or multiple banks"""
+        def get_earnings_drivers(tickers, period: str, timeframe: str = "QoQ", frequency: str = "quarterly") -> Dict:
+            """Get earnings drivers analysis for one or multiple banks"""
             # Convert single ticker to list for uniform processing
             if isinstance(tickers, str):
                 tickers = [tickers]
             
-            df = self._load_historical_year()
+            # Load appropriate data based on frequency
+            if frequency == "yearly":
+                df = self._load_earnings_quality_yearly()
+                period_col = 'Year'
+                # Yearly data doesn't have QoQ/YoY/T12M suffixes
+                suffix = ""
+            else:
+                df = self._load_earnings_quality_quarterly()
+                period_col = 'Date_Quarter'
+                # Map timeframe to column suffix
+                suffix_map = {
+                    "QoQ": "_QoQ",
+                    "YoY": "_YoY", 
+                    "T12M": "_T12M"
+                }
+                suffix = suffix_map.get(timeframe, "_QoQ")
+            
+            if df is None:
+                return {"error": "Earnings quality data not available", "status": "failed"}
             
             results = {}
-            comparison = []
             
             for ticker in tickers:
                 ticker = ticker.upper()
-                bank_data = df[df['TICKER'] == ticker].sort_values('Year').tail(periods + 1)
                 
-                if not bank_data.empty and metric in bank_data.columns:
-                    values = bank_data[metric].values
-                    years = bank_data['Year'].values
-                    
-                    growth_rates = []
-                    for i in range(1, len(values)):
-                        if values[i-1] != 0:
-                            growth = ((values[i] - values[i-1]) / values[i-1]) * 100
-                            growth_rates.append({
-                                "year": int(years[i]),
-                                "value": float(values[i]),
-                                "growth_rate": float(growth)
-                            })
-                    
-                    # Calculate CAGR
-                    cagr = None
-                    if len(values) >= 2 and values[0] > 0:
-                        n_years = len(values) - 1
-                        cagr = (pow(values[-1] / values[0], 1/n_years) - 1) * 100
-                    
-                    avg_growth = np.mean([g["growth_rate"] for g in growth_rates]) if growth_rates else None
-                    
+                # Filter data for ticker and period
+                ticker_data = df[(df['TICKER'] == ticker) & (df[period_col] == period)]
+                
+                if ticker_data.empty:
                     results[ticker] = {
-                        "growth_data": growth_rates,
-                        "cagr": cagr,
-                        "average_growth": avg_growth,
-                        "latest_value": float(values[-1]) if len(values) > 0 else None
+                        "error": f"No data found for {ticker} in {period}",
+                        "status": "failed"
                     }
-                    
-                    if cagr is not None:
-                        comparison.append({
-                            "ticker": ticker,
-                            "cagr": round(cagr, 2),
-                            "avg_growth": round(avg_growth, 2) if avg_growth else None,
-                            "latest_value": float(values[-1])
-                        })
-            
-            # Sort by CAGR
-            comparison = sorted(comparison, key=lambda x: x["cagr"], reverse=True)
+                    continue
+                
+                # Extract impact columns based on suffix
+                data_row = ticker_data.iloc[0]
+                
+                # Helper function to get value with suffix
+                def get_value(col_base, use_suffix=True):
+                    col_name = f"{col_base}{suffix}" if use_suffix and suffix else col_base
+                    if col_name in data_row.index:
+                        value = data_row[col_name]
+                        if pd.notna(value):
+                            return float(value)
+                    return None
+                
+                # Extract all impact values (return numeric values directly)
+                pbt_growth = get_value('PBT_Growth_%')
+                revenue_impact = get_value('Top_Line_Impact')
+                cost_impact = get_value('Cost_Cutting_Impact')
+                nonrec_impact = get_value('Non_Recurring_Impact')
+                nii_impact = get_value('NII_Impact')
+                fee_impact = get_value('Fee_Impact')
+                opex_impact = get_value('OPEX_Impact')
+                provision_impact = get_value('Provision_Impact')
+                loan_impact = get_value('Loan_Impact')
+                nim_impact = get_value('NIM_Impact')
+                total_impact = get_value('Total_Impact')
+                
+                # Helper to round values for cleaner JSON
+                def clean_value(value):
+                    if value is None:
+                        return None
+                    return round(value, 1)
+                
+                # Create simplified, flat structure
+                earnings_analysis = {
+                    "ticker": ticker,
+                    "period": period,
+                    "timeframe": timeframe if frequency == "quarterly" else "YoY",
+                    "pbt_growth": clean_value(pbt_growth),
+                    "revenue_impact": clean_value(revenue_impact),
+                    "cost_impact": clean_value(cost_impact),
+                    "non_recurring": clean_value(nonrec_impact),
+                    "details": {
+                        "nii": clean_value(nii_impact),
+                        "loan": clean_value(loan_impact),
+                        "nim": clean_value(nim_impact),
+                        "fees": clean_value(fee_impact),
+                        "opex": clean_value(opex_impact),
+                        "provisions": clean_value(provision_impact)
+                    },
+                    "status": "success"
+                }
+                
+                results[ticker] = earnings_analysis
             
             # Return simplified format for single ticker
             if len(tickers) == 1 and len(results) == 1:
-                ticker = tickers[0]
-                single_result = results[ticker].copy()
-                single_result["ticker"] = ticker
-                single_result["metric"] = metric
-                single_result["periods"] = periods
-                single_result["status"] = "success"
-                return single_result
+                return results[tickers[0]]
             
             # Return batch format for multiple tickers
             return {
-                "metric": metric,
-                "periods": periods,
-                "detailed_results": results,
-                "ranking": comparison,
-                "best_growth": comparison[0]["ticker"] if comparison else None,
+                "period": period,
+                "timeframe": timeframe if frequency == "quarterly" else "YoY",
+                "frequency": frequency,
+                "results": results,
                 "requested": len(tickers),
-                "analyzed": len(results),
-                "status": "success" if results else "failed"
+                "successful": sum(1 for r in results.values() if r.get("status") == "success"),
+                "status": "success" if any(r.get("status") == "success" for r in results.values()) else "failed"
             }
+        
+        # Tool 11: Render Chart
+        @self.tool(
+            name="render_chart",
+            description="""Create a chart visualization from processed data. 
+            INSTRUCTIONS FOR USE:
+            1. ALWAYS gather data first using other tools (get_financial_data, get_valuation_metrics, etc.)
+            2. Structure data with clear x-axis labels and y-values
+            3. Specify y_format: 'percent' for rates/ratios, 'number' for counts, 'currency' for monetary values
+            4. Available chart types: line, bar, scatter, area
+
+            IMPORTANT:
+            - Only pass processed, chart-ready data
+            - Do NOT include raw data tables in your text response
+            """,
+            parameters={
+                "chart_type": {
+                    "type": "string",
+                    "enum": ["line", "bar", "scatter", "area"],
+                    "description": "Type of chart to render"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "x": {
+                            "type": "array",
+                            "description": "X-axis labels (dates, categories, etc.)",
+                            "items": {"type": "string"}
+                        },
+                        "series": {
+                            "type": "array",
+                            "description": "Data series to plot",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Series name for legend"},
+                                    "y": {
+                                        "type": "array", 
+                                        "description": "Y-axis values",
+                                        "items": {"type": "number"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": ["x", "series"]
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Chart title"
+                },
+                "x_label": {
+                    "type": "string",
+                    "description": "X-axis label",
+                    "required": False
+                },
+                "y_label": {
+                    "type": "string",
+                    "description": "Y-axis label",
+                    "required": False
+                },
+                "y_format": {
+                    "type": "string",
+                    "enum": ["percent", "number", "currency"],
+                    "description": "Format for y-axis values",
+                    "required": False
+                }
+            }
+        )
+        def render_chart(chart_type: str, data: Dict, title: str, x_label: str = "", y_label: str = "", y_format: str = "number") -> Dict:
+            """Prepare chart specification for rendering"""
+            import uuid
+            
+            # Validate data structure
+            if not data or "x" not in data or "series" not in data:
+                return {"error": "Invalid data structure. Must have 'x' and 'series' fields", "status": "failed"}
+            
+            if not data["series"] or len(data["series"]) == 0:
+                return {"error": "No data series provided", "status": "failed"}
+            
+            # Generate unique chart ID
+            chart_id = str(uuid.uuid4())[:8]
+            
+            # Prepare chart specification
+            chart_spec = {
+                "chart_id": chart_id,
+                "chart_type": chart_type,
+                "data": data,
+                "title": title,
+                "x_label": x_label or "",
+                "y_label": y_label or "",
+                "y_format": y_format,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Store chart spec in class attribute for retrieval
+            if not hasattr(self, '_pending_charts'):
+                self._pending_charts = {}
+            self._pending_charts[chart_id] = chart_spec
+            
+            # Return marker for the chat interface to detect
+            return {
+                "type": "chart",
+                "chart_id": chart_id,
+                "chart_spec": chart_spec,  # Include spec in response
+                "message": f"Chart '{title}' prepared for rendering",
+                "status": "success"
+            }
+        
     
     def execute_tool(self, tool_name: str, arguments: Dict = None) -> Dict:
         """Execute a tool by name with arguments"""

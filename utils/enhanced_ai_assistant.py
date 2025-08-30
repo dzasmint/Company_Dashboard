@@ -80,6 +80,14 @@ from openai import OpenAI
 import plotly.graph_objects as go
 import plotly.express as px
 
+# Import chart utilities (if available)
+try:
+    from .chart_utils import create_plotly_chart
+    CHART_UTILS_AVAILABLE = True
+except ImportError:
+    CHART_UTILS_AVAILABLE = False
+    create_plotly_chart = None
+
 # Import utilities
 from .mongodb_utils import (
     init_mongodb_connection,
@@ -2762,8 +2770,117 @@ Be concise and data-driven."""
         """Register data visualization tools"""
         
         @self.tool(
+            name="render_chart",
+            description="""Create a chart visualization from processed data. 
+            INSTRUCTIONS FOR USE:
+            1. ALWAYS gather data first using other tools (get_historical_financials, get_valuation_metrics, etc.)
+            2. Structure data with clear x-axis labels and y-values
+            3. Specify y_format: 'percent' for rates/ratios, 'number' for counts, 'currency' for monetary values
+            4. Available chart types: line, bar, stacked_bar, scatter, area
+            
+            IMPORTANT:
+            - Only pass processed, chart-ready data
+            - Do NOT include raw data tables in your text response
+            - For stacked_bar: provide multiple series that will be stacked
+            """,
+            parameters={
+                "chart_type": {
+                    "type": "string",
+                    "enum": ["line", "bar", "stacked_bar", "scatter", "area"],
+                    "description": "Type of chart to render (use stacked_bar for stacked bar charts)"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "x": {
+                            "type": "array",
+                            "description": "X-axis labels (dates, categories, etc.)",
+                            "items": {"type": "string"}
+                        },
+                        "series": {
+                            "type": "array",
+                            "description": "Data series to plot",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Series name for legend"},
+                                    "y": {
+                                        "type": "array", 
+                                        "description": "Y-axis values",
+                                        "items": {"type": "number"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": ["x", "series"]
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Chart title"
+                },
+                "x_label": {
+                    "type": "string",
+                    "description": "X-axis label",
+                    "required": False
+                },
+                "y_label": {
+                    "type": "string",
+                    "description": "Y-axis label",
+                    "required": False
+                },
+                "y_format": {
+                    "type": "string",
+                    "enum": ["percent", "number", "currency"],
+                    "description": "Format for y-axis values",
+                    "required": False
+                }
+            }
+        )
+        def render_chart(chart_type: str, data: Dict, title: str, x_label: str = "", y_label: str = "", y_format: str = "number") -> Dict:
+            """Prepare chart specification for rendering"""
+            import uuid
+            
+            # Validate data structure
+            if not data or "x" not in data or "series" not in data:
+                return {"error": "Invalid data structure. Must have 'x' and 'series' fields", "status": "failed"}
+            
+            if not data["series"] or len(data["series"]) == 0:
+                return {"error": "No data series provided", "status": "failed"}
+            
+            # Generate unique chart ID
+            chart_id = str(uuid.uuid4())[:8]
+            
+            # Prepare chart specification
+            chart_spec = {
+                "chart_id": chart_id,
+                "chart_type": chart_type,
+                "data": data,
+                "title": title,
+                "x_label": x_label or "",
+                "y_label": y_label or "",
+                "y_format": y_format,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Store chart spec in class attribute for retrieval
+            if not hasattr(self, '_pending_charts'):
+                self._pending_charts = {}
+            self._pending_charts[chart_id] = chart_spec
+            
+            # Return marker for the chat interface to detect
+            return {
+                "type": "chart",
+                "chart_id": chart_id,
+                "chart_spec": chart_spec,  # Include spec in response
+                "message": f"Chart '{title}' prepared for rendering",
+                "status": "success"
+            }
+        
+        # Keep the original create_financial_chart for backward compatibility but updated
+        @self.tool(
             name="create_financial_chart",
-            description="Create interactive financial charts using Plotly",
+            description="Create interactive financial charts using structured data format (alternative to render_chart)",
             parameters={
                 "chart_type": {
                     "type": "string",
@@ -2801,7 +2918,7 @@ Be concise and data-driven."""
         def create_financial_chart(chart_type: str, data: Dict = None, title: str = None,
                                   x_axis: str = None, y_axis: str = None,
                                   options: Dict = None) -> Dict:
-            """Create interactive financial charts"""
+            """Create interactive financial charts - converts to render_chart format"""
             
             try:
                 # Validate data parameter
@@ -2833,103 +2950,56 @@ Be concise and data-driven."""
                 elif y_axis is None and len(df.columns) > 1:
                     y_axis = df.columns[1]
                 
-                # Create chart based on type
-                if chart_type == "line":
-                    fig = go.Figure()
-                    if isinstance(y_axis, list):
-                        for col in y_axis:
-                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[col], 
-                                                    mode='lines+markers', name=col))
-                    else:
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], 
-                                                mode='lines+markers', name=y_axis))
+                # Convert to render_chart format
+                x_values = df[x_axis].astype(str).tolist() if x_axis in df.columns else []
                 
-                elif chart_type == "bar":
-                    fig = go.Figure()
-                    if isinstance(y_axis, list):
-                        for col in y_axis:
-                            fig.add_trace(go.Bar(x=df[x_axis], y=df[col], name=col))
-                    else:
-                        fig.add_trace(go.Bar(x=df[x_axis], y=df[y_axis], name=y_axis))
+                series_data = []
+                if isinstance(y_axis, list):
+                    for col in y_axis:
+                        if col in df.columns:
+                            series_data.append({
+                                "name": col,
+                                "y": df[col].tolist()
+                            })
+                elif y_axis in df.columns:
+                    series_data.append({
+                        "name": y_axis,
+                        "y": df[y_axis].tolist()
+                    })
                 
-                elif chart_type == "waterfall":
-                    # Calculate deltas for waterfall
-                    values = df[y_axis].tolist() if not isinstance(y_axis, list) else df[y_axis[0]].tolist()
-                    measure = ["absolute"] + ["relative"] * (len(values) - 2) + ["total"]
-                    
-                    fig = go.Figure(go.Waterfall(
-                        x=df[x_axis].tolist(),
-                        y=values,
-                        measure=measure,
-                        text=[f"{v:,.0f}" for v in values],
-                        textposition="outside"
-                    ))
-                
-                elif chart_type == "scatter":
-                    fig = px.scatter(df, x=x_axis, y=y_axis, title=title)
-                
-                elif chart_type == "area":
-                    fig = go.Figure()
-                    if isinstance(y_axis, list):
-                        for col in y_axis:
-                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[col], 
-                                                    mode='lines', fill='tozeroy', name=col))
-                    else:
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], 
-                                                mode='lines', fill='tozeroy', name=y_axis))
-                
+                # Map chart types that aren't supported in render_chart
+                mapped_chart_type = chart_type
+                if chart_type == "waterfall":
+                    mapped_chart_type = "bar"
                 elif chart_type == "combo":
-                    # Line and bar combo chart
-                    fig = go.Figure()
-                    if isinstance(y_axis, list) and len(y_axis) >= 2:
-                        # First series as bar
-                        fig.add_trace(go.Bar(x=df[x_axis], y=df[y_axis[0]], 
-                                            name=y_axis[0], yaxis='y'))
-                        # Second series as line on secondary axis
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis[1]], 
-                                                mode='lines+markers', name=y_axis[1], 
-                                                yaxis='y2'))
-                        
-                        fig.update_layout(
-                            yaxis2=dict(
-                                title=y_axis[1],
-                                overlaying='y',
-                                side='right'
-                            )
-                        )
+                    # For combo charts with multiple series, use stacked_bar
+                    mapped_chart_type = "stacked_bar" if len(series_data) > 1 else "bar"
                 
-                # Update layout
-                fig.update_layout(
-                    title=title or f"{chart_type.capitalize()} Chart",
-                    xaxis_title=x_axis,
-                    yaxis_title=y_axis if isinstance(y_axis, str) else "Value",
-                    hovermode='x unified',
-                    template='plotly_white'
-                )
-                
-                # Apply additional options if provided
-                if options:
-                    if 'height' in options:
-                        fig.update_layout(height=options['height'])
-                    if 'width' in options:
-                        fig.update_layout(width=options['width'])
-                    if 'showlegend' in options:
-                        fig.update_layout(showlegend=options['showlegend'])
-                
-                # Convert to JSON for storage/display
-                chart_json = fig.to_json()
-                
-                # Display in Streamlit if in Streamlit context
-                if 'st' in globals() or 'streamlit' in sys.modules:
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                return {
-                    "chart": chart_json,
-                    "type": chart_type,
-                    "title": title,
-                    "status": "success",
-                    "message": "Chart created successfully. Use st.plotly_chart to display."
+                # Prepare data in render_chart format
+                chart_data = {
+                    "x": x_values,
+                    "series": series_data
                 }
+                
+                # Determine y_format
+                y_format = "number"
+                if options and "y_format" in options:
+                    y_format = options["y_format"]
+                elif y_axis and isinstance(y_axis, str):
+                    if any(kw in y_axis.lower() for kw in ["margin", "ratio", "rate", "percent"]):
+                        y_format = "percent"
+                    elif any(kw in y_axis.lower() for kw in ["revenue", "profit", "cost", "price"]):
+                        y_format = "currency"
+                
+                # Call render_chart with converted data
+                return render_chart(
+                    chart_type=mapped_chart_type,
+                    data=chart_data,
+                    title=title or f"{chart_type.capitalize()} Chart",
+                    x_label=x_axis,
+                    y_label=y_axis if isinstance(y_axis, str) else "Value",
+                    y_format=y_format
+                )
                 
             except Exception as e:
                 return {"error": str(e), "status": "failed"}
@@ -3123,6 +3193,21 @@ def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
     Send message to OpenAI and handle tool calls
     Similar to Bank_Sample/7_DucGPT_Chatbot.py implementation
     """
+    # Import chart utilities if not already imported
+    global create_plotly_chart
+    if not CHART_UTILS_AVAILABLE:
+        try:
+            from utils.chart_utils import create_plotly_chart
+        except ImportError:
+            create_plotly_chart = None
+    
+    # Initialize pending charts in session state if not exists
+    if 'pending_charts' not in st.session_state:
+        st.session_state.pending_charts = []
+    
+    # Clear pending charts from previous messages
+    st.session_state.pending_charts = []
+    
     # Initialize OpenAI client if not exists
     if 'openai_client' not in st.session_state:
         api_key = os.getenv("OPENAI_API_KEY")
@@ -3229,6 +3314,11 @@ CRITICAL TOOL SELECTION RULES:
                     # Execute the tool
                     tool_result = execute_tool_call(tool_system, function_name, function_args)
                     
+                    # Check if this is a chart rendering tool
+                    if function_name in ["render_chart", "create_financial_chart"] and tool_result.get("status") == "success":
+                        if "chart_spec" in tool_result:
+                            st.session_state.pending_charts.append(tool_result["chart_spec"])
+                    
                     # Show tool result in expander
                     with tool_results_container.expander(f"Tool: {function_name}", expanded=False):
                         st.code(json.dumps(function_args, indent=2))
@@ -3268,6 +3358,17 @@ CRITICAL TOOL SELECTION RULES:
                 final_response = f"Analysis completed with {tool_call_count} tool calls. The query may be too complex."
             else:
                 final_response = "Please provide a more specific question about companies, projects, or market data."
+        
+        # Render any pending charts after the response
+        if st.session_state.pending_charts and create_plotly_chart:
+            for chart_spec in st.session_state.pending_charts:
+                try:
+                    fig = create_plotly_chart(chart_spec)
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error rendering chart: {str(e)}")
+            # Clear pending charts after rendering
+            st.session_state.pending_charts = []
         
         return final_response
 
