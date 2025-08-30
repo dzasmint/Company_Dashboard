@@ -3995,98 +3995,103 @@ class ModelForecastTab:
                         year_str = str(year)
                     
                         # Complete Consolidated P&L Statement (including interest income)
+                        # Convert from billions to raw VND values for database storage
                         pnl_data = {
-                            'real_estate_revenue': convert_to_native(re_revenue_row.get(year_str, 0)),
-                            'other_revenue': convert_to_native(revenue_row.get(year_str, 0) - re_revenue_row.get(year_str, 0)),
-                            'net_revenue': convert_to_native(revenue_row.get(year_str, 0)),
-                            'real_estate_cogs': convert_to_native(re_cogs_row.get(year_str, 0)),
-                            'other_cogs': convert_to_native(total_cogs_pnl_row.get(year_str, 0) - re_cogs_row.get(year_str, 0)),
-                            'total_cogs': convert_to_native(total_cogs_pnl_row.get(year_str, 0)),
-                            'gross_profit': convert_to_native(gp_row.get(year_str, 0)),
-                            'sga': convert_to_native(sga_row.get(year_str, 0)),
-                            'ebitda': convert_to_native(ebitda_row.get(year_str, 0)),
-                            'interest_income': convert_to_native(interest_income_row.get(year_str, 0)),  # Added interest income
-                            'project_interest_expense': convert_to_native(project_interest_pnl_row.get(year_str, 0)),
-                            'existing_debt_interest_expense': convert_to_native(existing_interest_pnl_row.get(year_str, 0)),
-                            'interest_expense': convert_to_native(interest_row.get(year_str, 0)),
-                            'pbt': convert_to_native(pbt_row.get(year_str, 0)),
-                            'tax': convert_to_native(tax_row.get(year_str, 0)),
-                            'pat': convert_to_native(pat_row.get(year_str, 0)),
-                            'minority_interest': convert_to_native(minority_interest_row.get(year_str, 0)),
-                            'npatmi': convert_to_native(npatmi_row.get(year_str, 0))
+                            'real_estate_revenue': convert_to_native(re_revenue_row.get(year_str, 0) * 1e9),
+                            'other_revenue': convert_to_native((revenue_row.get(year_str, 0) - re_revenue_row.get(year_str, 0)) * 1e9),
+                            'net_revenue': convert_to_native(revenue_row.get(year_str, 0) * 1e9),
+                            'real_estate_cogs': convert_to_native(re_cogs_row.get(year_str, 0) * 1e9),
+                            'other_cogs': convert_to_native((total_cogs_pnl_row.get(year_str, 0) - re_cogs_row.get(year_str, 0)) * 1e9),
+                            'total_cogs': convert_to_native(total_cogs_pnl_row.get(year_str, 0) * 1e9),
+                            'gross_profit': convert_to_native(gp_row.get(year_str, 0) * 1e9),
+                            'sga': convert_to_native(sga_row.get(year_str, 0) * 1e9),
+                            'ebitda': convert_to_native(ebitda_row.get(year_str, 0) * 1e9),
+                            'interest_income': convert_to_native(interest_income_row.get(year_str, 0) * 1e9),  # Added interest income
+                            'project_interest_expense': convert_to_native(project_interest_pnl_row.get(year_str, 0) * 1e9),
+                            'existing_debt_interest_expense': convert_to_native(existing_interest_pnl_row.get(year_str, 0) * 1e9),
+                            'interest_expense': convert_to_native(interest_row.get(year_str, 0) * 1e9),
+                            'pbt': convert_to_native(pbt_row.get(year_str, 0) * 1e9),
+                            'tax': convert_to_native(tax_row.get(year_str, 0) * 1e9),
+                            'pat': convert_to_native(pat_row.get(year_str, 0) * 1e9),
+                            'minority_interest': convert_to_native(minority_interest_row.get(year_str, 0) * 1e9),
+                            'npatmi': convert_to_native(npatmi_row.get(year_str, 0) * 1e9)
                         }
                     
                         # Complete Consolidated Balance Sheet (all line items)
+                        # Convert from billions to raw VND values for database storage
                         balance_sheet_data = {
                             'assets': {
-                                'cash_and_equivalents': convert_to_native(cash_row.get(year_str, 0)),
-                                'account_receivable': convert_to_native(ar_row.get(year_str, 0)),
-                                'inventory': convert_to_native(inventory_row.get(year_str, 0)),
-                                'other_assets': convert_to_native(other_assets_row.get(year_str, 0)),
-                                'total_assets': convert_to_native(total_assets_row.get(year_str, 0))
+                                'cash_and_equivalents': convert_to_native(cash_row.get(year_str, 0) * 1e9),
+                                'account_receivable': convert_to_native(ar_row.get(year_str, 0) * 1e9),
+                                'inventory': convert_to_native(inventory_row.get(year_str, 0) * 1e9),
+                                'other_assets': convert_to_native(other_assets_row.get(year_str, 0) * 1e9),
+                                'total_assets': convert_to_native(total_assets_row.get(year_str, 0) * 1e9)
                             },
                             'liabilities': {
-                                'account_payable': convert_to_native(ap_row.get(year_str, 0)),
-                                'customer_prepayment': convert_to_native(customer_prepayment_row.get(year_str, 0)),
-                                'short_term_debt': convert_to_native(st_debt_row.get(year_str, 0)),
-                                'long_term_debt': convert_to_native(lt_debt_row.get(year_str, 0)),
-                                'total_debt': convert_to_native(total_debt_by_year.get(year_str, 0)),
-                                'other_liabilities': convert_to_native(other_liab_row.get(year_str, 0)),
-                                'total_liabilities': convert_to_native(total_liab_row.get(year_str, 0))
+                                'account_payable': convert_to_native(ap_row.get(year_str, 0) * 1e9),
+                                'customer_prepayment': convert_to_native(customer_prepayment_row.get(year_str, 0) * 1e9),
+                                'short_term_debt': convert_to_native(st_debt_row.get(year_str, 0) * 1e9),
+                                'long_term_debt': convert_to_native(lt_debt_row.get(year_str, 0) * 1e9),
+                                'total_debt': convert_to_native(total_debt_by_year.get(year_str, 0) * 1e9),
+                                'other_liabilities': convert_to_native(other_liab_row.get(year_str, 0) * 1e9),
+                                'total_liabilities': convert_to_native(total_liab_row.get(year_str, 0) * 1e9)
                             },
                             'equity': {
-                                'retained_earnings': convert_to_native(retained_earnings_row.get(year_str, 0)),
-                                'minority_interest': convert_to_native(minority_interest_bs_row.get(year_str, 0)),
-                                'other_equity': convert_to_native(other_equity_row.get(year_str, 0)),
-                                'total_equity': convert_to_native(total_equity_row.get(year_str, 0))
+                                'retained_earnings': convert_to_native(retained_earnings_row.get(year_str, 0) * 1e9),
+                                'minority_interest': convert_to_native(minority_interest_bs_row.get(year_str, 0) * 1e9),
+                                'other_equity': convert_to_native(other_equity_row.get(year_str, 0) * 1e9),
+                                'total_equity': convert_to_native(total_equity_row.get(year_str, 0) * 1e9)
                             },
                             # Derived metrics
-                            'net_debt': convert_to_native(total_debt_by_year.get(year_str, 0) - cash_row.get(year_str, 0)),
-                            'working_capital': convert_to_native(inventory_row.get(year_str, 0) + cash_row.get(year_str, 0) - customer_prepayment_row.get(year_str, 0))
+                            'net_debt': convert_to_native((total_debt_by_year.get(year_str, 0) - cash_row.get(year_str, 0)) * 1e9),
+                            'working_capital': convert_to_native((inventory_row.get(year_str, 0) + cash_row.get(year_str, 0) - customer_prepayment_row.get(year_str, 0)) * 1e9)
                         }
                     
                         # Complete Consolidated Cash Flow Statement
+                        # Convert from billions to raw VND values for database storage
                         cash_flow_data = {
                             'operating': {
-                                'presales_inflow': convert_to_native(sum(presales_cf_breakdown.get(p, {}).get(year_str, 0) for p in presales_cf_breakdown)),
-                                'other_segment_revenue': convert_to_native(other_segment_revenue_cf.get(year_str, 0)),
-                                'other_segment_cogs': convert_to_native(other_segment_cogs_cf.get(year_str, 0)),
-                                'project_interest_expense': convert_to_native(sum(interest_outflow_breakdown.get(p, {}).get(year_str, 0) for p in interest_outflow_breakdown)),
-                                'existing_debt_interest': convert_to_native(existing_debt_interest_row.get(year_str, 0)),
-                                'project_sga': convert_to_native(sum(sga_outflow_breakdown.get(p, {}).get(year_str, 0) for p in sga_outflow_breakdown)),
-                                'other_segment_sga': convert_to_native(other_sga_cf_row.get(year_str, 0)),
-                                'tax': convert_to_native(sum(tax_outflow_breakdown.get(p, {}).get(year_str, 0) for p in tax_outflow_breakdown)),
-                                'total_operating': convert_to_native(operating_cf_by_year.get(year_str, 0))
+                                'presales_inflow': convert_to_native(sum(presales_cf_breakdown.get(p, {}).get(year_str, 0) for p in presales_cf_breakdown) * 1e9),
+                                'other_segment_revenue': convert_to_native(other_segment_revenue_cf.get(year_str, 0) * 1e9),
+                                'other_segment_cogs': convert_to_native(other_segment_cogs_cf.get(year_str, 0) * 1e9),
+                                'project_interest_expense': convert_to_native(sum(interest_outflow_breakdown.get(p, {}).get(year_str, 0) for p in interest_outflow_breakdown) * 1e9),
+                                'existing_debt_interest': convert_to_native(existing_debt_interest_row.get(year_str, 0) * 1e9),
+                                'project_sga': convert_to_native(sum(sga_outflow_breakdown.get(p, {}).get(year_str, 0) for p in sga_outflow_breakdown) * 1e9),
+                                'other_segment_sga': convert_to_native(other_sga_cf_row.get(year_str, 0) * 1e9),
+                                'tax': convert_to_native(sum(tax_outflow_breakdown.get(p, {}).get(year_str, 0) for p in tax_outflow_breakdown) * 1e9),
+                                'total_operating': convert_to_native(operating_cf_by_year.get(year_str, 0) * 1e9)
                             },
                             'investing': {
-                                'land_outflow': convert_to_native(sum(land_outflow_breakdown.get(p, {}).get(year_str, 0) for p in land_outflow_breakdown)),
-                                'construction_outflow': convert_to_native(sum(construction_outflow_breakdown.get(p, {}).get(year_str, 0) for p in construction_outflow_breakdown)),
-                                'interest_income': convert_to_native(interest_income_row.get(year_str, 0)),  # Interest income in investing
-                                'total_investing': convert_to_native(investing_cf_by_year.get(year_str, 0))
+                                'land_outflow': convert_to_native(sum(land_outflow_breakdown.get(p, {}).get(year_str, 0) for p in land_outflow_breakdown) * 1e9),
+                                'construction_outflow': convert_to_native(sum(construction_outflow_breakdown.get(p, {}).get(year_str, 0) for p in construction_outflow_breakdown) * 1e9),
+                                'interest_income': convert_to_native(interest_income_row.get(year_str, 0) * 1e9),  # Interest income in investing
+                                'total_investing': convert_to_native(investing_cf_by_year.get(year_str, 0) * 1e9)
                             },
                             'financing': {
-                                'debt_changes': convert_to_native(sum(financing_cf_breakdown.get(p, {}).get(year_str, 0) for p in financing_cf_breakdown)),
-                                'total_financing': convert_to_native(financing_cf_by_year.get(year_str, 0))
+                                'debt_changes': convert_to_native(sum(financing_cf_breakdown.get(p, {}).get(year_str, 0) for p in financing_cf_breakdown) * 1e9),
+                                'total_financing': convert_to_native(financing_cf_by_year.get(year_str, 0) * 1e9)
                             },
-                            'net_cash_flow': convert_to_native(net_cf_by_year.get(year_str, 0))
+                            'net_cash_flow': convert_to_native(net_cf_by_year.get(year_str, 0) * 1e9)
                         }
                     
                         # Business segments detail
+                        # Convert from billions to raw VND values for database storage
                         business_segments_data = {}
                         for segment_name in st.session_state.base_year_revenues.keys():
                             if segment_name in segment_revenue_data:
                                 business_segments_data[segment_name] = {
-                                    'revenue': convert_to_native(segment_revenue_data[segment_name].get(year_str, 0)),
-                                    'cogs': convert_to_native(segment_cogs_data[segment_name].get(year_str, 0)),
-                                    'gross_profit': convert_to_native(segment_revenue_data[segment_name].get(year_str, 0) + segment_cogs_data[segment_name].get(year_str, 0))
+                                    'revenue': convert_to_native(segment_revenue_data[segment_name].get(year_str, 0) * 1e9),
+                                    'cogs': convert_to_native(segment_cogs_data[segment_name].get(year_str, 0) * 1e9),
+                                    'gross_profit': convert_to_native((segment_revenue_data[segment_name].get(year_str, 0) + segment_cogs_data[segment_name].get(year_str, 0)) * 1e9)
                                 }
                     
                         # NEW: Detail Project Breakdown Balance Sheet (changes)
+                        # Convert from billions to raw VND values for database storage
                         balance_sheet_detail_data = {
-                            'debt_changes': {p: convert_to_native(debt_change_breakdown.get(p, {}).get(year_str, 0)) for p in debt_change_breakdown},
-                            'inventory_changes': {p: convert_to_native(inventory_change_breakdown.get(p, {}).get(year_str, 0)) for p in inventory_change_breakdown},
-                            'prepayment_changes': {p: convert_to_native(prepayment_change_breakdown.get(p, {}).get(year_str, 0)) for p in prepayment_change_breakdown},
-                            'cash_changes': {p: convert_to_native(cash_change_breakdown.get(p, {}).get(year_str, 0)) for p in cash_change_breakdown}
+                            'debt_changes': {p: convert_to_native(debt_change_breakdown.get(p, {}).get(year_str, 0) * 1e9) for p in debt_change_breakdown},
+                            'inventory_changes': {p: convert_to_native(inventory_change_breakdown.get(p, {}).get(year_str, 0) * 1e9) for p in inventory_change_breakdown},
+                            'prepayment_changes': {p: convert_to_native(prepayment_change_breakdown.get(p, {}).get(year_str, 0) * 1e9) for p in prepayment_change_breakdown},
+                            'cash_changes': {p: convert_to_native(cash_change_breakdown.get(p, {}).get(year_str, 0) * 1e9) for p in cash_change_breakdown}
                         }
                     
                         # NEW: Detail Project Breakdown Cash Flow
@@ -4095,23 +4100,24 @@ class ModelForecastTab:
                         }
                         
                         # Extract project-level cash flow data from cf_rows
+                        # Convert from billions to raw VND values for database storage
                         for project_name in presales_cf_breakdown.keys():
                             cash_flow_detail_data['by_project'][project_name] = {
-                                'presales_inflow': convert_to_native(presales_cf_breakdown.get(project_name, {}).get(year_str, 0)),
-                                'land_outflow': convert_to_native(land_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
-                                'construction_outflow': convert_to_native(construction_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
-                                'interest_outflow': convert_to_native(interest_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
-                                'sga_outflow': convert_to_native(sga_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
-                                'tax_outflow': convert_to_native(tax_outflow_breakdown.get(project_name, {}).get(year_str, 0)),
-                                'debt_changes': convert_to_native(financing_cf_breakdown.get(project_name, {}).get(year_str, 0)),
+                                'presales_inflow': convert_to_native(presales_cf_breakdown.get(project_name, {}).get(year_str, 0) * 1e9),
+                                'land_outflow': convert_to_native(land_outflow_breakdown.get(project_name, {}).get(year_str, 0) * 1e9),
+                                'construction_outflow': convert_to_native(construction_outflow_breakdown.get(project_name, {}).get(year_str, 0) * 1e9),
+                                'interest_outflow': convert_to_native(interest_outflow_breakdown.get(project_name, {}).get(year_str, 0) * 1e9),
+                                'sga_outflow': convert_to_native(sga_outflow_breakdown.get(project_name, {}).get(year_str, 0) * 1e9),
+                                'tax_outflow': convert_to_native(tax_outflow_breakdown.get(project_name, {}).get(year_str, 0) * 1e9),
+                                'debt_changes': convert_to_native(financing_cf_breakdown.get(project_name, {}).get(year_str, 0) * 1e9),
                                 'net_cash_flow': convert_to_native(
-                                    presales_cf_breakdown.get(project_name, {}).get(year_str, 0) +
+                                    (presales_cf_breakdown.get(project_name, {}).get(year_str, 0) +
                                     land_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
                                     construction_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
                                     interest_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
                                     sga_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
                                     tax_outflow_breakdown.get(project_name, {}).get(year_str, 0) +
-                                    financing_cf_breakdown.get(project_name, {}).get(year_str, 0)
+                                    financing_cf_breakdown.get(project_name, {}).get(year_str, 0)) * 1e9
                                 )
                             }
                         
@@ -4124,23 +4130,25 @@ class ModelForecastTab:
                             'cash_flow_detail': cash_flow_detail_data,  # NEW
                             'business_segments': business_segments_data,
                             'project_breakdown': {
-                                'revenue': {p: convert_to_native(project_revenue_breakdown.get(p, {}).get(year, 0)) for p in project_revenue_breakdown},
-                                'cogs': {p: convert_to_native(project_cogs_breakdown.get(p, {}).get(year, 0)) for p in project_cogs_breakdown},
-                                'sga': {p: convert_to_native(project_sga_breakdown.get(p, {}).get(year, 0)) for p in project_sga_breakdown},
-                                'interest': {p: convert_to_native(project_interest_breakdown.get(p, {}).get(year, 0)) for p in project_interest_breakdown},
-                                'pat': {p: convert_to_native(project_pat_breakdown.get(p, {}).get(year, 0)) for p in project_pat_breakdown},
-                                'patmi': {p: convert_to_native(project_patmi_breakdown.get(p, {}).get(year, 0)) for p in project_patmi_breakdown},
-                                'minority_interest': {p: convert_to_native(project_minority_interest_breakdown.get(p, {}).get(year, {})) for p in project_minority_interest_breakdown if year in project_minority_interest_breakdown.get(p, {})}
+                                'revenue': {p: convert_to_native(project_revenue_breakdown.get(p, {}).get(year, 0) * 1e9) for p in project_revenue_breakdown},
+                                'cogs': {p: convert_to_native(project_cogs_breakdown.get(p, {}).get(year, 0) * 1e9) for p in project_cogs_breakdown},
+                                'sga': {p: convert_to_native(project_sga_breakdown.get(p, {}).get(year, 0) * 1e9) for p in project_sga_breakdown},
+                                'interest': {p: convert_to_native(project_interest_breakdown.get(p, {}).get(year, 0) * 1e9) for p in project_interest_breakdown},
+                                'pat': {p: convert_to_native(project_pat_breakdown.get(p, {}).get(year, 0) * 1e9) for p in project_pat_breakdown},
+                                'patmi': {p: convert_to_native(project_patmi_breakdown.get(p, {}).get(year, 0) * 1e9) for p in project_patmi_breakdown},
+                                'minority_interest': {p: convert_to_native(project_minority_interest_breakdown.get(p, {}).get(year, {}).get('minority_interest', 0) * 1e9) for p in project_minority_interest_breakdown if year in project_minority_interest_breakdown.get(p, {})}
                             },
                             'profitability_metrics': {
                                 'project_margins': {
                                     p: {
-                                        'gross_margin': convert_to_native((project_revenue_breakdown.get(p, {}).get(year, 0) + project_cogs_breakdown.get(p, {}).get(year, 0)) / project_revenue_breakdown.get(p, {}).get(year, 1) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0,
-                                        'pat_margin': convert_to_native(project_pat_breakdown.get(p, {}).get(year, 0) / project_revenue_breakdown.get(p, {}).get(year, 1) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0,
-                                        'patmi_margin': convert_to_native(project_patmi_breakdown.get(p, {}).get(year, 0) / project_revenue_breakdown.get(p, {}).get(year, 1) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0
+                                        # Margins are percentages, calculated from billion VND values in breakdowns
+                                        'gross_margin': convert_to_native((project_revenue_breakdown.get(p, {}).get(year, 0) + project_cogs_breakdown.get(p, {}).get(year, 0)) / project_revenue_breakdown.get(p, {}).get(year, 0) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0,
+                                        'pat_margin': convert_to_native(project_pat_breakdown.get(p, {}).get(year, 0) / project_revenue_breakdown.get(p, {}).get(year, 0) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0,
+                                        'patmi_margin': convert_to_native(project_patmi_breakdown.get(p, {}).get(year, 0) / project_revenue_breakdown.get(p, {}).get(year, 0) * 100) if project_revenue_breakdown.get(p, {}).get(year, 0) > 0 else 0
                                     } for p in project_revenue_breakdown if project_revenue_breakdown.get(p, {}).get(year, 0) > 0
                                 },
                                 'consolidated_margins': {
+                                    # Margins are percentages, calculated from raw VND values in pnl_data
                                     'gross_margin': convert_to_native((pnl_data['gross_profit'] / pnl_data['net_revenue'] * 100)) if pnl_data.get('net_revenue', 0) > 0 else 0,
                                     'ebitda_margin': convert_to_native((pnl_data['ebitda'] / pnl_data['net_revenue'] * 100)) if pnl_data.get('net_revenue', 0) > 0 else 0,
                                     'pat_margin': convert_to_native((pnl_data['pat'] / pnl_data['net_revenue'] * 100)) if pnl_data.get('net_revenue', 0) > 0 else 0,
@@ -4178,7 +4186,8 @@ class ModelForecastTab:
                         if 'pnl' in forecast_data[year_str] and 'interest_income' in forecast_data[year_str]['pnl']:
                             interest_val = forecast_data[year_str]['pnl']['interest_income']
                             if interest_val != 0:
-                                st.info(f"💡 Interest Income for {year_str}: {interest_val:,.2f}B VND")
+                                # Values are now in raw VND, convert to billions for display
+                                st.info(f"💡 Interest Income for {year_str}: {interest_val/1e9:,.2f}B VND")
                                 has_interest_income = True
                         else:
                             st.warning(f"⚠️ Interest Income missing or zero for {year_str}")

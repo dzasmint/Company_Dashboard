@@ -263,6 +263,110 @@ class EnhancedAIToolSystem:
         self._register_ai_tools()
         self._register_visualization_tools()
     
+    def _parse_period_notation(self, period: str) -> Dict:
+        """Parse period notation like 2H25, 4Q24, 1H23 into components"""
+        import re
+        
+        result = {
+            "type": None,  # "half", "quarter", "annual"
+            "period_num": None,  # 1, 2, 3, 4
+            "year": None,
+            "required_quarters": []
+        }
+        
+        # Match patterns like 1H25, 2H24
+        half_match = re.match(r'([12])H(\d{2,4})', period.upper())
+        if half_match:
+            half_num = int(half_match.group(1))
+            year = half_match.group(2)
+            if len(year) == 2:
+                year = "20" + year
+            result["type"] = "half"
+            result["period_num"] = half_num
+            result["year"] = year
+            if half_num == 1:
+                result["required_quarters"] = [f"{year}Q1", f"{year}Q2"]
+            else:
+                result["required_quarters"] = [f"{year}Q3", f"{year}Q4"]
+            return result
+        
+        # Match patterns like 1Q25, 4Q24, 2024Q1
+        quarter_match = re.match(r'(\d{4})Q([1-4])|([1-4])Q(\d{2,4})', period.upper())
+        if quarter_match:
+            if quarter_match.group(1):  # Format: 2024Q1
+                year = quarter_match.group(1)
+                quarter = int(quarter_match.group(2))
+            else:  # Format: 1Q24
+                quarter = int(quarter_match.group(3))
+                year = quarter_match.group(4)
+                if len(year) == 2:
+                    year = "20" + year
+            result["type"] = "quarter"
+            result["period_num"] = quarter
+            result["year"] = year
+            result["required_quarters"] = [f"{year}Q{quarter}"]
+            return result
+        
+        # Match full year like 2024, 2025
+        year_match = re.match(r'(20\d{2})', period)
+        if year_match:
+            result["type"] = "annual"
+            result["year"] = year_match.group(1)
+            result["required_quarters"] = [f"{result['year']}Q{i}" for i in range(1, 5)]
+            return result
+        
+        return result
+    
+    def _check_data_availability(self, ticker: str, year: str, metrics: List[str]) -> Dict:
+        """Check what data is available for period calculations"""
+        availability = {
+            "annual_forecast": False,
+            "annual_actual": False,
+            "quarters_available": [],
+            "quarters_missing": [],
+            "can_calculate_full_year": False,
+            "can_calculate_1H": False,
+            "can_calculate_2H": False
+        }
+        
+        # Check forecast availability (MongoDB)
+        if self.vietnam_stocks_db is not None:
+            try:
+                collection = self.vietnam_stocks_db['CompanyForecast']
+                forecast = collection.find_one({'ticker': ticker.upper()})
+                if forecast and year in forecast.get('forecast_data', {}):
+                    availability["annual_forecast"] = True
+            except:
+                pass
+        
+        # Check historical quarterly data
+        df_q = self._load_quarterly_financial_statements()
+        if not df_q.empty:
+            ticker_data = df_q[df_q['TICKER'] == ticker.upper()]
+            for q in range(1, 5):
+                quarter_str = f"{year}Q{q}"
+                if quarter_str in ticker_data['DATE'].values:
+                    availability["quarters_available"].append(quarter_str)
+                else:
+                    availability["quarters_missing"].append(quarter_str)
+        
+        # Check annual historical data
+        df_a = self._load_financial_statements_csv()
+        if not df_a.empty:
+            ticker_data = df_a[df_a['TICKER'] == ticker.upper()]
+            if int(year) in ticker_data['DATE'].values:
+                availability["annual_actual"] = True
+        
+        # Determine calculation possibilities
+        q1_q2 = f"{year}Q1" in availability["quarters_available"] and f"{year}Q2" in availability["quarters_available"]
+        q3_q4 = f"{year}Q3" in availability["quarters_available"] and f"{year}Q4" in availability["quarters_available"]
+        
+        availability["can_calculate_1H"] = q1_q2
+        availability["can_calculate_2H"] = q3_q4 or (availability["annual_forecast"] and q1_q2)
+        availability["can_calculate_full_year"] = len(availability["quarters_available"]) == 4
+        
+        return availability
+    
     def _register_financial_tools(self):
         """Register company financial analysis tools"""
         
@@ -434,6 +538,252 @@ class EnhancedAIToolSystem:
                     "date_range": f"{df['DATE'].min()}-{df['DATE'].max()}" if not df.empty else "N/A",
                     "status": "success"
                 }
+        
+        @self.tool(
+            name="calculate_period_metrics",
+            description="""Calculate metrics for specific periods (half-year, quarters) using available data.
+            Handles derived calculations like 2H25 PATMI = 2025 Forecast - (1Q25 + 2Q25 actual).
+            Supports period notations: 1H25, 2H25, 1Q25-4Q25, etc.""",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "metric": {
+                    "type": "string",
+                    "description": "Financial metric (e.g., NPATMI, Net_Revenue, EBITDA)",
+                    "required": True
+                },
+                "period": {
+                    "type": "string",
+                    "description": "Period notation (e.g., 2H25, 4Q25, 1H24)",
+                    "required": True
+                },
+                "calculation_method": {
+                    "type": "string",
+                    "enum": ["derive", "sum", "auto"],
+                    "description": "Method: derive (from forecast), sum (add quarters), auto (best available)",
+                    "required": False
+                }
+            }
+        )
+        def calculate_period_metrics(ticker: str, metric: str, period: str, 
+                                    calculation_method: str = "auto") -> Dict:
+            """Calculate metrics for specific periods using available data"""
+            
+            ticker = ticker.upper()
+            
+            # Parse the period notation
+            period_info = self._parse_period_notation(period)
+            if not period_info["year"]:
+                return {
+                    "error": f"Invalid period notation: {period}",
+                    "example_formats": ["1H25", "2H24", "1Q25", "4Q24"],
+                    "status": "failed"
+                }
+            
+            year = period_info["year"]
+            
+            # Check data availability
+            availability = self._check_data_availability(ticker, year, [metric])
+            
+            # Perform calculation based on period type
+            if period_info["type"] == "half":
+                half_num = period_info["period_num"]
+                
+                if half_num == 1:  # First half (Q1 + Q2)
+                    if availability["can_calculate_1H"]:
+                        # Sum Q1 and Q2
+                        df_q = self._load_quarterly_financial_statements()
+                        q1_data = df_q[(df_q['TICKER'] == ticker) & 
+                                      (df_q['DATE'] == f"{year}Q1") & 
+                                      (df_q['KEYCODE'] == metric)]
+                        q2_data = df_q[(df_q['TICKER'] == ticker) & 
+                                      (df_q['DATE'] == f"{year}Q2") & 
+                                      (df_q['KEYCODE'] == metric)]
+                        
+                        if not q1_data.empty and not q2_data.empty:
+                            # Convert to billions VND for consistency
+                            value = (q1_data['VALUE'].iloc[0] + q2_data['VALUE'].iloc[0]) / 1e9
+                            return {
+                                "period": f"1H{year}",
+                                "metric": metric,
+                                "value": value,
+                                "calculation": f"Q1{year} + Q2{year}",
+                                "method": "sum_quarters",
+                                "data_source": "historical_quarterly",
+                                "status": "success"
+                            }
+                    
+                    return {
+                        "error": f"Cannot calculate 1H{year} {metric}",
+                        "reason": f"Missing quarters: {', '.join([q for q in [f'{year}Q1', f'{year}Q2'] if q not in availability['quarters_available']])}",
+                        "available_quarters": availability["quarters_available"],
+                        "status": "failed"
+                    }
+                
+                else:  # Second half (derive from annual or sum Q3+Q4)
+                    # Try to derive from annual forecast minus 1H actual
+                    if availability["annual_forecast"] and availability["can_calculate_1H"]:
+                        # Get annual forecast
+                        if self.vietnam_stocks_db is not None:
+                            collection = self.vietnam_stocks_db['CompanyForecast']
+                            forecast = collection.find_one({'ticker': ticker})
+                            if forecast and year in forecast.get('forecast_data', {}):
+                                # Try different locations for the metric
+                                pnl = forecast['forecast_data'][year].get('pnl', {})
+                                # Handle different naming conventions for NPATMI
+                                if metric == 'NPATMI':
+                                    annual_value = pnl.get('npatmi') or pnl.get('NPATMI') or pnl.get('patmi')
+                                else:
+                                    annual_value = pnl.get(metric.lower()) or pnl.get(metric)
+                                
+                                if annual_value:
+                                    # Get 1H actual
+                                    df_q = self._load_quarterly_financial_statements()
+                                    q1_data = df_q[(df_q['TICKER'] == ticker) & 
+                                                  (df_q['DATE'] == f"{year}Q1") & 
+                                                  (df_q['KEYCODE'] == metric)]
+                                    q2_data = df_q[(df_q['TICKER'] == ticker) & 
+                                                  (df_q['DATE'] == f"{year}Q2") & 
+                                                  (df_q['KEYCODE'] == metric)]
+                                    
+                                    if not q1_data.empty and not q2_data.empty:
+                                        # Both annual_value (from MongoDB) and quarterly values are in raw VND
+                                        h1_value_raw = q1_data['VALUE'].iloc[0] + q2_data['VALUE'].iloc[0]
+                                        h2_value_raw = annual_value - h1_value_raw
+                                        
+                                        # Convert to billions for display
+                                        h1_value = h1_value_raw / 1e9
+                                        h2_value = h2_value_raw / 1e9
+                                        annual_value_bn = annual_value / 1e9
+                                        
+                                        return {
+                                            "period": f"2H{year}",
+                                            "metric": metric,
+                                            "value": h2_value,
+                                            "calculation": f"{year} Forecast ({annual_value_bn:.2f}B) - 1H{year} Actual ({h1_value:.2f}B)",
+                                            "method": "derive_from_forecast",
+                                            "data_source": "forecast_minus_actual",
+                                            "status": "success"
+                                        }
+                    
+                    # Try to sum Q3 and Q4 if available
+                    if f"{year}Q3" in availability["quarters_available"] and f"{year}Q4" in availability["quarters_available"]:
+                        df_q = self._load_quarterly_financial_statements()
+                        q3_data = df_q[(df_q['TICKER'] == ticker) & 
+                                      (df_q['DATE'] == f"{year}Q3") & 
+                                      (df_q['KEYCODE'] == metric)]
+                        q4_data = df_q[(df_q['TICKER'] == ticker) & 
+                                      (df_q['DATE'] == f"{year}Q4") & 
+                                      (df_q['KEYCODE'] == metric)]
+                        
+                        if not q3_data.empty and not q4_data.empty:
+                            # Convert to billions VND for consistency
+                            value = (q3_data['VALUE'].iloc[0] + q4_data['VALUE'].iloc[0]) / 1e9
+                            return {
+                                "period": f"2H{year}",
+                                "metric": metric,
+                                "value": value,
+                                "calculation": f"Q3{year} + Q4{year}",
+                                "method": "sum_quarters",
+                                "data_source": "historical_quarterly",
+                                "status": "success"
+                            }
+                    
+                    return {
+                        "error": f"Cannot calculate 2H{year} {metric}",
+                        "reason": "Need either (1) annual forecast + 1H actual, or (2) Q3 and Q4 actuals",
+                        "available_data": {
+                            "annual_forecast": availability["annual_forecast"],
+                            "1H_actual": availability["can_calculate_1H"],
+                            "Q3_Q4_actual": f"{year}Q3" in availability["quarters_available"] and f"{year}Q4" in availability["quarters_available"]
+                        },
+                        "status": "failed"
+                    }
+            
+            elif period_info["type"] == "quarter":
+                quarter_str = period_info["required_quarters"][0]
+                quarter_num = period_info["period_num"]
+                
+                # Check if quarter data exists
+                if quarter_str in availability["quarters_available"]:
+                    df_q = self._load_quarterly_financial_statements()
+                    q_data = df_q[(df_q['TICKER'] == ticker) & 
+                                 (df_q['DATE'] == quarter_str) & 
+                                 (df_q['KEYCODE'] == metric)]
+                    
+                    if not q_data.empty:
+                        return {
+                            "period": quarter_str,
+                            "metric": metric,
+                            "value": q_data['VALUE'].iloc[0] / 1e9,  # Convert to billions VND
+                            "method": "direct",
+                            "data_source": "historical_quarterly",
+                            "status": "success"
+                        }
+                
+                # Try to derive from annual forecast if Q4
+                if quarter_num == 4 and availability["annual_forecast"]:
+                    # Check if Q1-Q3 are available
+                    q1_q3_available = all(f"{year}Q{i}" in availability["quarters_available"] for i in range(1, 4))
+                    
+                    if q1_q3_available:
+                        # Get annual forecast
+                        if self.vietnam_stocks_db is not None:
+                            collection = self.vietnam_stocks_db['CompanyForecast']
+                            forecast = collection.find_one({'ticker': ticker})
+                            if forecast and year in forecast.get('forecast_data', {}):
+                                # Try different locations for the metric
+                                pnl = forecast['forecast_data'][year].get('pnl', {})
+                                # Handle different naming conventions for NPATMI
+                                if metric == 'NPATMI':
+                                    annual_value = pnl.get('npatmi') or pnl.get('NPATMI') or pnl.get('patmi')
+                                else:
+                                    annual_value = pnl.get(metric.lower()) or pnl.get(metric)
+                                
+                                if annual_value:
+                                    # Sum Q1-Q3
+                                    df_q = self._load_quarterly_financial_statements()
+                                    q1_q3_sum_raw = 0
+                                    for q in range(1, 4):
+                                        q_data = df_q[(df_q['TICKER'] == ticker) & 
+                                                     (df_q['DATE'] == f"{year}Q{q}") & 
+                                                     (df_q['KEYCODE'] == metric)]
+                                        if not q_data.empty:
+                                            q1_q3_sum_raw += q_data['VALUE'].iloc[0]  # Keep in raw VND
+                                    
+                                    # Both annual_value and q1_q3_sum are in raw VND
+                                    q4_value_raw = annual_value - q1_q3_sum_raw
+                                    
+                                    # Convert to billions for display
+                                    q4_value = q4_value_raw / 1e9
+                                    annual_value_bn = annual_value / 1e9
+                                    q1_q3_sum_bn = q1_q3_sum_raw / 1e9
+                                    
+                                    return {
+                                        "period": f"Q4{year}",
+                                        "metric": metric,
+                                        "value": q4_value,
+                                        "calculation": f"{year} Forecast ({annual_value_bn:.2f}B) - (Q1+Q2+Q3) ({q1_q3_sum_bn:.2f}B)",
+                                        "method": "derive_from_forecast",
+                                        "data_source": "forecast_minus_actual",
+                                        "status": "success"
+                                    }
+                
+                return {
+                    "error": f"Cannot calculate {quarter_str} {metric}",
+                    "reason": f"Quarter data not available and cannot derive",
+                    "available_quarters": availability["quarters_available"],
+                    "suggestion": f"Need Q1-Q3 {year} actuals and {year} forecast to derive Q4" if quarter_num == 4 else f"Need actual {quarter_str} data",
+                    "status": "failed"
+                }
+            
+            return {
+                "error": f"Unsupported period type: {period_info['type']}",
+                "status": "failed"
+            }
         
         @self.tool(
             name="get_valuation_metrics",
@@ -787,23 +1137,96 @@ class EnhancedAIToolSystem:
                     forecast_data = {year: data for year, data in forecast_data.items() 
                                    if year in years}
                 
-                # Filter by statement type
+                # Filter by statement type and convert from raw VND to billions
                 result_data = {}
                 for year, year_data in forecast_data.items():
                     if statement_type == "all":
+                        # Convert P&L values from raw VND to billions
+                        pnl_converted = {}
+                        for key, value in year_data.get('pnl', {}).items():
+                            if isinstance(value, (int, float)) and key not in ['tax_rate']:
+                                pnl_converted[key] = value / 1e9  # Convert to billions
+                            else:
+                                pnl_converted[key] = value
+                        
+                        # Convert Balance Sheet values from raw VND to billions
+                        bs_converted = {}
+                        bs_data = year_data.get('balance_sheet', {})
+                        for section, items in bs_data.items():
+                            if isinstance(items, dict):
+                                bs_converted[section] = {}
+                                for key, value in items.items():
+                                    if isinstance(value, (int, float)):
+                                        bs_converted[section][key] = value / 1e9
+                                    else:
+                                        bs_converted[section][key] = value
+                            elif isinstance(items, (int, float)):
+                                bs_converted[section] = items / 1e9
+                            else:
+                                bs_converted[section] = items
+                        
+                        # Convert Cash Flow values from raw VND to billions
+                        cf_converted = {}
+                        cf_data = year_data.get('cash_flow', {})
+                        for section, items in cf_data.items():
+                            if isinstance(items, dict):
+                                cf_converted[section] = {}
+                                for key, value in items.items():
+                                    if isinstance(value, (int, float)):
+                                        cf_converted[section][key] = value / 1e9
+                                    else:
+                                        cf_converted[section][key] = value
+                            elif isinstance(items, (int, float)):
+                                cf_converted[section] = items / 1e9
+                            else:
+                                cf_converted[section] = items
+                        
                         result_data[year] = {
-                            'pnl': year_data.get('pnl', {}),
-                            'balance_sheet': year_data.get('balance_sheet', {}),
-                            'cash_flow': year_data.get('cash_flow', {})
+                            'pnl': pnl_converted,
+                            'balance_sheet': bs_converted,
+                            'cash_flow': cf_converted
                         }
                     else:
-                        result_data[year] = {statement_type: year_data.get(statement_type, {})}
-                    
-                    # Add project breakdown if requested (includes PAT/PATMI now)
-                    if include_breakdown and 'project_breakdown' in year_data:
-                        result_data[year]['project_breakdown'] = year_data['project_breakdown']
+                        # Convert single statement type
+                        statement_data = year_data.get(statement_type, {})
+                        converted_data = {}
                         
-                        # Add profitability metrics if available
+                        if statement_type == 'pnl':
+                            for key, value in statement_data.items():
+                                if isinstance(value, (int, float)) and key not in ['tax_rate']:
+                                    converted_data[key] = value / 1e9
+                                else:
+                                    converted_data[key] = value
+                        else:
+                            # For balance_sheet and cash_flow (nested structure)
+                            for section, items in statement_data.items():
+                                if isinstance(items, dict):
+                                    converted_data[section] = {}
+                                    for key, value in items.items():
+                                        if isinstance(value, (int, float)):
+                                            converted_data[section][key] = value / 1e9
+                                        else:
+                                            converted_data[section][key] = value
+                                elif isinstance(items, (int, float)):
+                                    converted_data[section] = items / 1e9
+                                else:
+                                    converted_data[section] = items
+                        
+                        result_data[year] = {statement_type: converted_data}
+                    
+                    # Add project breakdown if requested (convert to billions)
+                    if include_breakdown and 'project_breakdown' in year_data:
+                        breakdown_converted = {}
+                        for metric, projects in year_data['project_breakdown'].items():
+                            breakdown_converted[metric] = {}
+                            for project, value in projects.items():
+                                if isinstance(value, (int, float)):
+                                    breakdown_converted[metric][project] = value / 1e9
+                                else:
+                                    breakdown_converted[metric][project] = value
+                        result_data[year]['project_breakdown'] = breakdown_converted
+                        
+                        # Add profitability metrics if available (keep as percentages)
                         if 'profitability_metrics' in year_data:
                             result_data[year]['profitability_metrics'] = year_data['profitability_metrics']
                 
@@ -1279,8 +1702,8 @@ class EnhancedAIToolSystem:
                                     cagr = ((last_rev / first_rev) ** (1 / years_diff) - 1) * 100
                                     result["revenue_cagr"] = f"{cagr:.1f}%"
                                     result["revenue_growth"] = {
-                                        "from": f"{first_rev:,.0f}B VND",
-                                        "to": f"{last_rev:,.0f}B VND",
+                                        "from": f"{first_rev/1e9:,.0f}B VND",  # Convert raw to billions
+                                        "to": f"{last_rev/1e9:,.0f}B VND",      # Convert raw to billions
                                         "period": f"{first_year}-{last_year}"
                                     }
                 
@@ -1908,7 +2331,7 @@ class EnhancedAIToolSystem:
                         change_value = project_data.get(change_key, 0)
                         if change_value != 0:  # Only include non-zero changes
                             project_changes[project_name] = {
-                                "value": change_value,
+                                "value": change_value / 1e9,  # Convert raw to billions
                                 "direction": "increase" if change_value > 0 else "decrease",
                                 "percentage_of_total": 0  # Will calculate after totaling
                             }
@@ -1921,23 +2344,23 @@ class EnhancedAIToolSystem:
                                 (project_changes[project]["value"] / abs(total_change)) * 100
                     
                     result["changes"][change] = {
-                        "total_change": total_change,
+                        "total_change": total_change / 1e9,  # Convert raw to billions
                         "project_breakdown": project_changes,
                         "num_projects": len(project_changes),
                         "largest_contributor": max(project_changes.items(), 
                                                   key=lambda x: abs(x[1]["value"]))[0] if project_changes else None
                     }
                 
-                # Add consolidated balance sheet changes
+                # Add consolidated balance sheet changes (convert raw to billions)
                 consolidated_bs = year_data.get('consolidated_balance_sheet', {})
                 result["consolidated_changes"] = {
-                    "total_assets": consolidated_bs.get('assets', {}).get('total_assets', 0),
-                    "total_liabilities": consolidated_bs.get('liabilities', {}).get('total_liabilities', 0),
-                    "total_equity": consolidated_bs.get('equity', {}).get('total_equity', 0),
-                    "cash": consolidated_bs.get('assets', {}).get('cash', 0),
-                    "inventory": consolidated_bs.get('assets', {}).get('inventory', 0),
-                    "total_debt": consolidated_bs.get('liabilities', {}).get('total_debt', 0),
-                    "customer_prepayment": consolidated_bs.get('liabilities', {}).get('customer_prepayment', 0)
+                    "total_assets": consolidated_bs.get('assets', {}).get('total_assets', 0) / 1e9,
+                    "total_liabilities": consolidated_bs.get('liabilities', {}).get('total_liabilities', 0) / 1e9,
+                    "total_equity": consolidated_bs.get('equity', {}).get('total_equity', 0) / 1e9,
+                    "cash": consolidated_bs.get('assets', {}).get('cash', 0) / 1e9,
+                    "inventory": consolidated_bs.get('assets', {}).get('inventory', 0) / 1e9,
+                    "total_debt": consolidated_bs.get('liabilities', {}).get('total_debt', 0) / 1e9,
+                    "customer_prepayment": consolidated_bs.get('liabilities', {}).get('customer_prepayment', 0) / 1e9
                 }
                 
                 return {
@@ -2030,16 +2453,17 @@ class EnhancedAIToolSystem:
                     # Note: This is simplified; actual may include other working capital changes
                     operating_cf = cash_collection - (cogs - inventory_change)
                     
+                    # Convert raw values to billions for display
                     project_cf = {
-                        "presales": presales,
-                        "cash_collection": cash_collection,
-                        "revenue_recognized": revenue,
-                        "cogs": cogs,
-                        "gross_profit": revenue - cogs if revenue > 0 else 0,
-                        "inventory_change": inventory_change,
-                        "prepayment_change": prepayment_change,
-                        "debt_change": debt_change,
-                        "operating_cash_flow": operating_cf,
+                        "presales": presales / 1e9,
+                        "cash_collection": cash_collection / 1e9,
+                        "revenue_recognized": revenue / 1e9,
+                        "cogs": cogs / 1e9,
+                        "gross_profit": (revenue - cogs) / 1e9 if revenue > 0 else 0,
+                        "inventory_change": inventory_change / 1e9,
+                        "prepayment_change": prepayment_change / 1e9,
+                        "debt_change": debt_change / 1e9,
+                        "operating_cash_flow": operating_cf / 1e9,
                         "cash_conversion_rate": (cash_collection / revenue * 100) if revenue > 0 else 0
                     }
                     
@@ -2050,25 +2474,25 @@ class EnhancedAIToolSystem:
                     total_cash_collection += cash_collection
                     total_operating_cf += operating_cf
                 
-                # Add summary
+                # Add summary (convert totals to billions)
                 result["summary"] = {
-                    "total_presales": total_presales,
-                    "total_cash_collection": total_cash_collection,
-                    "total_operating_cash_flow": total_operating_cf,
+                    "total_presales": total_presales / 1e9,
+                    "total_cash_collection": total_cash_collection / 1e9,
+                    "total_operating_cash_flow": total_operating_cf / 1e9,
                     "num_projects": len(result["projects"]),
                     "average_cash_conversion": (total_cash_collection / sum(
-                        p["revenue_recognized"] for p in result["projects"].values()
+                        p["revenue_recognized"] * 1e9 for p in result["projects"].values()  # Convert back to raw for calculation
                     ) * 100) if sum(p["revenue_recognized"] for p in result["projects"].values()) > 0 else 0
                 }
                 
-                # Add consolidated cash flow for comparison
+                # Add consolidated cash flow for comparison (convert to billions)
                 consolidated_cf = year_data.get('consolidated_cash_flow', {})
                 if consolidated_cf:
                     result["consolidated_comparison"] = {
-                        "operating_activities_total": consolidated_cf.get('operating_activities', {}).get('total', 0),
-                        "investing_activities_total": consolidated_cf.get('investing_activities', {}).get('total', 0),
-                        "financing_activities_total": consolidated_cf.get('financing_activities', {}).get('total', 0),
-                        "net_cash_flow": consolidated_cf.get('net_cash_flow', 0)
+                        "operating_activities_total": consolidated_cf.get('operating_activities', {}).get('total', 0) / 1e9,
+                        "investing_activities_total": consolidated_cf.get('investing_activities', {}).get('total', 0) / 1e9,
+                        "financing_activities_total": consolidated_cf.get('financing_activities', {}).get('total', 0) / 1e9,
+                        "net_cash_flow": consolidated_cf.get('net_cash_flow', 0) / 1e9
                     }
                 
                 return {
@@ -3166,6 +3590,125 @@ class EnhancedAIAssistant:
         }
 
 
+def compress_ai_response(response: str, tool_calls_made: List[str], user_message: str) -> Dict:
+    """Compress assistant response to structured data to save tokens"""
+    import re
+    
+    compressed = {
+        "tickers": [],
+        "projects": [],
+        "periods": [],
+        "metrics": {},
+        "analysis_type": "",
+        "tools": tool_calls_made[:5],  # Keep first 5 tools
+        "summary": ""
+    }
+    
+    # Extract company tickers (3-4 letter uppercase)
+    tickers = re.findall(r'\b[A-Z]{3,4}\b', response + " " + user_message)
+    # Filter common real estate/financial tickers
+    valid_tickers = ['VHM', 'DXG', 'NVL', 'NLG', 'KDH', 'TCH', 'TAL', 'NTL', 'BCM', 'PDR', 'VIC', 'VRE']
+    compressed["tickers"] = list(set([t for t in tickers if t in valid_tickers]))[:10]
+    
+    # Extract project names (capitalized phrases)
+    project_patterns = [
+        r'(?:project|Project)\s+([A-Z][a-zA-Z\s]+)',
+        r'([A-Z][a-zA-Z]+\s+(?:Park|Tower|City|Plaza|Residence|Garden))',
+    ]
+    for pattern in project_patterns:
+        projects = re.findall(pattern, response)
+        compressed["projects"].extend(projects)
+    compressed["projects"] = list(set(compressed["projects"]))[:5]
+    
+    # Extract time periods (years, quarters, date ranges)
+    years = re.findall(r'\b(20\d{2})\b', response)
+    quarters = re.findall(r'\b(\d{4}-Q\d)\b|\b(Q\d\s*\d{4})\b', response)
+    date_ranges = re.findall(r'\b(20\d{2})-?(20\d{2})\b', response)
+    
+    compressed["periods"] = list(set(years))[:5]
+    if quarters:
+        compressed["periods"].extend([q[0] if q[0] else q[1] for q in quarters[:3]])
+    if date_ranges:
+        compressed["periods"].append(f"{date_ranges[0][0]}-{date_ranges[0][1]}")
+    
+    # Extract key metrics mentioned
+    metric_patterns = {
+        "revenue": r'revenue[:\s]+([0-9,\.]+\s*(?:billion|trillion|B|T)?\s*VND)',
+        "ebitda": r'EBITDA[:\s]+([0-9,\.]+)',
+        "rnav": r'RNAV[:\s]+([0-9,\.]+)',
+        "npv": r'NPV[:\s]+([0-9,\.]+)',
+        "roe": r'ROE[:\s]+([0-9\.]+%)',
+        "growth": r'growth[:\s]+([0-9\.]+%)'
+    }
+    
+    for metric, pattern in metric_patterns.items():
+        match = re.search(pattern, response, re.IGNORECASE)
+        if match:
+            compressed["metrics"][metric] = match.group(1)
+    
+    # Determine analysis type based on tools and content
+    if any('forecast' in tool.lower() for tool in tool_calls_made):
+        compressed["analysis_type"] = "forecast"
+    elif any('project' in tool.lower() for tool in tool_calls_made):
+        compressed["analysis_type"] = "project"
+    elif any('market' in tool.lower() for tool in tool_calls_made):
+        compressed["analysis_type"] = "market"
+    elif any('financial' in tool.lower() for tool in tool_calls_made):
+        compressed["analysis_type"] = "financial"
+    else:
+        compressed["analysis_type"] = "general"
+    
+    # Create summary
+    if compressed["tickers"] and compressed["periods"]:
+        compressed["summary"] = f"{', '.join(compressed['tickers'][:2])} {compressed['periods'][0]} {compressed['analysis_type']}"
+    elif compressed["projects"]:
+        compressed["summary"] = f"Projects: {', '.join(compressed['projects'][:2])}"
+    elif compressed["tickers"]:
+        compressed["summary"] = f"Analyzed {', '.join(compressed['tickers'][:3])}"
+    else:
+        compressed["summary"] = f"{compressed['analysis_type'].capitalize()} analysis"
+    
+    return compressed
+
+
+def reconstruct_context(compressed_history: List[Dict]) -> str:
+    """Reconstruct concise context from compressed history"""
+    if not compressed_history:
+        return ""
+    
+    context_parts = []
+    
+    # Only use last 3-5 exchanges
+    recent_history = compressed_history[-6:] if len(compressed_history) > 6 else compressed_history
+    
+    for item in recent_history:
+        if item.get("role") == "user":
+            content = item.get("content", "")
+            if len(content) > 100:
+                context_parts.append(f"User asked: {content[:100]}...")
+            else:
+                context_parts.append(f"User asked: {content}")
+                
+        elif item.get("role") == "assistant_compressed":
+            data = item.get("data", {})
+            parts = []
+            
+            # Build context from compressed data
+            if data.get("tickers"):
+                parts.append(f"Discussed {', '.join(data['tickers'][:3])}")
+            if data.get("projects"):
+                parts.append(f"projects: {', '.join(data['projects'][:2])}")
+            if data.get("periods"):
+                parts.append(f"for {', '.join(data['periods'][:2])}")
+            if data.get("analysis_type"):
+                parts.append(f"({data['analysis_type']} analysis)")
+            
+            if parts:
+                context_parts.append(" ".join(parts))
+    
+    return " | ".join(context_parts) if context_parts else ""
+
+
 def execute_tool_call(tool_system: EnhancedAIToolSystem, tool_name: str, arguments: Dict) -> Dict:
     """Execute a tool and return results"""
     # Log the tool execution
@@ -3190,7 +3733,7 @@ def execute_tool_call(tool_system: EnhancedAIToolSystem, tool_name: str, argumen
 
 def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
     """
-    Send message to OpenAI and handle tool calls
+    Send message to OpenAI and handle tool calls with compressed memory
     Similar to Bank_Sample/7_DucGPT_Chatbot.py implementation
     """
     # Import chart utilities if not already imported
@@ -3200,6 +3743,10 @@ def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
             from utils.chart_utils import create_plotly_chart
         except ImportError:
             create_plotly_chart = None
+    
+    # Initialize session state for memory
+    if 'compressed_conversation_history' not in st.session_state:
+        st.session_state.compressed_conversation_history = []
     
     # Initialize pending charts in session state if not exists
     if 'pending_charts' not in st.session_state:
@@ -3219,13 +3766,14 @@ def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
     if not st.session_state.openai_client:
         return "❌ OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file."
     
+    # Reconstruct context from compressed history
+    context_str = reconstruct_context(st.session_state.compressed_conversation_history)
+    
     # Prepare messages
     messages = []
     
     # Add system message for real estate and financial analysis
-    messages.append({
-        "role": "system",
-        "content": """You are a comprehensive financial analyst assistant specializing in Vietnamese real estate and financial markets.
+    system_content = """You are a comprehensive financial analyst assistant specializing in Vietnamese real estate and financial markets.
 Use the available tools to gather data and provide detailed analysis.
 
 CRITICAL TOOL SELECTION RULES:
@@ -3242,6 +3790,17 @@ CRITICAL TOOL SELECTION RULES:
    - Years are strings: "2025", "2026"
 
 3. For valuation ratios: use get_valuation_metrics
+
+4. **For PERIOD CALCULATIONS (NEW)**: use calculate_period_metrics
+   - Handles half-year periods: 1H25, 2H25 (H = half year)
+   - Handles quarters: 1Q25, 2Q25, 3Q25, 4Q25
+   - AUTOMATICALLY derives values when possible:
+     * 1H25 = Q1 2025 + Q2 2025 actuals
+     * 2H25 = 2025 Annual Forecast - 1H25 actual (where 1H25 = Q1+Q2 actuals)
+     * 4Q25 = 2025 Annual Forecast - (Q1+Q2+Q3 actuals)
+   - For 2H calculation: Needs Q1 and Q2 actuals PLUS annual forecast
+   - For 4Q calculation: Needs Q1, Q2, Q3 actuals PLUS annual forecast
+   - Will explain if data is insufficient for calculation
 
 **Real Estate Project Tools:**
 - Basic info: list_real_estate_projects, get_project_details, rank_projects_by_metric
@@ -3262,7 +3821,30 @@ CRITICAL TOOL SELECTION RULES:
 **When user asks about:**
 - "Current" or "recent" or years ≤2024: use get_historical_financials
 - "Future" or "forecast" or years ≥2025: use get_financial_forecasts
-- Both historical and forecast: call BOTH tools separately"""
+- Both historical and forecast: call BOTH tools separately
+
+**Period Notation Understanding:**
+- 1H25/2H25 = First/Second half of 2025
+- 1Q25-4Q25 = Quarters 1-4 of 2025
+- When user asks for "2H25 PATMI" or any 2H metric:
+  1. Use calculate_period_metrics tool
+  2. Tool will check if Q1 2025 and Q2 2025 actuals exist
+  3. If yes, calculates: 2H25 = 2025 Annual Forecast - (Q1+Q2 actuals)
+  4. If no, explains: "Need Q1 and Q2 2025 actuals to calculate 2H25"
+- When user asks for "4Q25 forecast":
+  1. Use calculate_period_metrics tool
+  2. Tool will check if Q1, Q2, Q3 2025 actuals exist
+  3. If yes, calculates: 4Q25 = 2025 Annual Forecast - (Q1+Q2+Q3 actuals)
+  4. If no, explains: "Need Q1-Q3 2025 actuals to derive Q4 2025"
+- IMPORTANT: For 2H calculations, we need Q1+Q2 actuals (NOT Q3+Q4)"""
+    
+    # Add context from previous conversation if available
+    if context_str:
+        system_content += f"\n\n**Previous conversation context:**\n{context_str}"
+    
+    messages.append({
+        "role": "system",
+        "content": system_content
     })
     
     # Add user message
@@ -3273,6 +3855,7 @@ CRITICAL TOOL SELECTION RULES:
     
     # Initialize progress tracking
     max_rounds = 20
+    tool_calls_made = []  # Track tool calls for compression
     with st.spinner("🤖 AI is analyzing..."):
         rounds = 0
         final_response = None
@@ -3309,6 +3892,7 @@ CRITICAL TOOL SELECTION RULES:
                     
                     # Update status
                     tool_call_count += 1
+                    tool_calls_made.append(function_name)  # Track for compression
                     tool_status.info(f"🔧 Executing tool #{tool_call_count}: **{function_name}**")
                     
                     # Execute the tool
@@ -3358,6 +3942,27 @@ CRITICAL TOOL SELECTION RULES:
                 final_response = f"Analysis completed with {tool_call_count} tool calls. The query may be too complex."
             else:
                 final_response = "Please provide a more specific question about companies, projects, or market data."
+        
+        # Update conversation history with compressed data
+        if final_response:
+            # Add user message
+            st.session_state.compressed_conversation_history.append({
+                "role": "user",
+                "content": user_message,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # Compress and add assistant response
+            compressed_response = compress_ai_response(final_response, tool_calls_made, user_message)
+            st.session_state.compressed_conversation_history.append({
+                "role": "assistant_compressed",
+                "data": compressed_response,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # Keep only last 10 messages (5 exchanges)
+            if len(st.session_state.compressed_conversation_history) > 10:
+                st.session_state.compressed_conversation_history = st.session_state.compressed_conversation_history[-10:]
         
         # Render any pending charts after the response
         if st.session_state.pending_charts and create_plotly_chart:
@@ -3420,10 +4025,23 @@ def render_enhanced_ai_interface():
             for tool in tools:
                 st.write(f"• {tool}")
         
+        # Memory indicator
+        if 'compressed_conversation_history' in st.session_state:
+            memory_count = len(st.session_state.compressed_conversation_history)
+            st.metric("Memory", f"{memory_count}/10 messages")
+            
+            # Show compressed memory details
+            with st.expander("💾 Memory Details", expanded=False):
+                for item in st.session_state.compressed_conversation_history[-4:]:
+                    if item.get("role") == "assistant_compressed":
+                        data = item.get("data", {})
+                        st.caption(data.get("summary", ""))
+        
         # Clear history
         if st.button("🗑️ Clear History"):
             st.session_state.tool_executions = []
             st.session_state.enhanced_chat_history = []
+            st.session_state.compressed_conversation_history = []
             st.rerun()
     
     # Main chat interface
@@ -3446,7 +4064,11 @@ def render_enhanced_ai_interface():
         - Provide comprehensive analysis with data
         """)
     
-    # Chat messages container
+    # Initialize compressed conversation history
+    if 'compressed_conversation_history' not in st.session_state:
+        st.session_state.compressed_conversation_history = []
+    
+    # Chat messages container for display
     if 'enhanced_chat_history' not in st.session_state:
         st.session_state.enhanced_chat_history = []
     
