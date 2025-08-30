@@ -36,20 +36,20 @@ class DataLoader:
         """Load financial statements data"""
         file_path = get_data_path(DATA_FILES['financial_statements'])
         # Check if it's a parquet file
-        if file_path.endswith('.parquet'):
-            return self._load_parquet_cached(file_path)
+        if str(file_path).endswith('.parquet'):
+            return self._load_parquet_cached(str(file_path))
         else:
-            return self._load_csv_cached(file_path)
+            return self._load_csv_cached(str(file_path))
     
     def load_valuation_data(self) -> pd.DataFrame:
         """Load valuation metrics data"""
         file_path = get_data_path(DATA_FILES['valuation'])
-        return self._load_csv_cached(file_path)
+        return self._load_csv_cached(str(file_path))
     
     def load_market_cap_data(self) -> pd.DataFrame:
         """Load market cap data"""
         file_path = get_data_path(DATA_FILES['market_cap'])
-        return self._load_csv_cached(file_path)
+        return self._load_csv_cached(str(file_path))
     
     def load_bank_quarterly_data(self) -> pd.DataFrame:
         """Load bank quarterly data"""

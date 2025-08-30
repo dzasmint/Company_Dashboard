@@ -16,7 +16,7 @@ def load_all_data():
     return {
         'financial': data_loader.load_financial_statements(),
         'valuation': data_loader.load_valuation_data(),
-        'market_cap': data_loader.load_market_cap_data(),
+        # 'market_cap': data_loader.load_market_cap_data(),  # File not available
         'bank': data_loader.load_bank_supplement_data()
     }
 
@@ -24,7 +24,7 @@ def load_all_data():
 data = load_all_data()
 df = data['financial']
 val = data['valuation'] 
-mcap = data['market_cap']
+# mcap = data['market_cap']  # Not available
 bank = data['bank']
 
 #%% Refactored table creation functions

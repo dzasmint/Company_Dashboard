@@ -2944,11 +2944,61 @@ class ModelForecastTab:
                     hide_index=True
                 )
     
-            # Section 7: Detail Project Breakdown Cash Flow Statement
+            # Section 7: Cash Flow Statements
             st.markdown("---")
-            st.subheader("Detail Project Breakdown Cash Flow Statement")
+            st.subheader("Cash Flow Statements")
+            
+            # Apply custom CSS for cash flow tabs (similar to balance sheet tabs)
+            st.markdown("""
+            <style>
+            /* Custom tab styling for cash flow tabs */
+            div[role="tablist"] {
+                gap: 8px;
+                background-color: rgba(255, 255, 255, 0.1);
+                padding: 8px;
+                border-radius: 8px;
+            }
+            
+            /* Individual tab button styling - teal theme */
+            div[role="tablist"] button {
+                background-color: #173F35 !important;
+                color: #FFFFFF !important;
+                border-radius: 6px;
+                font-weight: 500;
+                padding: 10px 20px;
+                transition: all 0.3s ease;
+            }
+            
+            /* Hover effects */
+            div[role="tablist"] button:hover {
+                opacity: 0.85;
+                transform: translateY(-2px);
+                transition: all 0.3s ease;
+                box-shadow: 0 4px 8px rgba(46, 125, 123, 0.3);
+            }
+            
+            /* Active tab styling */
+            div[role="tablist"] button[aria-selected="true"] {
+                background: #08C179 !important;
+                border-bottom: none !important;
+                font-weight: bold !important;
+                box-shadow: 0 6px 12px rgba(46, 125, 123, 0.4);
+                transform: translateY(-2px);
+                position: relative;
+            }
+            
+            /* Override any default red coloring */
+            .stTabs [data-baseweb="tab-highlight"] {
+                background-color: transparent !important;
+            }
+            
+            .stTabs [aria-selected="true"] {
+                border-color: transparent !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
         
-            # Initialize cash flow items
+            # Initialize cash flow items for Detail Project Breakdown
             cf_rows = []
             
             # Load historical cash flow data from FA_A_processed.parquet
@@ -3237,283 +3287,269 @@ class ModelForecastTab:
                 net_cf_row[str(year)] = net_cf_by_year[str(year)]
             cf_rows.append(net_cf_row)
         
-            # Create DataFrame
-            cf_df = pd.DataFrame(cf_rows)
-        
-            st.write("**Detail Project Breakdown Cash Flow Statement (Billion VND)**")
-        
-            # Define style function for formatting
-            def style_cf_table(val):
-                if pd.isna(val) or val is None:
-                    return ''
-                if isinstance(val, str):
-                    return ''
-                # Color code: positive cash flow green, negative red
-                color = '#28a745' if val >= 0 else '#dc3545'
-                return f'color: {color}'
-        
-            # Apply styling to numeric columns
-            styled_cf_df = cf_df.style.applymap(
-                style_cf_table,
-                subset=[hist_col] + [str(y) for y in years]
-            ).format(
-                {**{hist_col: lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 and not pd.isna(x) else "-"},
-                 **{str(y): lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 and not pd.isna(x) else "-" 
-                 for y in years}},
-                na_rep="-"
-            )
-        
-            # Apply row highlighting for totals and net cash flow
-            def highlight_important_rows(row):
-                styles = [''] * len(row)
-                if 'TOTAL' in str(row.iloc[0]) or 'NET CASH FLOW' in str(row.iloc[0]):
-                    styles = ['font-weight: bold; background-color: #f8f9fa'] * len(row)
-                elif any(keyword in str(row.iloc[0]) for keyword in ['OPERATING ACTIVITIES', 'INVESTING ACTIVITIES', 'FINANCING ACTIVITIES']):
-                    styles = ['font-weight: bold; background-color: #e9ecef'] * len(row)
-                return styles
-        
-            styled_cf_df = styled_cf_df.apply(highlight_important_rows, axis=1)
-        
-            # Display the table
-            st.dataframe(
-                styled_cf_df,
-                use_container_width=True,
-                hide_index=True
-            )
-        
-            # Section 8: Consolidated Cash Flow Statement (Summary View)
-            st.markdown("---")
-            st.subheader("Consolidated Cash Flow Statement")
+            # Create tabs for cash flow statements
+            tab_detail_cf, tab_consolidated_cf = st.tabs([
+                "Detail Project Breakdown",
+                "Consolidated Cash Flow"
+            ])
             
-            # Initialize consolidated cash flow rows
-            consol_cf_rows = []
+            with tab_detail_cf:
+                # Create DataFrame
+                cf_df = pd.DataFrame(cf_rows)
             
-            # Load historical cash flow data from FA_A_processed.parquet
-            hist_operating_cf = 0
-            hist_investing_cf = 0
-            hist_financing_cf = 0
+                st.write("**Detail Project Breakdown Cash Flow Statement (Billion VND)**")
             
-            if historical_data is not None and not historical_data.empty and hist_date_idx is not None:
-                # Get historical cash flow values
-                if 'Operating_CF' in historical_data.columns:
-                    hist_operating_cf_val = historical_data.loc[hist_date_idx, 'Operating_CF']
-                    hist_operating_cf = hist_operating_cf_val / 1e9 if not pd.isna(hist_operating_cf_val) else 0
+                # Define style function for formatting
+                def style_cf_table(val):
+                    if pd.isna(val) or val is None:
+                        return ''
+                    if isinstance(val, str):
+                        return ''
+                    # Color code: positive cash flow green, negative red
+                    color = '#28a745' if val >= 0 else '#dc3545'
+                    return f'color: {color}'
+            
+                # Apply styling to numeric columns
+                styled_cf_df = cf_df.style.applymap(
+                    style_cf_table,
+                    subset=[hist_col] + [str(y) for y in years]
+                ).format(
+                    {**{hist_col: lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 and not pd.isna(x) else "-"},
+                     **{str(y): lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 and not pd.isna(x) else "-" 
+                     for y in years}},
+                    na_rep="-"
+                )
+            
+                # Apply row highlighting for totals and net cash flow
+                def highlight_important_rows(row):
+                    styles = [''] * len(row)
+                    if 'TOTAL' in str(row.iloc[0]) or 'NET CASH FLOW' in str(row.iloc[0]):
+                        styles = ['font-weight: bold; background-color: #f8f9fa'] * len(row)
+                    elif any(keyword in str(row.iloc[0]) for keyword in ['OPERATING ACTIVITIES', 'INVESTING ACTIVITIES', 'FINANCING ACTIVITIES']):
+                        styles = ['font-weight: bold; background-color: #e9ecef'] * len(row)
+                    return styles
+            
+                styled_cf_df = styled_cf_df.apply(highlight_important_rows, axis=1)
+            
+                # Display the table
+                st.dataframe(
+                    styled_cf_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+            
+            with tab_consolidated_cf:
+                # Initialize consolidated cash flow rows
+                consol_cf_rows = []
                 
-                if 'Inv_CF' in historical_data.columns:
-                    hist_investing_cf_val = historical_data.loc[hist_date_idx, 'Inv_CF']
-                    hist_investing_cf = hist_investing_cf_val / 1e9 if not pd.isna(hist_investing_cf_val) else 0
+                # Use the same historical cash flow data already loaded
+                hist_operating_cf = hist_operating_cf_detail
+                hist_investing_cf = hist_investing_cf_detail
+                hist_financing_cf = hist_financing_cf_detail
                 
-                if 'Fin_CF' in historical_data.columns:
-                    hist_financing_cf_val = historical_data.loc[hist_date_idx, 'Fin_CF']
-                    hist_financing_cf = hist_financing_cf_val / 1e9 if not pd.isna(hist_financing_cf_val) else 0
-            
-            # OPERATING ACTIVITIES SECTION
-            consol_cf_rows.append({'Item': 'OPERATING ACTIVITIES', hist_col: None, **{str(y): None for y in years}})
-            
-            # Total Presales (sum of all project presales cash inflows)
-            total_presales_row = {'Item': '  Total Presales Cash Inflow', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                total_presales = sum(presales_cf_breakdown.get(proj, {}).get(year_str, 0) for proj in presales_cf_breakdown.keys())
-                total_presales_row[year_str] = total_presales
-            consol_cf_rows.append(total_presales_row)
-            
-            # Total Revenue from Other Segments
-            other_revenue_row = {'Item': '  Revenue from Other Segments', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                other_revenue_row[year_str] = other_segment_revenue_cf.get(year_str, 0)
-            consol_cf_rows.append(other_revenue_row)
-            
-            # Total COGS from Other Segments (show as negative)
-            other_cogs_row = {'Item': '  COGS from Other Segments', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                other_cogs_row[year_str] = -other_segment_cogs_cf.get(year_str, 0) if other_segment_cogs_cf.get(year_str, 0) != 0 else 0
-            consol_cf_rows.append(other_cogs_row)
-            
-            # Total Interest Expense from All Projects
-            project_interest_row_cf = {'Item': '  Interest Expense - Projects', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                total_proj_interest = sum(interest_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in interest_outflow_breakdown.keys())
-                project_interest_row_cf[year_str] = total_proj_interest
-            consol_cf_rows.append(project_interest_row_cf)
-            
-            # Interest Expense from Existing Debt
-            existing_interest_row_cf = {'Item': '  Interest Expense - Existing Debt', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                # Use the existing debt interest already calculated
-                existing_interest_row_cf[year_str] = existing_debt_interest_row.get(str(year), 0)
-            consol_cf_rows.append(existing_interest_row_cf)
-            
-            # Total SG&A Expense from All Projects
-            project_sga_row_cf = {'Item': '  SG&A Expense - Projects', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                total_proj_sga = sum(sga_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in sga_outflow_breakdown.keys())
-                project_sga_row_cf[year_str] = total_proj_sga
-            consol_cf_rows.append(project_sga_row_cf)
-            
-            # SG&A Expense from Other Segments
-            other_sga_row_cf = {'Item': '  SG&A Expense - Other Segments', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                # Calculate SG&A for other segments (already calculated in sga_rows)
-                # Other segment rows end with " SG&A" suffix
-                other_sga = 0
-                for row in sga_rows:
-                    if row['SG&A Source'] not in ['TOTAL SG&A', 'Total Projects SG&A'] and row['SG&A Source'].endswith(' SG&A'):
-                        other_sga += row.get(str(year), 0)
-                other_sga_row_cf[year_str] = other_sga
-            consol_cf_rows.append(other_sga_row_cf)
-            
-            # Tax Expenses from All Projects
-            tax_expense_row_cf = {'Item': '  Tax Expense', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                total_tax = sum(tax_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in tax_outflow_breakdown.keys())
-                tax_expense_row_cf[year_str] = total_tax
-            consol_cf_rows.append(tax_expense_row_cf)
-            
-            # Total Operating Cash Flow
-            total_operating_row = {'Item': 'Total Operating Cash Flow', hist_col: hist_operating_cf}
-            for year in years:
-                year_str = str(year)
-                total_operating_row[year_str] = operating_cf_by_year.get(year_str, 0)
-            consol_cf_rows.append(total_operating_row)
-            
-            # INVESTING ACTIVITIES SECTION
-            consol_cf_rows.append({'Item': '', hist_col: None, **{str(y): None for y in years}})  # Blank row
-            consol_cf_rows.append({'Item': 'INVESTING ACTIVITIES', hist_col: None, **{str(y): None for y in years}})
-            
-            # Total Land Payments from All Projects
-            land_payments_row = {'Item': '  Land Payments', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                total_land = sum(land_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in land_outflow_breakdown.keys())
-                land_payments_row[year_str] = total_land
-            consol_cf_rows.append(land_payments_row)
-            
-            # Total Construction from All Projects
-            construction_row = {'Item': '  Construction Costs', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                total_construction = sum(construction_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in construction_outflow_breakdown.keys())
-                construction_row[year_str] = total_construction
-            consol_cf_rows.append(construction_row)
-            
-            # Total Investing Cash Flow
-            total_investing_row = {'Item': 'Total Investing Cash Flow', hist_col: hist_investing_cf}
-            for year in years:
-                year_str = str(year)
-                total_investing_row[year_str] = investing_cf_by_year.get(year_str, 0)
-            consol_cf_rows.append(total_investing_row)
-            
-            # FINANCING ACTIVITIES SECTION  
-            consol_cf_rows.append({'Item': '', hist_col: None, **{str(y): None for y in years}})  # Blank row
-            consol_cf_rows.append({'Item': 'FINANCING ACTIVITIES', hist_col: None, **{str(y): None for y in years}})
-            
-            # Total New Debts from All Projects
-            new_debt_row = {'Item': '  New Debt Disbursements', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                total_new_debt = 0
-                for _, project in df_projects.iterrows():
-                    financial_statements = project.get('comprehensive_financial_statements', {})
-                    if isinstance(financial_statements, dict) and year_str in financial_statements:
-                        year_data = financial_statements[year_str]
-                        debt_disbursement = year_data.get('debt_disbursement', 0) / 1e9
-                        total_new_debt += debt_disbursement
-                new_debt_row[year_str] = total_new_debt
-            consol_cf_rows.append(new_debt_row)
-            
-            # Total Debt Repayment from All Projects
-            debt_repayment_row = {'Item': '  Debt Repayments', hist_col: 0}
-            for year in years:
-                year_str = str(year)
-                total_repayment = 0
-                for _, project in df_projects.iterrows():
-                    financial_statements = project.get('comprehensive_financial_statements', {})
-                    if isinstance(financial_statements, dict) and year_str in financial_statements:
-                        year_data = financial_statements[year_str]
-                        debt_repayment = year_data.get('debt_repayment', 0) / 1e9
-                        total_repayment += debt_repayment
-                debt_repayment_row[year_str] = total_repayment
-            consol_cf_rows.append(debt_repayment_row)
-            
-            # Total Financing Cash Flow
-            total_financing_row = {'Item': 'Total Financing Cash Flow', hist_col: hist_financing_cf}
-            for year in years:
-                year_str = str(year)
-                total_financing_row[year_str] = financing_cf_by_year.get(year_str, 0)
-            consol_cf_rows.append(total_financing_row)
-            
-            # NET CASH FLOW
-            consol_cf_rows.append({'Item': '', hist_col: None, **{str(y): None for y in years}})  # Blank row
-            net_cf_row_consol = {'Item': 'NET CASH FLOW', hist_col: hist_operating_cf + hist_investing_cf + hist_financing_cf}
-            for year in years:
-                year_str = str(year)
-                net_cf_row_consol[year_str] = net_cf_by_year.get(year_str, 0)
-            consol_cf_rows.append(net_cf_row_consol)
-            
-            # Create DataFrame for consolidated cash flow
-            consol_cf_df = pd.DataFrame(consol_cf_rows)
-            
-            st.write("**Consolidated Cash Flow Summary (Billion VND)**")
-            
-            # Style function for consolidated cash flow
-            def style_consol_cf(val):
-                if pd.isna(val) or val is None:
+                # OPERATING ACTIVITIES SECTION
+                consol_cf_rows.append({'Item': 'OPERATING ACTIVITIES', hist_col: None, **{str(y): None for y in years}})
+                
+                # Total Presales (sum of all project presales cash inflows)
+                total_presales_row = {'Item': '  Total Presales Cash Inflow', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    total_presales = sum(presales_cf_breakdown.get(proj, {}).get(year_str, 0) for proj in presales_cf_breakdown.keys())
+                    total_presales_row[year_str] = total_presales
+                consol_cf_rows.append(total_presales_row)
+                
+                # Total Revenue from Other Segments
+                other_revenue_row = {'Item': '  Revenue from Other Segments', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    other_revenue_row[year_str] = other_segment_revenue_cf.get(year_str, 0)
+                consol_cf_rows.append(other_revenue_row)
+                
+                # Total COGS from Other Segments (show as negative)
+                other_cogs_row = {'Item': '  COGS from Other Segments', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    other_cogs_row[year_str] = -other_segment_cogs_cf.get(year_str, 0) if other_segment_cogs_cf.get(year_str, 0) != 0 else 0
+                consol_cf_rows.append(other_cogs_row)
+                
+                # Total Interest Expense from All Projects
+                project_interest_row_cf = {'Item': '  Interest Expense - Projects', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    total_proj_interest = sum(interest_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in interest_outflow_breakdown.keys())
+                    project_interest_row_cf[year_str] = total_proj_interest
+                consol_cf_rows.append(project_interest_row_cf)
+                
+                # Interest Expense from Existing Debt
+                existing_interest_row_cf = {'Item': '  Interest Expense - Existing Debt', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    # Use the existing debt interest already calculated
+                    existing_interest_row_cf[year_str] = existing_debt_interest_row.get(str(year), 0)
+                consol_cf_rows.append(existing_interest_row_cf)
+                
+                # Total SG&A Expense from All Projects
+                project_sga_row_cf = {'Item': '  SG&A Expense - Projects', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    total_proj_sga = sum(sga_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in sga_outflow_breakdown.keys())
+                    project_sga_row_cf[year_str] = total_proj_sga
+                consol_cf_rows.append(project_sga_row_cf)
+                
+                # SG&A Expense from Other Segments
+                other_sga_row_cf = {'Item': '  SG&A Expense - Other Segments', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    # Calculate SG&A for other segments (already calculated in sga_rows)
+                    # Other segment rows end with " SG&A" suffix
+                    other_sga = 0
+                    for row in sga_rows:
+                        if row['SG&A Source'] not in ['TOTAL SG&A', 'Total Projects SG&A'] and row['SG&A Source'].endswith(' SG&A'):
+                            other_sga += row.get(str(year), 0)
+                    other_sga_row_cf[year_str] = other_sga
+                consol_cf_rows.append(other_sga_row_cf)
+                
+                # Tax Expenses from All Projects
+                tax_expense_row_cf = {'Item': '  Tax Expense', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    total_tax = sum(tax_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in tax_outflow_breakdown.keys())
+                    tax_expense_row_cf[year_str] = total_tax
+                consol_cf_rows.append(tax_expense_row_cf)
+                
+                # Total Operating Cash Flow
+                total_operating_row = {'Item': 'TOTAL OPERATING CASH FLOW', hist_col: hist_operating_cf}
+                for year in years:
+                    year_str = str(year)
+                    total_operating_row[year_str] = operating_cf_by_year.get(year_str, 0)
+                consol_cf_rows.append(total_operating_row)
+                
+                # INVESTING ACTIVITIES SECTION
+                consol_cf_rows.append({'Item': '', hist_col: None, **{str(y): None for y in years}})  # Blank row
+                consol_cf_rows.append({'Item': 'INVESTING ACTIVITIES', hist_col: None, **{str(y): None for y in years}})
+                
+                # Total Land Payments from All Projects
+                land_payments_row = {'Item': '  Land Payments', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    total_land = sum(land_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in land_outflow_breakdown.keys())
+                    land_payments_row[year_str] = total_land
+                consol_cf_rows.append(land_payments_row)
+                
+                # Total Construction from All Projects
+                construction_row = {'Item': '  Construction Costs', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    total_construction = sum(construction_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in construction_outflow_breakdown.keys())
+                    construction_row[year_str] = total_construction
+                consol_cf_rows.append(construction_row)
+                
+                # Total Investing Cash Flow
+                total_investing_row = {'Item': 'TOTAL INVESTING CASH FLOW', hist_col: hist_investing_cf}
+                for year in years:
+                    year_str = str(year)
+                    total_investing_row[year_str] = investing_cf_by_year.get(year_str, 0)
+                consol_cf_rows.append(total_investing_row)
+                
+                # FINANCING ACTIVITIES SECTION  
+                consol_cf_rows.append({'Item': '', hist_col: None, **{str(y): None for y in years}})  # Blank row
+                consol_cf_rows.append({'Item': 'FINANCING ACTIVITIES', hist_col: None, **{str(y): None for y in years}})
+                
+                # Total New Debts from All Projects
+                new_debt_row = {'Item': '  New Debt Disbursements', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    total_new_debt = 0
+                    for _, project in df_projects.iterrows():
+                        financial_statements = project.get('comprehensive_financial_statements', {})
+                        if isinstance(financial_statements, dict) and year_str in financial_statements:
+                            year_data = financial_statements[year_str]
+                            debt_disbursement = year_data.get('debt_disbursement', 0) / 1e9
+                            total_new_debt += debt_disbursement
+                    new_debt_row[year_str] = total_new_debt
+                consol_cf_rows.append(new_debt_row)
+                
+                # Total Debt Repayment from All Projects
+                debt_repayment_row = {'Item': '  Debt Repayments', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    total_repayment = 0
+                    for _, project in df_projects.iterrows():
+                        financial_statements = project.get('comprehensive_financial_statements', {})
+                        if isinstance(financial_statements, dict) and year_str in financial_statements:
+                            year_data = financial_statements[year_str]
+                            debt_repayment = year_data.get('debt_repayment', 0) / 1e9
+                            total_repayment += debt_repayment
+                    debt_repayment_row[year_str] = total_repayment
+                consol_cf_rows.append(debt_repayment_row)
+                
+                # Total Financing Cash Flow
+                total_financing_row = {'Item': 'TOTAL FINANCING CASH FLOW', hist_col: hist_financing_cf}
+                for year in years:
+                    year_str = str(year)
+                    total_financing_row[year_str] = financing_cf_by_year.get(year_str, 0)
+                consol_cf_rows.append(total_financing_row)
+                
+                # NET CASH FLOW
+                consol_cf_rows.append({'Item': '', hist_col: None, **{str(y): None for y in years}})  # Blank row
+                net_cf_row_consol = {'Item': 'NET CASH FLOW', hist_col: hist_operating_cf + hist_investing_cf + hist_financing_cf}
+                for year in years:
+                    year_str = str(year)
+                    net_cf_row_consol[year_str] = net_cf_by_year.get(year_str, 0)
+                consol_cf_rows.append(net_cf_row_consol)
+                
+                # Create DataFrame for consolidated cash flow
+                consol_cf_df = pd.DataFrame(consol_cf_rows)
+                
+                st.write("**Consolidated Cash Flow Summary (Billion VND)**")
+                
+                # Style function for consolidated cash flow
+                def style_consol_cf(val):
+                    if pd.isna(val) or val is None:
+                        return ''
+                    if isinstance(val, str):
+                        return ''
+                    # Color code: positive cash flow green, negative red
+                    if val > 0:
+                        return 'color: #28a745'
+                    elif val < 0:
+                        return 'color: #dc3545'
                     return ''
-                if isinstance(val, str):
-                    return ''
-                # Color code: positive cash flow green, negative red
-                if val > 0:
-                    return 'color: #28a745'
-                elif val < 0:
-                    return 'color: #dc3545'
-                return ''
+                
+                # Format function for values
+                def format_cf_value(val):
+                    if pd.isna(val) or val is None or val == 0:
+                        return "-"
+                    return f"{val:,.0f}"
+                
+                # Apply styling
+                styled_consol_cf = consol_cf_df.style.applymap(
+                    style_consol_cf,
+                    subset=[hist_col] + [str(y) for y in years]
+                ).format(
+                    {col: format_cf_value for col in [hist_col] + [str(y) for y in years]},
+                    na_rep="-"
+                )
+                
+                # Highlight important rows
+                def highlight_cf_rows(row):
+                    styles = [''] * len(row)
+                    item = str(row.iloc[0])
+                    if item in ['OPERATING ACTIVITIES', 'INVESTING ACTIVITIES', 'FINANCING ACTIVITIES']:
+                        styles = ['font-weight: bold; background-color: #e9ecef'] * len(row)
+                    elif item.startswith('Total') or item == 'NET CASH FLOW':
+                        styles = ['font-weight: bold; background-color: #f8f9fa'] * len(row)
+                    return styles
+                
+                styled_consol_cf = styled_consol_cf.apply(highlight_cf_rows, axis=1)
+                
+                # Display the consolidated cash flow
+                st.dataframe(
+                    styled_consol_cf,
+                    use_container_width=True,
+                    hide_index=True
+                )
             
-            # Format function for values
-            def format_cf_value(val):
-                if pd.isna(val) or val is None or val == 0:
-                    return "-"
-                return f"{val:,.0f}"
-            
-            # Apply styling
-            styled_consol_cf = consol_cf_df.style.applymap(
-                style_consol_cf,
-                subset=[hist_col] + [str(y) for y in years]
-            ).format(
-                {col: format_cf_value for col in [hist_col] + [str(y) for y in years]},
-                na_rep="-"
-            )
-            
-            # Highlight important rows
-            def highlight_cf_rows(row):
-                styles = [''] * len(row)
-                item = str(row.iloc[0])
-                if item in ['OPERATING ACTIVITIES', 'INVESTING ACTIVITIES', 'FINANCING ACTIVITIES']:
-                    styles = ['font-weight: bold; background-color: #e9ecef'] * len(row)
-                elif item.startswith('Total') or item == 'NET CASH FLOW':
-                    styles = ['font-weight: bold; background-color: #f8f9fa'] * len(row)
-                return styles
-            
-            styled_consol_cf = styled_consol_cf.apply(highlight_cf_rows, axis=1)
-            
-            # Display the consolidated cash flow
-            st.dataframe(
-                styled_consol_cf,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    'Item': st.column_config.TextColumn('Cash Flow Item', width=250),
-                    hist_col: st.column_config.NumberColumn(hist_col, width=120),
-                    **{str(year): st.column_config.NumberColumn(str(year), width=120) for year in years}
-                }
-            )
         
         
             # Save Consolidated Financial Statements to MongoDB
