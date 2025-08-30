@@ -1020,6 +1020,194 @@ class ModelForecastTab:
         
             # Create DataFrame for SG&A (for internal use only, not displayed)
             sga_df = pd.DataFrame(sga_rows)
+            
+            # Get cost of debt from company assumptions for interest income calculation
+            cost_of_debt = company_assumptions.get('cost_of_debts', 0.0)  # Already in decimal format
+            
+            # Pre-calculate cash balances and interest income for P&L
+            # This is needed because P&L section comes before Balance Sheet section
+            # We'll do a simplified calculation here that will be refined later in Balance Sheet
+            
+            # Initialize historical cash (will be properly loaded in Balance Sheet section)
+            hist_cash_preliminary = 0
+            
+            # Try to load historical cash early for interest income calculation
+            try:
+                fa_annual_path = 'data/FA_A_processed.parquet'
+                if os.path.exists(fa_annual_path):
+                    fa_annual_df = pd.read_parquet(fa_annual_path)
+                    ticker_data = fa_annual_df[(fa_annual_df['TICKER'] == selected_ticker) & 
+                                               (fa_annual_df['DATE'] == base_year)]
+                    if not ticker_data.empty:
+                        cash_data = ticker_data[ticker_data['KEYCODE'] == 'Cash']
+                        if not cash_data.empty:
+                            hist_cash_preliminary += cash_data['VALUE'].iloc[0] / 1e9 if not pd.isna(cash_data['VALUE'].iloc[0]) else 0
+                        cash_equiv_data = ticker_data[ticker_data['KEYCODE'] == 'Cash_Equivalent']
+                        if not cash_equiv_data.empty:
+                            hist_cash_preliminary += cash_equiv_data['VALUE'].iloc[0] / 1e9 if not pd.isna(cash_equiv_data['VALUE'].iloc[0]) else 0
+            except:
+                hist_cash_preliminary = 0
+            
+            # Calculate preliminary cash flows from projects to estimate cash balances
+            preliminary_cash_by_year = {}
+            cumulative_cash_prelim = hist_cash_preliminary
+            
+            for year in years:
+                year_str = str(year)
+                year_cash_change = 0
+                
+                # Add cash changes from projects
+                for _, project in df_projects.iterrows():
+                    financial_statements = project.get('comprehensive_financial_statements', {})
+                    if isinstance(financial_statements, dict) and year_str in financial_statements:
+                        year_data = financial_statements[year_str]
+                        if 'cash_balance_change' in year_data:
+                            year_cash_change += year_data.get('cash_balance_change', 0) / 1e9
+                        elif 'Cash_Balance_Change' in year_data:
+                            year_cash_change += year_data.get('Cash_Balance_Change', 0) / 1e9
+                
+                # Add cash from other segments (simplified)
+                if year_str in other_revenue_breakdown:
+                    for segment_name, segment_revenue in other_revenue_breakdown.items():
+                        revenue = segment_revenue.get(year_str, 0)
+                        if segment_name in segment_metrics:
+                            gross_margin = segment_metrics[segment_name]['gross_margin']
+                        else:
+                            gross_margin = 0.3
+                        # Simplified cash = revenue * gross margin
+                        year_cash_change += revenue * gross_margin
+                
+                cumulative_cash_prelim += year_cash_change
+                preliminary_cash_by_year[year_str] = cumulative_cash_prelim
+            
+            # Calculate interest income with iterative approach to handle circular reference
+            # Maximum 10 iterations to avoid infinite loops
+            MAX_ITERATIONS = 10
+            CONVERGENCE_THRESHOLD = 0.001  # Stop if change is less than 0.1%
+            
+            interest_income_by_year = {str(year): 0 for year in years}
+            
+            for iteration in range(MAX_ITERATIONS):
+                previous_interest_income = interest_income_by_year.copy()
+                
+                # Recalculate cash balances with current interest income
+                cumulative_cash_with_interest = hist_cash_preliminary
+                cash_balance_with_interest = {}
+                
+                for year in years:
+                    year_str = str(year)
+                    
+                    # Start with preliminary cash change (without interest income)
+                    year_cash_change = 0
+                    
+                    # Add operating cash flow components
+                    if hasattr(st.session_state, 'project_forecasts'):
+                        for project_name, project_data in st.session_state.project_forecasts.items():
+                            if year_str in project_data:
+                                year_data = project_data[year_str]
+                                presales_cf = year_data.get('cash_inflow_presales', 0) / 1e9
+                                interest_cf = year_data.get('cash_outflow_interest', 0) / 1e9
+                                sga_cf = year_data.get('cash_outflow_sga', 0) / 1e9
+                                tax_cf = year_data.get('cash_outflow_tax', 0) / 1e9
+                                year_cash_change += presales_cf + interest_cf + sga_cf + tax_cf
+                    
+                    # Add existing debt interest (negative cash flow)
+                    if 'existing_debt' in company_assumptions:
+                        existing_debt = company_assumptions['existing_debt']
+                        existing_interest_rate = company_assumptions.get('existing_interest_rate', 0.08)
+                        existing_debt_interest = existing_debt * existing_interest_rate
+                        year_cash_change -= existing_debt_interest
+                    
+                    # Add other segment SG&A (negative cash flow)
+                    if hasattr(st.session_state, 'base_year_revenues'):
+                        for segment_name in st.session_state.base_year_revenues.keys():
+                            if segment_name in segment_metrics:
+                                sga_pct = segment_metrics[segment_name]['sga_percentage']
+                            else:
+                                sga_pct = 0.0
+                            
+                            base_revenue = st.session_state.base_year_revenues[segment_name]
+                            if segment_name in segment_metrics:
+                                growth_rate = segment_metrics[segment_name]['revenue_growth']
+                            else:
+                                growth_rate = 0.0
+                            
+                            years_from_base = year - base_year
+                            segment_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+                            segment_sga = -segment_revenue * sga_pct  # Negative for cash outflow
+                            year_cash_change += segment_sga
+                    
+                    # Add other revenue/COGS
+                    if other_revenue_breakdown:
+                        for segment_name in other_revenue_breakdown.keys():
+                            segment_revenue = other_revenue_breakdown[segment_name].get(year, 0)
+                            year_cash_change += segment_revenue
+                            # Calculate and subtract COGS for this segment
+                            if segment_name in segment_metrics:
+                                gross_margin = segment_metrics[segment_name]['gross_margin']
+                                segment_cogs = segment_revenue * (1 - gross_margin)  # COGS = Revenue * (1 - Gross Margin)
+                                year_cash_change -= segment_cogs
+                    
+                    # Add investing cash flows
+                    if hasattr(st.session_state, 'project_forecasts'):
+                        for project_name, project_data in st.session_state.project_forecasts.items():
+                            if year_str in project_data:
+                                year_data = project_data[year_str]
+                                land_cf = year_data.get('cash_outflow_land', 0) / 1e9
+                                construction_cf = year_data.get('cash_outflow_construction', 0) / 1e9
+                                year_cash_change += land_cf + construction_cf
+                    
+                    # Add financing cash flows
+                    if hasattr(st.session_state, 'project_forecasts'):
+                        for project_name, project_data in st.session_state.project_forecasts.items():
+                            if year_str in project_data:
+                                year_data = project_data[year_str]
+                                debt_drawdown = year_data.get('debt_drawdown', 0) / 1e9
+                                debt_repayment = year_data.get('debt_repayment', 0) / 1e9
+                                year_cash_change += debt_drawdown - debt_repayment
+                    
+                    # Add interest income from previous iteration
+                    year_cash_change += interest_income_by_year[year_str]
+                    
+                    # Update cumulative cash
+                    cumulative_cash_with_interest += year_cash_change
+                    cash_balance_with_interest[year_str] = cumulative_cash_with_interest
+                
+                # Calculate new interest income based on updated cash balances
+                prev_cash = hist_cash_preliminary
+                for year in years:
+                    year_str = str(year)
+                    current_cash = cash_balance_with_interest[year_str]
+                    avg_cash = (prev_cash + current_cash) / 2
+                    interest_income = max(0, avg_cash * cost_of_debt) if avg_cash > 0 else 0
+                    interest_income_by_year[year_str] = interest_income
+                    prev_cash = current_cash
+                
+                # Check for convergence
+                converged = True
+                for year_str in interest_income_by_year:
+                    if previous_interest_income[year_str] != 0:
+                        change_pct = abs((interest_income_by_year[year_str] - previous_interest_income[year_str]) / previous_interest_income[year_str])
+                        if change_pct > CONVERGENCE_THRESHOLD:
+                            converged = False
+                            break
+                    elif interest_income_by_year[year_str] != 0:
+                        converged = False
+                        break
+                
+                if converged:
+                    break
+            
+            # Update preliminary cash balances to include final interest income
+            cumulative_cash_prelim = hist_cash_preliminary
+            for year in years:
+                year_str = str(year)
+                # Get the original preliminary cash change
+                year_cash_change = preliminary_cash_by_year[year_str] - (cumulative_cash_prelim if year == years[0] else preliminary_cash_by_year[str(year-1)])
+                # Add the final interest income
+                year_cash_change += interest_income_by_year[year_str]
+                cumulative_cash_prelim += year_cash_change
+                preliminary_cash_by_year[year_str] = cumulative_cash_prelim
         
             # Section 5: Consolidated P&L with Interest Expense
             st.markdown("---")
@@ -1111,20 +1299,8 @@ class ModelForecastTab:
             except:
                 pass  # Silent fail, hist_debt remains 0
         
-            # Get cost of debts from assumptions (default 7% if not found)
-            cost_of_debt = 0.0  # Default 0%
-            try:
-                # Load assumptions from MongoDB to get cost of debts
-                from utils.mongodb_utils import load_assumptions_from_mongodb
-                assumptions_list = load_assumptions_from_mongodb(selected_ticker)
-                if assumptions_list:
-                    for assumption in assumptions_list:
-                        if assumption.get('Item') == 'Cost of Debts':
-                            # Convert percentage to decimal
-                            cost_of_debt = assumption.get('Value', 0.0) / 100
-                            break
-            except:
-                pass  # Use default if error
+            # Cost of debt already loaded from company_assumptions at the beginning
+            # No need to reload it here
         
             # Calculate interest expense from projects and existing debt separately
             # 1. Project interest from project_interest_breakdown
@@ -1262,6 +1438,18 @@ class ModelForecastTab:
                 # Since SG&A is negative, we add it (not subtract)
                 ebitda_row[year_str] = total_gp_row[year_str] + total_sga_row[year_str]
             pnl_rows.append(ebitda_row)
+            
+            # Interest Income from Cash (positive values)
+            # Calculate based on average cash balance * cost of debt
+            interest_income_row = {'P&L Item': 'Interest Income'}
+            interest_income_row[hist_col] = 0  # No historical interest income
+            
+            # Use the pre-calculated interest income values
+            for year in years:
+                year_str = str(year)
+                interest_income_row[year_str] = interest_income_by_year.get(year_str, 0)
+            
+            pnl_rows.append(interest_income_row)
         
             # Interest Expense from Projects (negative values)
             project_interest_pnl_row = {'P&L Item': '  Interest Expense - Projects'}
@@ -1284,13 +1472,13 @@ class ModelForecastTab:
                 interest_row[str(year)] = total_interest_row[str(year)]
             pnl_rows.append(interest_row)
         
-            # PBT row (EBITDA + Interest where Interest is negative)
+            # PBT row (EBITDA + Interest Income + Interest Expense where Interest Expense is negative)
             pbt_row = {'P&L Item': 'Profit Before Tax'}
-            pbt_row[hist_col] = ebitda_row[hist_col] + total_interest_row[hist_col]  # Add historical
+            pbt_row[hist_col] = ebitda_row[hist_col] + total_interest_row[hist_col]  # Add historical (no interest income historically)
             for year in years:
                 year_str = str(year)
-                # Since Interest is negative, we add it (not subtract)
-                pbt_row[year_str] = ebitda_row[year_str] + total_interest_row[year_str]
+                # PBT = EBITDA + Interest Income + Interest Expense (where Interest Expense is negative)
+                pbt_row[year_str] = ebitda_row[year_str] + interest_income_row[year_str] + total_interest_row[year_str]
             pnl_rows.append(pbt_row)
         
             # Tax row
@@ -2147,6 +2335,164 @@ class ModelForecastTab:
                 avg_pat_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
                 st.metric("Avg PAT Margin", f"{avg_pat_margin:.1f}%")
         
+            # Pre-calculate cash flows (needed for balance sheet cash calculation)
+            # Initialize cash flow aggregates
+            operating_cf_by_year = {}
+            investing_cf_by_year = {}
+            financing_cf_by_year = {}
+            net_cf_by_year = {}
+            
+            # Initialize breakdown components
+            other_segment_revenue_cf = {}
+            other_segment_cogs_cf = {}
+            presales_cf_breakdown = {}
+            interest_outflow_breakdown = {}
+            sga_outflow_breakdown = {}
+            tax_outflow_breakdown = {}
+            land_outflow_breakdown = {}
+            construction_outflow_breakdown = {}
+            investing_cf_breakdown = {}
+            financing_cf_breakdown = {}
+            
+            # Initialize for all years
+            for year in years:
+                year_str = str(year)
+                operating_cf_by_year[year_str] = 0
+                investing_cf_by_year[year_str] = 0
+                financing_cf_by_year[year_str] = 0
+                net_cf_by_year[year_str] = 0
+                other_segment_revenue_cf[year_str] = 0
+                other_segment_cogs_cf[year_str] = 0
+            
+            # 1. Calculate revenue and COGS from other business segments (non-real estate)
+            if other_revenue_breakdown:
+                for segment_name, segment_revenue in other_revenue_breakdown.items():
+                    for year in years:
+                        year_str = str(year)
+                        revenue = segment_revenue.get(year_str, 0)
+                        other_segment_revenue_cf[year_str] += revenue
+                        operating_cf_by_year[year_str] += revenue
+                        
+                        # Calculate COGS for this segment
+                        if segment_name in segment_metrics:
+                            gross_margin = segment_metrics[segment_name]['gross_margin']
+                        else:
+                            gross_margin = 0.0
+                        
+                        segment_cogs = revenue * (1 - gross_margin)
+                        other_segment_cogs_cf[year_str] += segment_cogs
+                        operating_cf_by_year[year_str] -= segment_cogs
+            
+            # 2. Aggregate cash flows from all projects
+            for _, project in df_projects.iterrows():
+                project_name = project.get('project_name', 'Unknown')
+                financial_statements = project.get('comprehensive_financial_statements', {})
+                
+                if not isinstance(financial_statements, dict):
+                    financial_statements = {}
+                
+                # Initialize project breakdown
+                if project_name not in presales_cf_breakdown:
+                    presales_cf_breakdown[project_name] = {}
+                    interest_outflow_breakdown[project_name] = {}
+                    sga_outflow_breakdown[project_name] = {}
+                    tax_outflow_breakdown[project_name] = {}
+                    land_outflow_breakdown[project_name] = {}
+                    construction_outflow_breakdown[project_name] = {}
+                    investing_cf_breakdown[project_name] = {}
+                    financing_cf_breakdown[project_name] = {}
+                
+                for year in years:
+                    year_str = str(year)
+                    
+                    if year_str in financial_statements:
+                        year_data = financial_statements[year_str]
+                        
+                        # Operating Cash Flow Components
+                        presales_inflow = year_data.get('cash_inflow_presales', 0) / 1e9
+                        presales_cf_breakdown[project_name][year_str] = presales_inflow
+                        operating_cf_by_year[year_str] += presales_inflow
+                        
+                        interest_outflow = year_data.get('cash_outflow_interest', 0) / 1e9
+                        interest_outflow_breakdown[project_name][year_str] = interest_outflow
+                        operating_cf_by_year[year_str] += interest_outflow
+                        
+                        sga_outflow = year_data.get('cash_outflow_sga', 0) / 1e9
+                        sga_outflow_breakdown[project_name][year_str] = sga_outflow
+                        operating_cf_by_year[year_str] += sga_outflow
+                        
+                        tax_outflow = year_data.get('cash_outflow_tax', 0) / 1e9
+                        tax_outflow_breakdown[project_name][year_str] = tax_outflow
+                        operating_cf_by_year[year_str] += tax_outflow
+                        
+                        # Investing Cash Flow
+                        land_outflow = year_data.get('cash_outflow_land', 0) / 1e9
+                        construction_outflow = year_data.get('cash_outflow_construction', 0) / 1e9
+                        
+                        land_outflow_breakdown[project_name][year_str] = land_outflow
+                        construction_outflow_breakdown[project_name][year_str] = construction_outflow
+                        
+                        investing_cf = land_outflow + construction_outflow
+                        investing_cf_by_year[year_str] += investing_cf
+                        investing_cf_breakdown[project_name][year_str] = investing_cf
+                        
+                        # Financing Cash Flow
+                        debt_disbursement = year_data.get('debt_disbursement', 0) / 1e9
+                        debt_repayment = year_data.get('debt_repayment', 0) / 1e9
+                        financing_cf = debt_disbursement + debt_repayment
+                        financing_cf_by_year[year_str] += financing_cf
+                        financing_cf_breakdown[project_name][year_str] = financing_cf
+                    else:
+                        presales_cf_breakdown[project_name][year_str] = 0
+                        interest_outflow_breakdown[project_name][year_str] = 0
+                        sga_outflow_breakdown[project_name][year_str] = 0
+                        tax_outflow_breakdown[project_name][year_str] = 0
+                        land_outflow_breakdown[project_name][year_str] = 0
+                        construction_outflow_breakdown[project_name][year_str] = 0
+                        investing_cf_breakdown[project_name][year_str] = 0
+                        financing_cf_breakdown[project_name][year_str] = 0
+            
+            # Add existing debt interest expense to operating cash flow
+            for year in years:
+                year_str = str(year)
+                existing_debt_interest = existing_debt_interest_row.get(str(year), 0)
+                operating_cf_by_year[year_str] += existing_debt_interest
+            
+            # Add SG&A expense from other segments to operating cash flow
+            for year in years:
+                year_str = str(year)
+                total_sga = 0
+                for row in sga_rows:
+                    if row['SG&A Source'] == 'TOTAL SG&A':
+                        total_sga = row.get(str(year), 0)
+                        break
+                total_proj_sga = sum(sga_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in sga_outflow_breakdown.keys())
+                other_sga = total_sga - total_proj_sga
+                operating_cf_by_year[year_str] += other_sga
+            
+            # Add total tax expense to operating cash flow
+            for year in years:
+                year_str = str(year)
+                project_taxes = sum(tax_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in tax_outflow_breakdown.keys())
+                operating_cf_by_year[year_str] -= project_taxes
+                total_tax_pnl = tax_row.get(year_str, 0)
+                operating_cf_by_year[year_str] += total_tax_pnl
+            
+            # Add interest income to investing cash flow
+            for year in years:
+                year_str = str(year)
+                interest_income_cf = interest_income_by_year.get(year_str, 0)
+                investing_cf_by_year[year_str] += interest_income_cf
+            
+            # Calculate net cash flow for each year
+            for year in years:
+                year_str = str(year)
+                net_cf_by_year[year_str] = (
+                    operating_cf_by_year[year_str] + 
+                    investing_cf_by_year[year_str] + 
+                    financing_cf_by_year[year_str]
+                )
+            
             # Section 6: Balance Sheet Statements
             st.markdown("---")
             st.subheader("Balance Sheet Statements")
@@ -2220,70 +2566,48 @@ class ModelForecastTab:
                 total_customer_prepayment_by_year[year_str] = 0
                 total_cash_by_year[year_str] = 0
         
-            # Load historical balance sheet data from FA_A_processed.parquet
-            hist_debt = 0
-            hist_inventory = 0
-            hist_cash = 0
-            hist_customer_prepayment = 0  # Usually not available in standard financials
-            hist_retained_earnings = 0
-            hist_minority_interest = 0
-        
-            try:
-                # Load FA_A_processed.parquet directly
-                fa_annual_path = 'data/FA_A_processed.parquet'
-                if os.path.exists(fa_annual_path):
-                    fa_annual_df = pd.read_parquet(fa_annual_path)
+            # Load historical balance sheet data for consolidated balance sheet
+            hist_bs_data = {}
+            if historical_data is not None and not historical_data.empty and hist_date_idx is not None:
+                # Map of display names to column names in FA_A_processed.parquet
+                bs_mapping = {
+                    'Cash & Equivalents': ['Cash_Equivalent', 'Cash'],
+                    'Account Receivable': ['Account_Receivable'],
+                    'Inventory': ['Inventory'],
+                    'Total Current Assets': ['Current_Asset'],
+                    'Tangible Fixed Assets': ['Tangible_Fixed_Asset'],
+                    'Total Assets': ['Total_Asset'],
+                    'Account Payable': ['Account_Payable'],
+                    'Customer Prepayment': ['Advance_From_Custmers'],  # Note the typo in the KEYCODE
+                    'Short-term Debt': ['ST_Debt'],
+                    'Current Liabilities': ['Current_Liabilities'],
+                    'Long-term Debt': ['LT_Debt'],
+                    'Total Liabilities': ['Total_Liabilities'],
+                    'Retained Earnings': ['Retain_Earning'],
+                    'Minority Interest': ['Minority_Interest'],
+                    'Total Equity': ['TOTAL_Equity']
+                }
                 
-                    # Filter for selected ticker and base year (DATE column is the year)
-                    ticker_data = fa_annual_df[(fa_annual_df['TICKER'] == selected_ticker) & 
-                                               (fa_annual_df['DATE'] == base_year)]
-                
-                    if not ticker_data.empty:
-                        # Get historical debt (ST + LT debt)
-                        st_debt_data = ticker_data[ticker_data['KEYCODE'] == 'ST_Debt']
-                        if not st_debt_data.empty:
-                            hist_debt += st_debt_data['VALUE'].iloc[0] / 1e9 if not pd.isna(st_debt_data['VALUE'].iloc[0]) else 0
-                    
-                        lt_debt_data = ticker_data[ticker_data['KEYCODE'] == 'LT_Debt']
-                        if not lt_debt_data.empty:
-                            hist_debt += lt_debt_data['VALUE'].iloc[0] / 1e9 if not pd.isna(lt_debt_data['VALUE'].iloc[0]) else 0
-                    
-                        # Get historical inventory
-                        inventory_data = ticker_data[ticker_data['KEYCODE'] == 'Inventory']
-                        if not inventory_data.empty:
-                            hist_inventory = inventory_data['VALUE'].iloc[0] / 1e9 if not pd.isna(inventory_data['VALUE'].iloc[0]) else 0
-                    
-                        # Get historical cash (Cash + Cash_Equivalent)
-                        cash_data = ticker_data[ticker_data['KEYCODE'] == 'Cash']
-                        if not cash_data.empty:
-                            hist_cash += cash_data['VALUE'].iloc[0] / 1e9 if not pd.isna(cash_data['VALUE'].iloc[0]) else 0
-                    
-                        cash_equiv_data = ticker_data[ticker_data['KEYCODE'] == 'Cash_Equivalent']
-                        if not cash_equiv_data.empty:
-                            hist_cash += cash_equiv_data['VALUE'].iloc[0] / 1e9 if not pd.isna(cash_equiv_data['VALUE'].iloc[0]) else 0
-                    
-                        # Customer prepayment - Load from Advance_From_Custmers (note the typo in the KEYCODE)
-                        customer_advance_data = ticker_data[ticker_data['KEYCODE'] == 'Advance_From_Custmers']
-                        if not customer_advance_data.empty:
-                            hist_customer_prepayment = customer_advance_data['VALUE'].iloc[0] / 1e9 if not pd.isna(customer_advance_data['VALUE'].iloc[0]) else 0
-                        else:
-                            hist_customer_prepayment = 0
-                    
-                        # Get historical retained earnings
-                        retained_earnings_data = ticker_data[ticker_data['KEYCODE'] == 'Retain_Earning']
-                        if not retained_earnings_data.empty:
-                            hist_retained_earnings = retained_earnings_data['VALUE'].iloc[0] / 1e9 if not pd.isna(retained_earnings_data['VALUE'].iloc[0]) else 0
-                    
-                        # Get historical minority interest (balance sheet item, not earnings)
-                        minority_interest_data = ticker_data[ticker_data['KEYCODE'] == 'Minority_Interest']
-                        if not minority_interest_data.empty:
-                            hist_minority_interest = minority_interest_data['VALUE'].iloc[0] / 1e9 if not pd.isna(minority_interest_data['VALUE'].iloc[0]) else 0
-                    else:
-                        st.info(f"No historical data found for {selected_ticker} in year {base_year}")
-                else:
-                    st.warning(f"Historical data file not found: {fa_annual_path}")
-            except Exception as e:
-                st.warning(f"Could not load historical balance sheet data: {str(e)}")
+                # Extract historical values
+                for display_name, col_names in bs_mapping.items():
+                    value = 0
+                    for col_name in col_names:
+                        if col_name in historical_data.columns:
+                            try:
+                                raw_value = historical_data.loc[hist_date_idx, col_name]
+                                if not pd.isna(raw_value):
+                                    value += raw_value
+                            except:
+                                pass
+                    hist_bs_data[display_name] = value / 1e9  # Convert to billions
+            
+            # Use consolidated balance sheet historical values for consistency
+            hist_debt = hist_bs_data.get('Short-term Debt', 0) + hist_bs_data.get('Long-term Debt', 0)
+            hist_inventory = hist_bs_data.get('Inventory', 0)
+            hist_cash = hist_bs_data.get('Cash & Equivalents', 0)
+            hist_customer_prepayment = hist_bs_data.get('Customer Prepayment', 0)
+            hist_retained_earnings = hist_bs_data.get('Retained Earnings', 0)
+            hist_minority_interest = hist_bs_data.get('Minority Interest', 0)
         
             # First, initialize with historical values as starting point
             # These will be the base for cumulative calculations
@@ -2308,10 +2632,36 @@ class ModelForecastTab:
                     financial_statements = {}
             
                 # Track previous year values for this project to calculate changes
+                # Check if project has historical data (base year) for proper initialization
+                base_year_str = str(base_year)
                 prev_debt = 0
                 prev_inventory = 0
                 prev_prepayment = 0
                 prev_cash = 0
+                
+                # If project has historical year data, use it as starting point
+                if base_year_str in financial_statements:
+                    hist_data = financial_statements[base_year_str]
+                    
+                    # Get historical inventory
+                    if 'inventory_balance' in hist_data:
+                        prev_inventory = hist_data.get('inventory_balance', 0) / 1e9
+                    elif 'Inventory_Balance' in hist_data:
+                        prev_inventory = hist_data.get('Inventory_Balance', 0) / 1e9
+                    
+                    # Get historical debt
+                    if 'debt_balance' in hist_data:
+                        prev_debt = hist_data.get('debt_balance', 0) / 1e9
+                    elif 'Debt_Balance' in hist_data:
+                        prev_debt = hist_data.get('Debt_Balance', 0) / 1e9
+                    
+                    # Get historical prepayment
+                    if 'customer_prepayment_balance' in hist_data:
+                        prev_prepayment = hist_data.get('customer_prepayment_balance', 0) / 1e9
+                    elif 'Customer_Prepayment_Balance' in hist_data:
+                        prev_prepayment = hist_data.get('Customer_Prepayment_Balance', 0) / 1e9
+                    
+                    # Note: prev_cash typically stays at 0 as cash is cumulative from project start
             
                 for year in years:
                     year_str = str(year)
@@ -2335,8 +2685,12 @@ class ModelForecastTab:
                             current_inventory = year_data.get('inventory_balance', 0) / 1e9
                         elif 'Inventory_Balance' in year_data:
                             current_inventory = year_data.get('Inventory_Balance', 0) / 1e9
-                        # Calculate net change and add to total changes
-                        inventory_changes_by_year[year_str] += (current_inventory - prev_inventory)
+                        
+                        # Calculate net change (current year - previous year)
+                        inventory_change = current_inventory - prev_inventory
+                        inventory_changes_by_year[year_str] += inventory_change
+                        
+                        # Update prev_inventory for next year's calculation
                         prev_inventory = current_inventory
                     
                         # Get current year customer prepayment balance
@@ -2365,20 +2719,43 @@ class ModelForecastTab:
                             cash_changes_by_year[year_str] += (current_cash - prev_cash)
                             prev_cash = current_cash
         
-            # Now calculate cumulative totals for each year
+            # Recalculate interest income with more accurate cash balances
+            # (This refines the preliminary calculation done before P&L)
+            interest_income_by_year_refined = {}
+            
+            # First pass: calculate cumulative totals WITHOUT interest income
             for year_str in [str(y) for y in years]:
                 # Add the year's changes to the cumulative totals
                 cumulative_debt += debt_changes_by_year[year_str]
                 cumulative_inventory += inventory_changes_by_year[year_str]
                 cumulative_prepayment += prepayment_changes_by_year[year_str]
                 cumulative_cash += cash_changes_by_year[year_str]
-            
-                # Store the cumulative totals
+                
+                # Store the base totals (before interest income)
                 total_debt_by_year[year_str] = cumulative_debt
                 total_inventory_by_year[year_str] = cumulative_inventory
                 total_customer_prepayment_by_year[year_str] = cumulative_prepayment
                 total_cash_by_year[year_str] = cumulative_cash
+            
+            # Second pass: use the interest income already calculated iteratively in P&L section
+            # This ensures consistency across all financial statements
+            cumulative_interest = 0
+            
+            for year_str in [str(y) for y in years]:
+                # Use the interest income from the iterative calculation (already in interest_income_by_year)
+                interest_income = interest_income_by_year.get(year_str, 0)
+                interest_income_by_year_refined[year_str] = interest_income
+                cumulative_interest += interest_income
+                
+                # Add cumulative interest to cash balance
+                total_cash_by_year[year_str] += cumulative_interest
         
+            # Now update the P&L interest income row with calculated values
+            for year in years:
+                year_str = str(year)
+                if year_str in interest_income_by_year:
+                    interest_income_row[year_str] = interest_income_by_year[year_str]
+            
             # Track breakdown by project for debugging
             debt_breakdown = {}
             inventory_breakdown = {}
@@ -2461,48 +2838,129 @@ class ModelForecastTab:
                 # Note: Individual project rows show the project's balance at each year
                 # Total rows show cumulative company-wide balance (historical + all project changes)
             
-                # DEBT SECTION
-                # Add individual project debt rows (showing each project's balance)
+                # DEBT SECTION - Show changes for each project
+                # Calculate debt changes for each project
+                debt_change_breakdown = {}
                 for project_name in debt_breakdown.keys():
-                    project_debt_row = {'Balance Sheet Item': f'  {project_name} Debt'}
-                    project_debt_row[hist_col] = 0  # No historical breakdown by project
+                    debt_change_breakdown[project_name] = {}
+                    prev_value = 0  # Projects start with 0 debt in historical year
+                    
+                    # Check if project has historical debt
+                    financial_statements = None
+                    for _, project in df_projects.iterrows():
+                        if project.get('project_name', 'Unknown') == project_name:
+                            financial_statements = project.get('comprehensive_financial_statements', {})
+                            break
+                    
+                    if financial_statements and base_year_str in financial_statements:
+                        hist_data = financial_statements[base_year_str]
+                        if 'debt_balance' in hist_data:
+                            prev_value = hist_data.get('debt_balance', 0) / 1e9
+                        elif 'Debt_Balance' in hist_data:
+                            prev_value = hist_data.get('Debt_Balance', 0) / 1e9
+                    
                     for year in years:
-                        project_debt_row[str(year)] = debt_breakdown[project_name][str(year)]
+                        year_str = str(year)
+                        current_value = debt_breakdown[project_name].get(year_str, 0)
+                        change = current_value - prev_value
+                        debt_change_breakdown[project_name][year_str] = change
+                        prev_value = current_value
+                
+                # Add individual project debt change rows
+                for project_name in debt_change_breakdown.keys():
+                    project_debt_row = {'Balance Sheet Item': f'  {project_name} Debt Change'}
+                    project_debt_row[hist_col] = 0  # No historical changes
+                    for year in years:
+                        project_debt_row[str(year)] = debt_change_breakdown[project_name][str(year)]
                     bs_rows.append(project_debt_row)
             
-                # Total Debt row
+                # Total Debt row (previous year + sum of changes)
                 debt_row = {'Balance Sheet Item': 'TOTAL DEBT'}
                 debt_row[hist_col] = hist_debt
                 for year in years:
                     debt_row[str(year)] = total_debt_by_year[str(year)]
                 bs_rows.append(debt_row)
             
-                # INVENTORY SECTION
-                # Add individual project inventory rows
+                # INVENTORY SECTION - Show changes for each project
+                # Calculate inventory changes for each project
+                inventory_change_breakdown = {}
                 for project_name in inventory_breakdown.keys():
-                    project_inv_row = {'Balance Sheet Item': f'  {project_name} Inventory'}
-                    project_inv_row[hist_col] = 0  # No historical breakdown by project
+                    inventory_change_breakdown[project_name] = {}
+                    prev_value = 0  # Projects start with 0 inventory in historical year
+                    
+                    # Check if project has historical inventory
+                    financial_statements = None
+                    for _, project in df_projects.iterrows():
+                        if project.get('project_name', 'Unknown') == project_name:
+                            financial_statements = project.get('comprehensive_financial_statements', {})
+                            break
+                    
+                    if financial_statements and base_year_str in financial_statements:
+                        hist_data = financial_statements[base_year_str]
+                        if 'inventory_balance' in hist_data:
+                            prev_value = hist_data.get('inventory_balance', 0) / 1e9
+                        elif 'Inventory_Balance' in hist_data:
+                            prev_value = hist_data.get('Inventory_Balance', 0) / 1e9
+                    
                     for year in years:
-                        project_inv_row[str(year)] = inventory_breakdown[project_name][str(year)]
+                        year_str = str(year)
+                        current_value = inventory_breakdown[project_name].get(year_str, 0)
+                        change = current_value - prev_value
+                        inventory_change_breakdown[project_name][year_str] = change
+                        prev_value = current_value
+                
+                # Add individual project inventory change rows
+                for project_name in inventory_change_breakdown.keys():
+                    project_inv_row = {'Balance Sheet Item': f'  {project_name} Inventory Change'}
+                    project_inv_row[hist_col] = 0  # No historical changes
+                    for year in years:
+                        project_inv_row[str(year)] = inventory_change_breakdown[project_name][str(year)]
                     bs_rows.append(project_inv_row)
             
-                # Total Inventory row
+                # Total Inventory row (previous year + sum of changes)
                 inventory_row = {'Balance Sheet Item': 'TOTAL INVENTORY'}
                 inventory_row[hist_col] = hist_inventory
                 for year in years:
                     inventory_row[str(year)] = total_inventory_by_year[str(year)]
                 bs_rows.append(inventory_row)
             
-                # CUSTOMER PREPAYMENT SECTION
-                # Add individual project prepayment rows
+                # CUSTOMER PREPAYMENT SECTION - Show changes for each project
+                # Calculate prepayment changes for each project
+                prepayment_change_breakdown = {}
                 for project_name in prepayment_breakdown.keys():
-                    project_prep_row = {'Balance Sheet Item': f'  {project_name} Prepayment'}
-                    project_prep_row[hist_col] = 0  # No historical breakdown by project
+                    prepayment_change_breakdown[project_name] = {}
+                    prev_value = 0  # Projects start with 0 prepayment in historical year
+                    
+                    # Check if project has historical prepayment
+                    financial_statements = None
+                    for _, project in df_projects.iterrows():
+                        if project.get('project_name', 'Unknown') == project_name:
+                            financial_statements = project.get('comprehensive_financial_statements', {})
+                            break
+                    
+                    if financial_statements and base_year_str in financial_statements:
+                        hist_data = financial_statements[base_year_str]
+                        if 'customer_prepayment_balance' in hist_data:
+                            prev_value = hist_data.get('customer_prepayment_balance', 0) / 1e9
+                        elif 'Customer_Prepayment_Balance' in hist_data:
+                            prev_value = hist_data.get('Customer_Prepayment_Balance', 0) / 1e9
+                    
                     for year in years:
-                        project_prep_row[str(year)] = prepayment_breakdown[project_name][str(year)]
+                        year_str = str(year)
+                        current_value = prepayment_breakdown[project_name].get(year_str, 0)
+                        change = current_value - prev_value
+                        prepayment_change_breakdown[project_name][year_str] = change
+                        prev_value = current_value
+                
+                # Add individual project prepayment change rows
+                for project_name in prepayment_change_breakdown.keys():
+                    project_prep_row = {'Balance Sheet Item': f'  {project_name} Prepayment Change'}
+                    project_prep_row[hist_col] = 0  # No historical changes
+                    for year in years:
+                        project_prep_row[str(year)] = prepayment_change_breakdown[project_name][str(year)]
                     bs_rows.append(project_prep_row)
             
-                # Total Customer Prepayment row
+                # Total Customer Prepayment row (previous year + sum of changes)
                 prepayment_row = {'Balance Sheet Item': 'TOTAL CUSTOMER PREPAYMENT'}
                 prepayment_row[hist_col] = hist_customer_prepayment
                 for year in years:
@@ -2518,137 +2976,89 @@ class ModelForecastTab:
                         project_cash_row[str(year)] = cash_breakdown[project_name][str(year)]
                     bs_rows.append(project_cash_row)
             
-                # Add net cash change from other business segments
-                # Calculate as cumulative revenue - COGS from other segments
-                other_segment_cash_row = {'Balance Sheet Item': '  Net Cash from Other Segments'}
-                other_segment_cash_row[hist_col] = 0  # No historical breakdown
-                cumulative_other_cash = 0
-                for year in years:
-                    # Net cash = Revenue - COGS from other business segments
-                    other_revenue = other_revenue_by_year.get(year, 0)
-                    other_cogs = other_cogs_by_year.get(year, 0)
-                    net_cash_from_other = other_revenue - other_cogs
-                    cumulative_other_cash += net_cash_from_other
-                    other_segment_cash_row[str(year)] = cumulative_other_cash
-                bs_rows.append(other_segment_cash_row)
+                # Removed net cash from other segments - only show project cash
             
-                # Total Cash row (includes historical + project cash + other segment cash)
+                # Total Cash row (sum of all project cash only)
                 cash_row = {'Balance Sheet Item': 'TOTAL CASH'}
-                cash_row[hist_col] = hist_cash
+                cash_row[hist_col] = 0  # No historical project breakdown
                 for year in years:
-                    # Total cash = project cash + cumulative cash from other segments
                     year_str = str(year)
-                    # Get cumulative cash from other segments up to this year
-                    cumulative_other = 0
-                    for y in years:
-                        if y <= year:
-                            other_revenue = other_revenue_by_year.get(y, 0)
-                            other_cogs = other_cogs_by_year.get(y, 0)
-                            cumulative_other += (other_revenue - other_cogs)
-                        else:
-                            break
-                    cash_row[year_str] = total_cash_by_year[year_str] + cumulative_other
+                    # Sum cash from all projects only (not including other segments)
+                    total_project_cash = sum(
+                        cash_breakdown[project_name].get(year_str, 0) 
+                        for project_name in cash_breakdown.keys()
+                    )
+                    cash_row[year_str] = total_project_cash
                 bs_rows.append(cash_row)
             
-                # Add separator row
-                separator_row = {'Balance Sheet Item': '─' * 30}
-                for col in [hist_col] + [str(y) for y in years]:
-                    separator_row[col] = None
-                bs_rows.append(separator_row)
-            
-                # CALCULATED METRICS
-                # Net Debt (Debt - Cash)
-                net_debt_row = {'Balance Sheet Item': 'NET DEBT (Debt - Cash)'}
-                net_debt_row[hist_col] = hist_debt - hist_cash
-                for year in years:
-                    year_str = str(year)
-                    # Use the updated total cash that includes other segments
-                    total_cash_with_other = cash_row[year_str]
-                    net_debt_row[year_str] = total_debt_by_year[year_str] - total_cash_with_other
-                bs_rows.append(net_debt_row)
-            
-                # Working Capital (Inventory + Cash - Customer Prepayment)
-                working_capital_row = {'Balance Sheet Item': 'WORKING CAPITAL'}
-                working_capital_row[hist_col] = hist_inventory + hist_cash - hist_customer_prepayment
-                for year in years:
-                    year_str = str(year)
-                    # Use the updated total cash that includes other segments
-                    total_cash_with_other = cash_row[year_str]
-                    working_capital_row[year_str] = (total_inventory_by_year[year_str] + 
-                                                     total_cash_with_other - 
-                                                     total_customer_prepayment_by_year[year_str])
-                bs_rows.append(working_capital_row)
-            
-                # Add another separator row
-                separator_row2 = {'Balance Sheet Item': '─' * 30}
-                for col in [hist_col] + [str(y) for y in years]:
-                    separator_row2[col] = None
-                bs_rows.append(separator_row2)
-            
-                # EQUITY SECTION
-                # Retained Earnings
-                retained_earnings_row_bs = {'Balance Sheet Item': 'Retained Earnings'}
-                retained_earnings_row_bs[hist_col] = hist_retained_earnings
-            
-                # Calculate cumulative retained earnings for forecast years
-                cumulative_retained_earnings = hist_retained_earnings
-                for year in years:
-                    year_str = str(year)
-                    # Get NPATMI for this year from consolidated P&L (already calculated above)
-                    npatmi_for_year = npatmi_row.get(year_str, 0) if 'npatmi_row' in locals() else 0
-                
-                    # Add NPATMI to cumulative retained earnings
-                    cumulative_retained_earnings += npatmi_for_year
-                    retained_earnings_row_bs[year_str] = cumulative_retained_earnings
-                bs_rows.append(retained_earnings_row_bs)
-            
-                # Minority Interest
-                minority_interest_row_bs = {'Balance Sheet Item': 'Minority Interest'}
-                minority_interest_row_bs[hist_col] = hist_minority_interest
-            
-                # Calculate cumulative minority interest for forecast years
-                cumulative_minority_interest = hist_minority_interest
-                for year in years:
-                    year_str = str(year)
-                    # Get minority interest for this year from consolidated P&L (already calculated above)
-                    minority_for_year = minority_interest_row.get(year_str, 0) if 'minority_interest_row' in locals() else 0
-                
-                    # Add to cumulative minority interest
-                    cumulative_minority_interest += minority_for_year
-                    minority_interest_row_bs[year_str] = cumulative_minority_interest
-                bs_rows.append(minority_interest_row_bs)
-            
-                # Total Equity
-                total_equity_row = {'Balance Sheet Item': 'TOTAL EQUITY'}
-                total_equity_row[hist_col] = hist_retained_earnings + hist_minority_interest
-                for year in years:
-                    year_str = str(year)
-                    total_equity_row[year_str] = retained_earnings_row_bs[year_str] + minority_interest_row_bs[year_str]
-                bs_rows.append(total_equity_row)
+                # Removed separator, net debt, working capital, retained earnings, and total equity rows
+                # Keep only the essential project-related balance sheet items
             
                 # Create DataFrame
                 bs_df = pd.DataFrame(bs_rows)
             
                 st.write("**Detailed Project Breakdown Balance Sheet Items (Billion VND)**")
             
-                # Style function to highlight key rows
+                # Style function to highlight key rows and color code changes
                 def style_bs_table(row):
                     item = str(row['Balance Sheet Item'])
                     # Total rows - bold with background
-                    if item in ['TOTAL DEBT', 'TOTAL INVENTORY', 'TOTAL CUSTOMER PREPAYMENT', 'TOTAL CASH', 'TOTAL EQUITY']:
+                    if item in ['TOTAL DEBT', 'TOTAL INVENTORY', 'TOTAL CUSTOMER PREPAYMENT', 'TOTAL CASH']:
                         return ['font-weight: bold; background-color: #e6f2ff'] * len(row)
-                    # Calculated metrics - bold with different background
-                    elif item in ['NET DEBT (Debt - Cash)', 'WORKING CAPITAL']:
-                        return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
-                    # Equity components - with light green background
-                    elif item in ['Retained Earnings', 'Minority Interest']:
-                        return ['background-color: #e8f5e9'] * len(row)
-                    # Project details - indented with lighter font
+                    # Debt change rows - color code based on value
+                    elif 'Debt Change' in item:
+                        styles = ['padding-left: 20px']  # First column (item name)
+                        styles.append('')  # Historical column
+                        # Color code each year's value
+                        for year in years:
+                            val = row.get(str(year), 0)
+                            if pd.notna(val) and val != 0:
+                                if val > 0:
+                                    styles.append('color: #28a745; font-weight: 600')  # Green for increase
+                                elif val < 0:
+                                    styles.append('color: #dc3545; font-weight: 600')  # Red for decrease
+                                else:
+                                    styles.append('color: #666')
+                            else:
+                                styles.append('color: #666')
+                        return styles
+                    # Inventory change rows - color code based on value
+                    elif 'Inventory Change' in item:
+                        styles = ['padding-left: 20px']  # First column (item name)
+                        styles.append('')  # Historical column
+                        # Color code each year's value
+                        for year in years:
+                            val = row.get(str(year), 0)
+                            if pd.notna(val) and val != 0:
+                                if val > 0:
+                                    styles.append('color: #28a745; font-weight: 600')  # Green for increase
+                                elif val < 0:
+                                    styles.append('color: #dc3545; font-weight: 600')  # Red for decrease
+                                else:
+                                    styles.append('color: #666')
+                            else:
+                                styles.append('color: #666')
+                        return styles
+                    # Customer prepayment change rows - color code based on value
+                    elif 'Prepayment Change' in item:
+                        styles = ['padding-left: 20px']  # First column (item name)
+                        styles.append('')  # Historical column
+                        # Color code each year's value
+                        for year in years:
+                            val = row.get(str(year), 0)
+                            if pd.notna(val) and val != 0:
+                                if val > 0:
+                                    styles.append('color: #28a745; font-weight: 600')  # Green for increase
+                                elif val < 0:
+                                    styles.append('color: #dc3545; font-weight: 600')  # Red for decrease
+                                else:
+                                    styles.append('color: #666')
+                            else:
+                                styles.append('color: #666')
+                        return styles
+                    # Other project details - indented with lighter font
                     elif item.startswith('  '):
                         return ['padding-left: 20px; color: #666'] * len(row)
-                    # Separator row
-                    elif '─' in item:
-                        return ['border-top: 2px solid #ccc'] * len(row)
                     return [''] * len(row)
             
                 # Define column configuration
@@ -2674,39 +3084,8 @@ class ModelForecastTab:
                 # Create consolidated balance sheet with typical items
                 consolidated_bs_rows = []
                 
-                # Load historical balance sheet data
-                hist_bs_data = {}
-                if historical_data is not None and not historical_data.empty and hist_date_idx is not None:
-                    # Map of display names to column names in FA_A_processed.parquet
-                    bs_mapping = {
-                    'Cash & Equivalents': ['Cash_Equivalent', 'Cash'],
-                    'Account Receivable': ['Account_Receivable'],
-                    'Inventory': ['Inventory'],
-                    'Total Current Assets': ['Current_Asset'],
-                    'Tangible Fixed Assets': ['Tangible_Fixed_Asset'],
-                    'Total Assets': ['Total_Asset'],
-                    'Account Payable': ['Account_Payable'],
-                    'Customer Prepayment': ['Advance_From_Custmers'],  # Note the typo in the KEYCODE
-                    'Short-term Debt': ['ST_Debt'],
-                    'Current Liabilities': ['Current_Liabilities'],
-                    'Long-term Debt': ['LT_Debt'],
-                    'Total Liabilities': ['Total_Liabilities'],
-                    'Retained Earnings': ['Retain_Earning'],
-                    'Total Equity': ['TOTAL_Equity']
-                }
-                
-                # Extract historical values
-                for display_name, col_names in bs_mapping.items():
-                    value = 0
-                    for col_name in col_names:
-                        if col_name in historical_data.columns:
-                            try:
-                                raw_value = historical_data.loc[hist_date_idx, col_name]
-                                if not pd.isna(raw_value):
-                                    value += raw_value
-                            except:
-                                pass
-                    hist_bs_data[display_name] = value / 1e9  # Convert to billions
+                # hist_bs_data was already loaded earlier before accumulation calculations
+                # No need to reload it here
                 
                 # Assets Section
                 # Cash & Equivalents
@@ -2714,20 +3093,14 @@ class ModelForecastTab:
                     'Item': 'Cash & Equivalents',
                     hist_col: hist_bs_data.get('Cash & Equivalents', 0)
                 }
-                # Get forecast data from detail breakdown (total_cash_by_year from projects + other segments)
+                # Calculate cash based on cumulative net cash flow from cash flow statement
+                cumulative_cash_balance = hist_bs_data.get('Cash & Equivalents', 0)
                 for year in years:
                     year_str = str(year)
-                    # Calculate cumulative cash from other segments up to this year
-                    cumulative_other = 0
-                    for y in years:
-                        if y <= year:
-                            other_revenue = other_revenue_by_year.get(y, 0)
-                            other_cogs = other_cogs_by_year.get(y, 0)
-                            cumulative_other += (other_revenue - other_cogs)
-                        else:
-                            break
-                    # Total cash = project cash + cumulative cash from other segments
-                    cash_row[year_str] = total_cash_by_year.get(year_str, 0) + cumulative_other
+                    # Add the net cash flow for this year to cumulative balance
+                    net_cf = net_cf_by_year.get(year_str, 0)
+                    cumulative_cash_balance += net_cf
+                    cash_row[year_str] = cumulative_cash_balance
                 consolidated_bs_rows.append(cash_row)
                 
                 # Account Receivable
@@ -2752,30 +3125,23 @@ class ModelForecastTab:
                     inventory_row[year_str] = total_inventory_by_year.get(year_str, 0)
                 consolidated_bs_rows.append(inventory_row)
                 
-                # Total Current Assets
-                current_assets_row = {
-                    'Item': 'Total Current Assets',
-                    hist_col: hist_bs_data.get('Total Current Assets', 0)
-                }
-                for year in years:
-                    year_str = str(year)
-                    current_assets_row[year_str] = (
-                        cash_row[year_str] + 
-                        ar_row[year_str] + 
-                        inventory_row[year_str]
-                    )
-                consolidated_bs_rows.append(current_assets_row)
+                # Other Assets
+                # For historical year: Other Assets = Total Assets - Cash & Equivalent - Account Receivable - Inventory
+                hist_total_assets = hist_bs_data.get('Total Assets', 0)
+                hist_cash_equiv = hist_bs_data.get('Cash & Equivalents', 0)
+                hist_acc_receivable = hist_bs_data.get('Account Receivable', 0)
+                hist_inventory_bs = hist_bs_data.get('Inventory', 0)
+                hist_other_assets = hist_total_assets - hist_cash_equiv - hist_acc_receivable - hist_inventory_bs
                 
-                # Tangible Fixed Assets
-                fixed_assets_row = {
-                    'Item': 'Tangible Fixed Assets',
-                    hist_col: hist_bs_data.get('Tangible Fixed Assets', 0)
+                other_assets_row = {
+                    'Item': 'Other Assets',
+                    hist_col: hist_other_assets
                 }
+                # For forecast years, keep Other Assets constant at historical level
                 for year in years:
                     year_str = str(year)
-                    # This would be land value + construction in progress
-                    fixed_assets_row[year_str] = 0  # Could sum from project details
-                consolidated_bs_rows.append(fixed_assets_row)
+                    other_assets_row[year_str] = hist_other_assets
+                consolidated_bs_rows.append(other_assets_row)
                 
                 # Total Assets
                 total_assets_row = {
@@ -2784,9 +3150,12 @@ class ModelForecastTab:
                 }
                 for year in years:
                     year_str = str(year)
+                    # Total Assets = Cash + AR + Inventory + Other Assets
                     total_assets_row[year_str] = (
-                        current_assets_row[year_str] + 
-                        fixed_assets_row[year_str]
+                        cash_row[year_str] + 
+                        ar_row[year_str] + 
+                        inventory_row[year_str] +
+                        other_assets_row[year_str]
                     )
                 consolidated_bs_rows.append(total_assets_row)
                 
@@ -2838,20 +3207,6 @@ class ModelForecastTab:
                     st_debt_row[year_str] = total_debt_by_year.get(year_str, 0) * st_debt_ratio
                 consolidated_bs_rows.append(st_debt_row)
                 
-                # Current Liabilities
-                current_liab_row = {
-                    'Item': 'Current Liabilities',
-                    hist_col: hist_bs_data.get('Current Liabilities', 0)
-                }
-                for year in years:
-                    year_str = str(year)
-                    current_liab_row[year_str] = (
-                        ap_row[year_str] + 
-                        customer_prepayment_row[year_str] +
-                        st_debt_row[year_str]
-                    )
-                consolidated_bs_rows.append(current_liab_row)
-                
                 # Long-term Debt
                 lt_debt_row = {
                     'Item': 'Long-term Debt',
@@ -2863,6 +3218,23 @@ class ModelForecastTab:
                     lt_debt_row[year_str] = total_debt_by_year.get(year_str, 0) * lt_debt_ratio
                 consolidated_bs_rows.append(lt_debt_row)
                 
+                # Other Liabilities
+                # For historical year: Other Liabilities = Total Liabilities - Account Payable - Customer Prepayment - Short-term debt - Long-term debt
+                hist_total_liabilities = hist_bs_data.get('Total Liabilities', 0)
+                hist_acc_payable = hist_bs_data.get('Account Payable', 0)
+                hist_cust_prepayment = hist_bs_data.get('Customer Prepayment', hist_customer_prepayment)
+                hist_other_liabilities = hist_total_liabilities - hist_acc_payable - hist_cust_prepayment - hist_st_debt - hist_lt_debt
+                
+                other_liab_row = {
+                    'Item': 'Other Liabilities',
+                    hist_col: hist_other_liabilities
+                }
+                # For forecast years, keep Other Liabilities constant at historical level
+                for year in years:
+                    year_str = str(year)
+                    other_liab_row[year_str] = hist_other_liabilities
+                consolidated_bs_rows.append(other_liab_row)
+                
                 # Total Liabilities
                 total_liab_row = {
                     'Item': 'Total Liabilities',
@@ -2870,9 +3242,13 @@ class ModelForecastTab:
                 }
                 for year in years:
                     year_str = str(year)
+                    # Total Liabilities = AP + Customer Prepayment + ST Debt + LT Debt + Other Liabilities
                     total_liab_row[year_str] = (
-                        current_liab_row[year_str] + 
-                        lt_debt_row[year_str]
+                        ap_row[year_str] + 
+                        customer_prepayment_row[year_str] +
+                        st_debt_row[year_str] +
+                        lt_debt_row[year_str] +
+                        other_liab_row[year_str]
                     )
                 consolidated_bs_rows.append(total_liab_row)
                 
@@ -2882,15 +3258,47 @@ class ModelForecastTab:
                     'Item': 'Retained Earnings',
                     hist_col: hist_bs_data.get('Retained Earnings', 0)
                 }
-                # Calculate cumulative retained earnings
+                # Calculate cumulative retained earnings from NPATMI
                 cumulative_earnings = retained_earnings_row[hist_col]
                 for year in years:
                     year_str = str(year)
-                    # Add current year PAT to retained earnings
-                    if pat_row and year_str in pat_row:
-                        cumulative_earnings += pat_row[year_str]
+                    # Add current year NPATMI to retained earnings
+                    if npatmi_row and year_str in npatmi_row:
+                        cumulative_earnings += npatmi_row[year_str]
                     retained_earnings_row[year_str] = cumulative_earnings
                 consolidated_bs_rows.append(retained_earnings_row)
+                
+                # Minority Interest
+                minority_interest_bs_row = {
+                    'Item': 'Minority Interest',
+                    hist_col: hist_bs_data.get('Minority Interest', 0)
+                }
+                # Calculate cumulative minority interest from P&L
+                cumulative_minority = minority_interest_bs_row[hist_col]
+                for year in years:
+                    year_str = str(year)
+                    # Add current year minority interest from P&L to cumulative
+                    if minority_interest_row and year_str in minority_interest_row:
+                        cumulative_minority += minority_interest_row[year_str]
+                    minority_interest_bs_row[year_str] = cumulative_minority
+                consolidated_bs_rows.append(minority_interest_bs_row)
+                
+                # Other Equity (Charter Capital, Treasury shares etc.)
+                # For historical: Other Equity = Total Equity - Retained Earnings - Minority Interest
+                hist_total_equity = hist_bs_data.get('Total Equity', 0)
+                hist_retained_earnings = hist_bs_data.get('Retained Earnings', 0)
+                hist_minority_interest = hist_bs_data.get('Minority Interest', 0)
+                hist_other_equity = hist_total_equity - hist_retained_earnings - hist_minority_interest
+                
+                other_equity_row = {
+                    'Item': 'Other Equity (Charter Capital, Treasury shares etc.)',
+                    hist_col: hist_other_equity
+                }
+                # For forecast years, keep Other Equity constant at historical level
+                for year in years:
+                    year_str = str(year)
+                    other_equity_row[year_str] = hist_other_equity
+                consolidated_bs_rows.append(other_equity_row)
                 
                 # Total Equity
                 total_equity_row = {
@@ -2899,12 +3307,33 @@ class ModelForecastTab:
                 }
                 for year in years:
                     year_str = str(year)
-                    # Total Equity = Total Assets - Total Liabilities
+                    # Total Equity = Retained Earnings + Minority Interest + Other Equity
                     total_equity_row[year_str] = (
-                        total_assets_row[year_str] - 
-                        total_liab_row[year_str]
+                        retained_earnings_row[year_str] + 
+                        minority_interest_bs_row[year_str] +
+                        other_equity_row[year_str]
                     )
                 consolidated_bs_rows.append(total_equity_row)
+                
+                # Check row (Total Assets - Total Liabilities - Total Equity)
+                check_row = {
+                    'Item': 'Check (A - L - E)',
+                    hist_col: 0  # Historical should balance
+                }
+                # Calculate check for historical year
+                hist_check = hist_bs_data.get('Total Assets', 0) - hist_bs_data.get('Total Liabilities', 0) - hist_bs_data.get('Total Equity', 0)
+                check_row[hist_col] = hist_check
+                
+                for year in years:
+                    year_str = str(year)
+                    # Check = Total Assets - Total Liabilities - Total Equity (should be 0)
+                    check_value = (
+                        total_assets_row[year_str] - 
+                        total_liab_row[year_str] - 
+                        total_equity_row[year_str]
+                    )
+                    check_row[year_str] = check_value
+                consolidated_bs_rows.append(check_row)
                 
                 # Create DataFrame
                 consolidated_bs_df = pd.DataFrame(consolidated_bs_rows)
@@ -2926,8 +3355,21 @@ class ModelForecastTab:
                         return ['background-color: #ffe8e8; font-weight: bold'] * len(row)
                     elif row['Item'] == 'Total Equity':
                         return ['background-color: #e8f8e8; font-weight: bold'] * len(row)
-                    elif row['Item'] in ['Total Current Assets', 'Current Liabilities']:
+                    elif row['Item'] in ['Other Assets', 'Other Liabilities']:
                         return ['font-weight: 600'] * len(row)
+                    elif row['Item'] == 'Check (A - L - E)':
+                        # Check if any value is non-zero and highlight in red
+                        styles = []
+                        for col in row.index:
+                            if col == 'Item':
+                                styles.append('font-weight: bold')
+                            else:
+                                val = row[col]
+                                if val is not None and not pd.isna(val) and abs(val) > 0.01:  # Allow small rounding errors
+                                    styles.append('color: red; font-weight: bold')
+                                else:
+                                    styles.append('color: green')
+                        return styles
                     return [''] * len(row)
                 
                 # Display the consolidated balance sheet
@@ -3020,145 +3462,10 @@ class ModelForecastTab:
                     hist_financing_cf_val = historical_data.loc[hist_date_idx, 'Fin_CF']
                     hist_financing_cf_detail = hist_financing_cf_val / 1e9 if not pd.isna(hist_financing_cf_val) else 0
         
-            # Initialize aggregated cash flow data by year
-            operating_cf_by_year = {}
-            investing_cf_by_year = {}
-            financing_cf_by_year = {}
-            net_cf_by_year = {}
-        
-            # Initialize breakdown components for operating cash flow
-            other_segment_revenue_cf = {}  # Revenue from non-real estate segments
-            other_segment_cogs_cf = {}  # COGS from non-real estate segments
-            presales_cf_breakdown = {}  # Cash inflow from project presales
-            interest_outflow_breakdown = {}  # Interest expense outflow
-            sga_outflow_breakdown = {}  # SG&A expense outflow
-            tax_outflow_breakdown = {}  # Tax expense outflow
-        
-            # Initialize breakdown for investing and financing
-            land_outflow_breakdown = {}  # Land payment breakdown by project
-            construction_outflow_breakdown = {}  # Construction cost breakdown by project
-            investing_cf_breakdown = {}  # Total investing CF (land + construction)
-            financing_cf_breakdown = {}
-        
-            # Initialize for all years
-            for year in years:
-                year_str = str(year)
-                operating_cf_by_year[year_str] = 0
-                investing_cf_by_year[year_str] = 0
-                financing_cf_by_year[year_str] = 0
-                net_cf_by_year[year_str] = 0
-                other_segment_revenue_cf[year_str] = 0
-                other_segment_cogs_cf[year_str] = 0
-        
-            # 1. Calculate revenue and COGS from other business segments (non-real estate)
-            # Revenue comes from other_revenue_breakdown, COGS calculated from gross margin
-            if other_revenue_breakdown:  # Only if there are other business segments
-                for segment_name, segment_revenue in other_revenue_breakdown.items():
-                    for year in years:
-                        year_str = str(year)
-                        revenue = segment_revenue.get(year_str, 0)
-                        other_segment_revenue_cf[year_str] += revenue
-                        operating_cf_by_year[year_str] += revenue
-                    
-                        # Calculate COGS for this segment
-                        # Get gross margin from segment_metrics
-                        if segment_name in segment_metrics:
-                            gross_margin = segment_metrics[segment_name]['gross_margin']
-                        else:
-                            gross_margin = 0.0  # Default 30%
-                    
-                        # COGS = Revenue * (1 - Gross Margin)
-                        segment_cogs = revenue * (1 - gross_margin)
-                        other_segment_cogs_cf[year_str] += segment_cogs
-                        # Subtract COGS from operating CF (it's an outflow)
-                        operating_cf_by_year[year_str] -= segment_cogs
-        
-            # 2. Aggregate cash flows from all projects
-            for _, project in df_projects.iterrows():
-                project_name = project.get('project_name', 'Unknown')
-                financial_statements = project.get('comprehensive_financial_statements', {})
-                
-                # Ensure financial_statements is a dictionary
-                if not isinstance(financial_statements, dict):
-                    financial_statements = {}
-            
-                # Initialize project breakdown
-                if project_name not in presales_cf_breakdown:
-                    presales_cf_breakdown[project_name] = {}
-                    interest_outflow_breakdown[project_name] = {}
-                    sga_outflow_breakdown[project_name] = {}
-                    tax_outflow_breakdown[project_name] = {}
-                    land_outflow_breakdown[project_name] = {}
-                    construction_outflow_breakdown[project_name] = {}
-                    investing_cf_breakdown[project_name] = {}
-                    financing_cf_breakdown[project_name] = {}
-            
-                for year in years:
-                    year_str = str(year)
-                
-                    if year_str in financial_statements:
-                        year_data = financial_statements[year_str]
-                        cashflow_data = year_data.get('cashflow', {})
-                        pnl_data = year_data.get('pnl', {})
-                    
-                        # Operating Cash Flow Components:
-                        # Cash inflow from presales (customer deposits) - directly from MongoDB
-                        presales_inflow = year_data.get('cash_inflow_presales', 0) / 1e9
-                        presales_cf_breakdown[project_name][year_str] = presales_inflow
-                        operating_cf_by_year[year_str] += presales_inflow
-                    
-                        # Cash outflow from interest expense (already negative in MongoDB)
-                        interest_outflow = year_data.get('cash_outflow_interest', 0) / 1e9
-                        interest_outflow_breakdown[project_name][year_str] = interest_outflow
-                        operating_cf_by_year[year_str] += interest_outflow
-                    
-                        # Cash outflow from SG&A expense (already negative in MongoDB)
-                        sga_outflow = year_data.get('cash_outflow_sga', 0) / 1e9
-                        sga_outflow_breakdown[project_name][year_str] = sga_outflow
-                        operating_cf_by_year[year_str] += sga_outflow
-                    
-                        # Cash outflow from tax expense (already negative in MongoDB)
-                        tax_outflow = year_data.get('cash_outflow_tax', 0) / 1e9
-                        tax_outflow_breakdown[project_name][year_str] = tax_outflow
-                        operating_cf_by_year[year_str] += tax_outflow
-                    
-                        # Investing Cash Flow (land and construction cash outflows)
-                        # Both are already negative in MongoDB
-                        land_outflow = year_data.get('cash_outflow_land', 0) / 1e9
-                        construction_outflow = year_data.get('cash_outflow_construction', 0) / 1e9
-                    
-                        # Store separate breakdowns
-                        land_outflow_breakdown[project_name][year_str] = land_outflow
-                        construction_outflow_breakdown[project_name][year_str] = construction_outflow
-                    
-                        # Total investing CF
-                        investing_cf = land_outflow + construction_outflow
-                        investing_cf_by_year[year_str] += investing_cf
-                        investing_cf_breakdown[project_name][year_str] = investing_cf
-                    
-                        # Financing Cash Flow (debt disbursement and repayment)
-                        debt_disbursement = year_data.get('debt_disbursement', 0) / 1e9
-                        debt_repayment = year_data.get('debt_repayment', 0) / 1e9  # Already negative in MongoDB
-                        financing_cf = debt_disbursement + debt_repayment
-                        financing_cf_by_year[year_str] += financing_cf
-                        financing_cf_breakdown[project_name][year_str] = financing_cf
-                    else:
-                        # No data for this year
-                        presales_cf_breakdown[project_name][year_str] = 0
-                        interest_outflow_breakdown[project_name][year_str] = 0
-                        sga_outflow_breakdown[project_name][year_str] = 0
-                        tax_outflow_breakdown[project_name][year_str] = 0
-                        land_outflow_breakdown[project_name][year_str] = 0
-                        construction_outflow_breakdown[project_name][year_str] = 0
-                        investing_cf_breakdown[project_name][year_str] = 0
-                        financing_cf_breakdown[project_name][year_str] = 0
-        
-            # Calculate net cash flow for each year
-            for year in years:
-                year_str = str(year)
-                net_cf_by_year[year_str] = (operating_cf_by_year[year_str] + 
-                                           investing_cf_by_year[year_str] + 
-                                           financing_cf_by_year[year_str])
+            # Cash flow dictionaries and breakdowns were already calculated before balance sheet section
+            # All cash flow calculations have been moved before the balance sheet
+            # The values in operating_cf_by_year, investing_cf_by_year, financing_cf_by_year, and net_cf_by_year
+            # are already computed and ready to use
         
             # Build the cash flow table rows
             # Operating Cash Flow Section
@@ -3201,6 +3508,13 @@ class ModelForecastTab:
                         year_str = str(year)
                         project_row[year_str] = interest_outflow_breakdown[project_name].get(year_str, 0)
                     cf_rows.append(project_row)
+            
+            # Interest expense from existing debt
+            existing_debt_interest_cf_row = {'Cash Flow Item': '    Interest Expense - Existing Debt', hist_col: 0}
+            for year in years:
+                year_str = str(year)
+                existing_debt_interest_cf_row[year_str] = existing_debt_interest_row.get(str(year), 0)
+            cf_rows.append(existing_debt_interest_cf_row)
         
             # SG&A expense outflow by project
             for project_name in sorted(sga_outflow_breakdown.keys()):
@@ -3210,6 +3524,21 @@ class ModelForecastTab:
                         year_str = str(year)
                         project_row[year_str] = sga_outflow_breakdown[project_name].get(year_str, 0)
                     cf_rows.append(project_row)
+            
+            # SG&A expense from other segments
+            other_sga_cf_row = {'Cash Flow Item': '    SG&A Expense - Other Segments', hist_col: 0}
+            for year in years:
+                year_str = str(year)
+                # Calculate SG&A for other segments
+                total_sga = 0
+                for row in sga_rows:
+                    if row['SG&A Source'] == 'TOTAL SG&A':
+                        total_sga = row.get(str(year), 0)
+                        break
+                total_proj_sga = sum(sga_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in sga_outflow_breakdown.keys())
+                other_sga = total_sga - total_proj_sga
+                other_sga_cf_row[year_str] = other_sga
+            cf_rows.append(other_sga_cf_row)
         
             # Tax expense outflow by project
             for project_name in sorted(tax_outflow_breakdown.keys()):
@@ -3251,8 +3580,22 @@ class ModelForecastTab:
                         year_str = str(year)
                         project_row[year_str] = construction_outflow_breakdown[project_name].get(year_str, 0)
                     cf_rows.append(project_row)
+            
+            # Interest Income (cash inflow from investing activities)
+            cf_rows.append({'Cash Flow Item': '  Interest Income:', hist_col: None, **{str(y): None for y in years}})
+            interest_income_cf_row = {'Cash Flow Item': '    Interest Income from Cash', hist_col: 0}
+            
+            # Use the interest income already calculated and added to investing CF
+            for year in years:
+                year_str = str(year)
+                # Get interest income from the already calculated values
+                interest_income_cf = interest_income_by_year.get(year_str, 0)
+                interest_income_cf_row[year_str] = interest_income_cf
+                # Note: Already added to investing_cf_by_year before net cash flow calculation
+            
+            cf_rows.append(interest_income_cf_row)
         
-            # Total Investing CF
+            # Total Investing CF (now includes interest income)
             investing_total_row = {'Cash Flow Item': 'TOTAL INVESTING CASH FLOW', hist_col: hist_investing_cf_detail}
             for year in years:
                 investing_total_row[str(year)] = investing_cf_by_year[str(year)]
@@ -3401,20 +3744,23 @@ class ModelForecastTab:
                 for year in years:
                     year_str = str(year)
                     # Calculate SG&A for other segments (already calculated in sga_rows)
-                    # Other segment rows end with " SG&A" suffix
-                    other_sga = 0
+                    # Get total SG&A and subtract project SG&A
+                    total_sga = 0
                     for row in sga_rows:
-                        if row['SG&A Source'] not in ['TOTAL SG&A', 'Total Projects SG&A'] and row['SG&A Source'].endswith(' SG&A'):
-                            other_sga += row.get(str(year), 0)
+                        if row['SG&A Source'] == 'TOTAL SG&A':
+                            total_sga = row.get(str(year), 0)
+                            break
+                    total_proj_sga = sum(sga_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in sga_outflow_breakdown.keys())
+                    other_sga = total_sga - total_proj_sga
                     other_sga_row_cf[year_str] = other_sga
                 consol_cf_rows.append(other_sga_row_cf)
                 
-                # Tax Expenses from All Projects
+                # Tax Expenses (Total from P&L)
                 tax_expense_row_cf = {'Item': '  Tax Expense', hist_col: 0}
                 for year in years:
                     year_str = str(year)
-                    total_tax = sum(tax_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in tax_outflow_breakdown.keys())
-                    tax_expense_row_cf[year_str] = total_tax
+                    # Use the total tax from P&L (already negative)
+                    tax_expense_row_cf[year_str] = tax_row.get(year_str, 0)
                 consol_cf_rows.append(tax_expense_row_cf)
                 
                 # Total Operating Cash Flow
@@ -3444,7 +3790,15 @@ class ModelForecastTab:
                     construction_row[year_str] = total_construction
                 consol_cf_rows.append(construction_row)
                 
-                # Total Investing Cash Flow
+                # Interest Income from Cash
+                interest_income_consol_row = {'Item': '  Interest Income', hist_col: 0}
+                for year in years:
+                    year_str = str(year)
+                    # Use the interest income from the pre-calculated values (same as P&L)
+                    interest_income_consol_row[year_str] = interest_income_by_year.get(year_str, 0)
+                consol_cf_rows.append(interest_income_consol_row)
+                
+                # Total Investing Cash Flow (now includes interest income)
                 total_investing_row = {'Item': 'TOTAL INVESTING CASH FLOW', hist_col: hist_investing_cf}
                 for year in years:
                     year_str = str(year)
@@ -3616,15 +3970,15 @@ class ModelForecastTab:
                         # Consolidated Balance Sheet
                         balance_sheet_data = {
                             # Assets
-                            'total_debt': convert_to_native(debt_row.get(year_str, 0)),
+                            'total_debt': convert_to_native(total_debt_by_year.get(year_str, 0)),
                             'total_inventory': convert_to_native(inventory_row.get(year_str, 0)),
-                            'total_customer_prepayment': convert_to_native(prepayment_row.get(year_str, 0)),
+                            'total_customer_prepayment': convert_to_native(total_customer_prepayment_by_year.get(year_str, 0)),
                             'total_cash': convert_to_native(cash_row.get(year_str, 0)),
-                            'net_debt': convert_to_native(net_debt_row.get(year_str, 0)),
-                            'working_capital': convert_to_native(working_capital_row.get(year_str, 0)),
+                            'net_debt': convert_to_native(total_debt_by_year.get(year_str, 0) - cash_row.get(year_str, 0)),
+                            'working_capital': convert_to_native(inventory_row.get(year_str, 0) + cash_row.get(year_str, 0) - total_customer_prepayment_by_year.get(year_str, 0)),
                             # Equity
-                            'retained_earnings': convert_to_native(retained_earnings_row_bs.get(year_str, 0)),
-                            'minority_interest_bs': convert_to_native(minority_interest_row_bs.get(year_str, 0)),
+                            'retained_earnings': convert_to_native(retained_earnings_row.get(year_str, 0)),
+                            'minority_interest_bs': convert_to_native(minority_interest_bs_row.get(year_str, 0)),
                             'total_equity': convert_to_native(total_equity_row.get(year_str, 0))
                         }
                     
