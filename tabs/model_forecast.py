@@ -2967,28 +2967,57 @@ class ModelForecastTab:
                     prepayment_row[str(year)] = total_customer_prepayment_by_year[str(year)]
                 bs_rows.append(prepayment_row)
             
-                # CASH SECTION
-                # Add individual project cash rows
+                # CASH SECTION - Show changes for each project
+                # Calculate cash changes for each project
+                cash_change_breakdown = {}
                 for project_name in cash_breakdown.keys():
-                    project_cash_row = {'Balance Sheet Item': f'  {project_name} Cash'}
-                    project_cash_row[hist_col] = 0  # No historical breakdown by project
+                    cash_change_breakdown[project_name] = {}
+                    prev_value = 0  # Projects start with 0 cash in historical year
+                    
+                    # Check if project has historical cash
+                    financial_statements = None
+                    for _, project in df_projects.iterrows():
+                        if project.get('project_name', 'Unknown') == project_name:
+                            financial_statements = project.get('comprehensive_financial_statements', {})
+                            break
+                    
+                    if financial_statements and base_year_str in financial_statements:
+                        hist_data = financial_statements[base_year_str]
+                        if 'cumulative_cash_balance' in hist_data:
+                            prev_value = hist_data.get('cumulative_cash_balance', 0) / 1e9
+                        elif 'Cumulative_Cash_Balance' in hist_data:
+                            prev_value = hist_data.get('Cumulative_Cash_Balance', 0) / 1e9
+                    
                     for year in years:
-                        project_cash_row[str(year)] = cash_breakdown[project_name][str(year)]
+                        year_str = str(year)
+                        current_value = cash_breakdown[project_name].get(year_str, 0)
+                        change = current_value - prev_value
+                        cash_change_breakdown[project_name][year_str] = change
+                        prev_value = current_value
+                
+                # Add individual project cash change rows
+                for project_name in cash_change_breakdown.keys():
+                    project_cash_row = {'Balance Sheet Item': f'  {project_name} Cash Change'}
+                    project_cash_row[hist_col] = 0  # No historical changes
+                    for year in years:
+                        project_cash_row[str(year)] = cash_change_breakdown[project_name][str(year)]
                     bs_rows.append(project_cash_row)
             
                 # Removed net cash from other segments - only show project cash
             
-                # Total Cash row (sum of all project cash only)
+                # Total Cash row (previous year + sum of changes)
                 cash_row = {'Balance Sheet Item': 'TOTAL CASH'}
-                cash_row[hist_col] = 0  # No historical project breakdown
+                cash_row[hist_col] = 0  # Start with 0 for project cash (no historical project breakdown)
+                cumulative_cash = 0  # Start from 0 for projects
                 for year in years:
                     year_str = str(year)
-                    # Sum cash from all projects only (not including other segments)
-                    total_project_cash = sum(
-                        cash_breakdown[project_name].get(year_str, 0) 
-                        for project_name in cash_breakdown.keys()
+                    # Sum cash changes from all projects for this year
+                    total_cash_change = sum(
+                        cash_change_breakdown[project_name].get(year_str, 0) 
+                        for project_name in cash_change_breakdown.keys()
                     )
-                    cash_row[year_str] = total_project_cash
+                    cumulative_cash += total_cash_change
+                    cash_row[year_str] = cumulative_cash
                 bs_rows.append(cash_row)
             
                 # Removed separator, net debt, working capital, retained earnings, and total equity rows
@@ -3041,6 +3070,23 @@ class ModelForecastTab:
                         return styles
                     # Customer prepayment change rows - color code based on value
                     elif 'Prepayment Change' in item:
+                        styles = ['padding-left: 20px']  # First column (item name)
+                        styles.append('')  # Historical column
+                        # Color code each year's value
+                        for year in years:
+                            val = row.get(str(year), 0)
+                            if pd.notna(val) and val != 0:
+                                if val > 0:
+                                    styles.append('color: #28a745; font-weight: 600')  # Green for increase
+                                elif val < 0:
+                                    styles.append('color: #dc3545; font-weight: 600')  # Red for decrease
+                                else:
+                                    styles.append('color: #666')
+                            else:
+                                styles.append('color: #666')
+                        return styles
+                    # Cash change rows - color code based on value
+                    elif 'Cash Change' in item:
                         styles = ['padding-left: 20px']  # First column (item name)
                         styles.append('')  # Historical column
                         # Color code each year's value

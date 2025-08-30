@@ -14,6 +14,30 @@ class ProjectPipelineRealEstateTab:
     def __init__(self, parent):
         self.parent = parent
     
+    def clear_project_input_cache(self):
+        """Clear all cached input values when switching projects"""
+        # List of keys to clear from session state
+        keys_to_clear = []
+        
+        # Find all keys that might be cached input values
+        for key in list(st.session_state.keys()):
+            # Clear input-related keys
+            if any(prefix in key for prefix in [
+                'edit_', 'input_', 'select_', 'slider_', 
+                'number_', 'text_', 'checkbox_', 'radio_',
+                'low_rise_', 'high_rise_', 'presales_',
+                'collection_', 'revenue_year_', 'cost_year_',
+                'collect_relative_', 'relative_collection_schedule',
+                'low_presales_dist_', 'high_presales_dist_',
+                'low_revenue_dist_', 'high_revenue_dist_'
+            ]):
+                keys_to_clear.append(key)
+        
+        # Clear identified keys
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+    
     def calculate_total_presales_booking(self, project_data):
         """Calculate total presales booking with price increment for both low-rise and high-rise.
         This is the single source of truth for total revenue calculation.
@@ -96,6 +120,9 @@ class ProjectPipelineRealEstateTab:
         
         # Create a form to prevent auto-rerun on selection
         with st.container():
+            # Store previous selection to detect changes
+            prev_selection = st.session_state.get('prev_project_selection', None)
+            
             selected_project_name = st.selectbox(
                 "Choose a project to view/edit details:",
                 options=project_options,
@@ -103,6 +130,15 @@ class ProjectPipelineRealEstateTab:
                 index=project_options.index(st.session_state.selected_project_for_edit) if st.session_state.selected_project_for_edit in project_options else 0,
                 help="Select a project to view or edit its details"
             )
+            
+            # Check if project selection changed
+            if prev_selection and prev_selection != selected_project_name:
+                st.session_state.prev_project_selection = selected_project_name
+                # Clear cache and force reload
+                self.clear_project_input_cache()
+                st.rerun()
+            
+            st.session_state.prev_project_selection = selected_project_name
         
         if selected_project_name == "➕ Create New Project":
             # Show new project creation form
@@ -635,12 +671,16 @@ class ProjectPipelineRealEstateTab:
             # Clear the relative collection schedule for new projects
             if 'relative_collection_schedule' in st.session_state:
                 del st.session_state.relative_collection_schedule
+            # Clear all cached input values to force reload
+            self.clear_project_input_cache()
         elif 'current_editing_project' not in st.session_state:
             st.session_state.current_editing_project = project_name
             st.session_state.edited_project = project_data.copy()
             # Clear the relative collection schedule to force reload from new project
             if 'relative_collection_schedule' in st.session_state:
                 del st.session_state.relative_collection_schedule
+            # Clear all cached input values to force reload
+            self.clear_project_input_cache()
         elif st.session_state.current_editing_project != project_name:
             # Different project selected, reset the edited data
             st.session_state.current_editing_project = project_name
@@ -648,6 +688,8 @@ class ProjectPipelineRealEstateTab:
             # Clear the relative collection schedule to force reload from new project
             if 'relative_collection_schedule' in st.session_state:
                 del st.session_state.relative_collection_schedule
+            # Clear all cached input values to force reload
+            self.clear_project_input_cache()
         elif 'edited_project' not in st.session_state:
             # Same project but edited_project was deleted (e.g., after save)
             st.session_state.edited_project = project_data.copy()
@@ -696,6 +738,9 @@ class ProjectPipelineRealEstateTab:
         project_name = project_data.get('project_name', '')
         ai_suggestions_key = f"ai_suggestions_{project_name}"
         ai_suggestions = st.session_state.get(ai_suggestions_key, {})
+        
+        # Create a unique key prefix for this project to avoid caching issues
+        key_prefix = f"{project_name}_" if project_name else "new_"
         
         # Each field on its own row with label and input side by side
         
@@ -747,7 +792,7 @@ class ProjectPipelineRealEstateTab:
                 label="Project Ownership (%)",
                 value=ownership_percentage,
                 max_value=100.0,
-                key="edit_ownership_pct",
+                key=f"{key_prefix}edit_ownership_pct",
                 label_visibility="collapsed"
             )
             # Convert back from percentage to decimal for storage (50 -> 0.5)
@@ -762,7 +807,7 @@ class ProjectPipelineRealEstateTab:
             location = st.text_input(
                 "Location",
                 value=str(project_data.get('location', '') or ''),
-                key="edit_location",
+                key=f"{key_prefix}edit_location",
                 label_visibility="collapsed"
             )
             if ai_suggestions.get("location"):
@@ -792,7 +837,7 @@ class ProjectPipelineRealEstateTab:
                     label="Low-Rise Units",
                     value=float(project_data.get('low_rise_units', 0) or 0),
                     min_value=0.0,
-                    key="edit_low_rise_units",
+                    key=f"{key_prefix}edit_low_rise_units",
                     label_visibility="collapsed",
                     help="Number of low-rise units"
                 ))
@@ -807,7 +852,7 @@ class ProjectPipelineRealEstateTab:
                     label="Low-Rise Average Unit Size (m²)",
                     value=float(project_data.get('low_rise_avg_unit_size', 0) or 0),
                     min_value=0.0,
-                    key="edit_low_rise_avg_unit_size",
+                    key=f"{key_prefix}edit_low_rise_avg_unit_size",
                     label_visibility="collapsed",
                     help="Average unit size in square meters"
                 ))
@@ -1218,6 +1263,10 @@ class ProjectPipelineRealEstateTab:
         """Render project timeline editor"""
         st.subheader("Project Timeline")
         
+        # Create a unique key prefix for this project to avoid caching issues
+        project_name = project_data.get('project_name', '')
+        key_prefix = f"{project_name}_" if project_name else "new_"
+        
         # Each field on its own row with label and input side by side
         
         # Land Payment Period - moved to top
@@ -1557,6 +1606,10 @@ class ProjectPipelineRealEstateTab:
         st.subheader("Revenue Distribution Schedule")
         st.info("Enter percentage of revenue to recognize in each year for Low-Rise and High-Rise units. Each must sum to 100%.")
         
+        # Create a unique key prefix for this project to avoid caching issues
+        project_name = project_data.get('project_name', '')
+        key_prefix = f"{project_name}_" if project_name else "new_"
+        
         # Get timeline parameters from edited project
         revenue_start = st.session_state.edited_project.get('revenue_booking_start_year', 
                                                              project_data.get('revenue_booking_start_year', datetime.now().year) or datetime.now().year)
@@ -1628,7 +1681,7 @@ class ProjectPipelineRealEstateTab:
             for i, year in enumerate(years):
                 col_idx = i % len(cols)
                 with cols[col_idx]:
-                    widget_key = f"low_revenue_dist_{year}"
+                    widget_key = f"{key_prefix}low_revenue_dist_{year}"
                     default_val = existing_low_dist.get(str(year), 100.0/len(years))
                     
                     pct = percentage_input(
@@ -1674,7 +1727,7 @@ class ProjectPipelineRealEstateTab:
             for i, year in enumerate(years):
                 col_idx = i % len(cols)
                 with cols[col_idx]:
-                    widget_key = f"high_revenue_dist_{year}"
+                    widget_key = f"{key_prefix}high_revenue_dist_{year}"
                     default_val = existing_high_dist.get(str(year), 100.0/len(years))
                     
                     pct = percentage_input(
@@ -1791,6 +1844,10 @@ class ProjectPipelineRealEstateTab:
         st.subheader("Presales Distribution Schedule")
         st.info("Enter percentage of sales to achieve in each year for Low-Rise and High-Rise units. Each must sum to 100%.")
         
+        # Create a unique key prefix for this project to avoid caching issues
+        project_name = project_data.get('project_name', '')
+        key_prefix = f"{project_name}_" if project_name else "new_"
+        
         # Get timeline parameters from edited project
         sales_start = st.session_state.edited_project.get('sale_start_year',
                                                           project_data.get('sale_start_year', datetime.now().year) or datetime.now().year)
@@ -1838,7 +1895,7 @@ class ProjectPipelineRealEstateTab:
             for i, year in enumerate(years):
                 col_idx = i % len(cols)
                 with cols[col_idx]:
-                    widget_key = f"low_presales_dist_{year}"
+                    widget_key = f"{key_prefix}low_presales_dist_{year}"
                     default_val = existing_low_dist.get(str(year), 100.0/len(years))
                     
                     pct = percentage_input(
@@ -1900,7 +1957,7 @@ class ProjectPipelineRealEstateTab:
             for i, year in enumerate(years):
                 col_idx = i % len(cols)
                 with cols[col_idx]:
-                    widget_key = f"high_presales_dist_{year}"
+                    widget_key = f"{key_prefix}high_presales_dist_{year}"
                     default_val = existing_high_dist.get(str(year), 100.0/len(years))
                     
                     pct = percentage_input(
@@ -2049,6 +2106,10 @@ class ProjectPipelineRealEstateTab:
         st.subheader("Actual Cash Collection Schedule")
         #st.info("Define cash collection percentages for each presale year. This schedule determines when cash is actually collected from presales bookings.")
         
+        # Create a unique key prefix for this project to avoid caching issues
+        project_name = project_data.get('project_name', '')
+        key_prefix = f"{project_name}_" if project_name else "new_"
+        
         # Get edited project data
         edited = st.session_state.edited_project
         
@@ -2130,14 +2191,15 @@ class ProjectPipelineRealEstateTab:
         #st.markdown("#### Define Cash Collection Schedule (Relative to Presale Year)")
         st.info("This schedule will apply to ALL presales. Year 1 = presale year, Year 2 = presale year + 1, etc.")
         
-        # Initialize relative collection schedule in session state if not exists
-        if 'relative_collection_schedule' not in st.session_state:
+        # Initialize relative collection schedule with project-specific key
+        collection_key = f"{key_prefix}relative_collection_schedule"
+        if collection_key not in st.session_state:
             saved_schedule = edited.get('relative_collection_schedule', {})
             if saved_schedule:
-                st.session_state.relative_collection_schedule = saved_schedule
+                st.session_state[collection_key] = saved_schedule
             else:
                 # Default: 30% in year 1, 70% spread over years 2-3
-                st.session_state.relative_collection_schedule = {
+                st.session_state[collection_key] = {
                     1: 30.0,  # Year 1 (presale year)
                     2: 35.0,  # Year 2 
                     3: 35.0,  # Year 3
@@ -2151,14 +2213,14 @@ class ProjectPipelineRealEstateTab:
         
         for relative_year in range(1, 6):  # 1 to 5
             col_idx = relative_year - 1
-            current_pct = st.session_state.relative_collection_schedule.get(relative_year, 0.0)
+            current_pct = st.session_state[collection_key].get(relative_year, 0.0)
             
             with cols[col_idx]:
                 pct = percentage_input(
                     label=f"Year {relative_year}",
                     value=float(current_pct),
                     max_value=100.0,
-                    key=f"collect_relative_year_{relative_year}",
+                    key=f"{key_prefix}collect_relative_year_{relative_year}",
                     help=f"% collected in year {relative_year} after presale"
                 )
                 relative_schedule[relative_year] = pct
@@ -2170,8 +2232,8 @@ class ProjectPipelineRealEstateTab:
         else:
             st.success(f"✅ Collection schedule is valid (100%)")
         
-        # Store the relative schedule
-        st.session_state.relative_collection_schedule = relative_schedule
+        # Store the relative schedule with project-specific key
+        st.session_state[collection_key] = relative_schedule
         st.session_state.edited_project['relative_collection_schedule'] = relative_schedule
         
         # Show how this applies to each presale
@@ -2324,6 +2386,10 @@ class ProjectPipelineRealEstateTab:
     def render_project_financial_summary(self, project_data):
         """Render project financial summary section"""
         st.subheader("Project Financial Summary")
+        
+        # Create a unique key prefix for this project to avoid caching issues
+        project_name = project_data.get('project_name', '')
+        key_prefix = f"{project_name}_" if project_name else "new_"
         
         # Get edited project data
         edited = st.session_state.edited_project
