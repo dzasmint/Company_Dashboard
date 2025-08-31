@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import json
 import os
 from utils.mongodb_utils import load_assumptions_from_mongodb
-from tabs.balance_sheet_analysis import BalanceSheetAnalysisTab
 
 
 class ModelForecastTab:
