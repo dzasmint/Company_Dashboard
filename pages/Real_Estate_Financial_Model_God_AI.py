@@ -1138,15 +1138,6 @@ class RealEstateFinancialModel:
         
         return pd.DataFrame(project_revenues)
     
-    def render_balance_sheet_analysis(self):
-        """Render Balance Sheet Analysis interface"""
-        from tabs.balance_sheet_analysis import BalanceSheetAnalysisTab
-        
-        # Initialize and render the balance sheet analysis tab
-        bs_tab = BalanceSheetAnalysisTab()
-        bs_tab.render()
-    
-    
     def render_research_insights(self):
         """Render AI-powered research insights"""
         st.header("Research & Analytics Insights")
