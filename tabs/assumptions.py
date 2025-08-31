@@ -119,7 +119,7 @@ class AssumptionsTab:
         # Load standard financial assumptions
         financial_assumptions = [
             ("WACC", company_assumptions.get('wacc', 0.12) * 100),
-            ("Debt Financing %", company_assumptions.get('debt_financing_pct', 0.30) * 100),
+            ("Debt Financing %", company_assumptions.get('debt_financing_pct', 0.70) * 100),
             ("Tax Rate", company_assumptions.get('tax_rate', 0.20) * 100)
         ]
         
@@ -184,9 +184,10 @@ class AssumptionsTab:
         """Get default assumptions - only financial items, no business segments"""
         return [
             {"Category": "Financial", "Type": "N/A", "Item": "WACC", "Value": 12.0, "Unit": "%"},
-            {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 30.0, "Unit": "%"},
+            {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 70.0, "Unit": "%"},
             {"Category": "Financial", "Type": "N/A", "Item": "Cost of Debts", "Value": 8.0, "Unit": "%"},
-            {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"}
+            {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"},
+            {"Category": "Financial", "Type": "N/A", "Item": "SG&A % of Revenue", "Value": 8.0, "Unit": "%"}
         ]
     
     def _render_assumptions_editor(self, selected_ticker, assumptions_df):
@@ -198,11 +199,13 @@ class AssumptionsTab:
         
         # Prepare data with Type column
         if assumptions_df.empty:
-            # Create default empty dataframe with only financial items
+            # Create default empty dataframe with all 5 financial items
             assumptions_df = pd.DataFrame([
                 {"Category": "Financial", "Type": "N/A", "Item": "WACC", "Value": 12.0, "Unit": "%"},
-                {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 30.0, "Unit": "%"},
-                {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"}
+                {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 70.0, "Unit": "%"},
+                {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"},
+                {"Category": "Financial", "Type": "N/A", "Item": "Cost of Debts", "Value": 8.0, "Unit": "%"},
+                {"Category": "Financial", "Type": "N/A", "Item": "SG&A % of Revenue", "Value": 8.0, "Unit": "%"}
             ])
         elif 'Type' not in assumptions_df.columns:
             assumptions_df['Type'] = 'N/A'
@@ -275,7 +278,7 @@ class AssumptionsTab:
                 # Define the 5 default financial rows
                 default_financial_rows = [
                     {"Category": "Financial", "Type": "N/A", "Item": "WACC", "Value": 12.0, "Unit": "%"},
-                    {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 30.0, "Unit": "%"},
+                    {"Category": "Financial", "Type": "N/A", "Item": "Debt Financing %", "Value": 70.0, "Unit": "%"},
                     {"Category": "Financial", "Type": "N/A", "Item": "Tax Rate", "Value": 20.0, "Unit": "%"},
                     {"Category": "Financial", "Type": "N/A", "Item": "Cost of Debts", "Value": 8.0, "Unit": "%"},
                     {"Category": "Financial", "Type": "N/A", "Item": "SG&A % of Revenue", "Value": 8.0, "Unit": "%"}

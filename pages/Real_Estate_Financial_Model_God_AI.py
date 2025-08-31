@@ -498,11 +498,11 @@ class RealEstateFinancialModel:
     
     def render_main_interface(self):
         """Render the main modeling interface"""
-        st.title("Real Estate Financial Model - God AI Edition")
+        st.title("Real Estate Financial Model with BDS-GPT")
         st.caption("Ultimate AI-powered financial modeling with intelligent assistant at your command")
         
         if not st.session_state.selected_company:
-            st.info("👈 Please select a company from the sidebar to begin")
+            st.info("Please select a company from the sidebar to begin")
             return
             
         # Get selected tab from session state (set in sidebar)

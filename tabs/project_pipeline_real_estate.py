@@ -2652,10 +2652,27 @@ class ProjectPipelineRealEstateTab:
         
         # Auto-calculate balance sheet analysis
         # Check if we have minimum required data to run analysis
-        if total_revenue > 0 and (total_const_cost > 0 or total_land_cost > 0):
+        if total_revenue >= 0 and (total_const_cost >= 0 or total_land_cost >= 0):
             try:
-                # Get tax rate from assumptions or use default
-                tax_rate = 0.2  # Default 20% corporate tax rate in Vietnam
+                # Load assumptions to get tax rate
+                from utils.mongodb_utils import load_assumptions_from_mongodb
+                company_ticker = edited.get('company_ticker', st.session_state.get('selected_company', ''))
+                assumptions = load_assumptions_from_mongodb(company_ticker)
+                
+                # Get tax rate from assumptions
+                tax_rate = 0.0  # Default to 0
+                if assumptions:
+                    for assumption in assumptions:
+                        if assumption.get('Category') == 'Financial' and assumption.get('Item') == 'Tax Rate':
+                            try:
+                                tax_rate = float(assumption.get('Value', 0)) / 100  # Convert from percentage
+                                break
+                            except (ValueError, TypeError):
+                                pass
+                
+                # Show warning if tax rate is 0
+                if tax_rate == 0:
+                    st.warning("⚠️ Tax Rate is 0%. Please set Tax Rate in the Assumptions tab for accurate calculations.")
                 
                 # Import the main balance sheet function directly to pass presales schedule
                 from balance_sheet_manager import generate_balance_sheet_schedules
@@ -2951,155 +2968,217 @@ class ProjectPipelineRealEstateTab:
         # pbt = total_revenue - total_const_cost - total_land_cost - total_sga
         
         # Calculate RNAV if requested
-        if st.button("Calculate RNAV", key="calc_rnav"):
-            try:
-                # Check if Financial Statements Forecast is available
-                if 'project_bs_analysis_results' not in st.session_state:
-                    st.error("⚠️ Please wait for Financial Statements Forecast to complete before calculating RNAV")
-                    return
+        # if st.button("Calculate RNAV", key="calc_rnav"):
+        try:
+            # Check if Financial Statements Forecast is available
+            if 'project_bs_analysis_results' not in st.session_state:
+                st.error("⚠️ Please wait for Financial Statements Forecast to complete before calculating RNAV")
+                return
+            
+            bs_df = st.session_state['project_bs_analysis_results']
+            current_year = datetime.now().year
+            
+            # Extract cash flows from Financial Statements Forecast for RNAV calculation
+            # We need: presales inflows, construction outflows, land outflows, SG&A outflows, and tax outflows
+            
+            # Determine project timeline from balance sheet
+            years_df = bs_df[bs_df['Year'] != 'Total']
+            project_years = sorted([int(y) for y in years_df['Year'].values])
+            project_start = project_years[0] if project_years else current_year
+            project_end = project_years[-1] if project_years else current_year + 3
+            
+            # Initialize arrays for RNAV calculation (in billions VND)
+            selling_progress = []  # Cash inflow from presales
+            construction_payment = []  # Cash outflow for construction
+            land_payment = []  # Cash outflow for land
+            sga_payment = []  # Cash outflow for SG&A
+            tax_expense = []  # Cash outflow for tax
+            
+            # Extract cash flows for each year
+            for year in range(project_start, project_end + 1):
+                year_data = bs_df[bs_df["Year"] == year]
                 
-                bs_df = st.session_state['project_bs_analysis_results']
-                current_year = datetime.now().year
-                
-                # Extract cash flows from Financial Statements Forecast for RNAV calculation
-                # We need: presales inflows, construction outflows, land outflows, SG&A outflows, and tax outflows
-                
-                # Determine project timeline from balance sheet
-                years_df = bs_df[bs_df['Year'] != 'Total']
-                project_years = sorted([int(y) for y in years_df['Year'].values])
-                project_start = project_years[0] if project_years else current_year
-                project_end = project_years[-1] if project_years else current_year + 3
-                
-                # Initialize arrays for RNAV calculation (in billions VND)
-                selling_progress = []  # Cash inflow from presales
-                construction_payment = []  # Cash outflow for construction
-                land_payment = []  # Cash outflow for land
-                sga_payment = []  # Cash outflow for SG&A
-                tax_expense = []  # Cash outflow for tax
-                
-                # Extract cash flows for each year
-                for year in range(project_start, project_end + 1):
-                    year_data = bs_df[bs_df["Year"] == year]
+                if not year_data.empty:
+                    # Presales cash inflow (positive)
+                    selling_progress.append(float(year_data["Cash_Inflow_Presales"].iloc[0]) / 1e9)
                     
-                    if not year_data.empty:
-                        # Presales cash inflow (positive)
-                        selling_progress.append(float(year_data["Cash_Inflow_Presales"].iloc[0]) / 1e9)
-                        
-                        # Construction cash outflow (should be negative)
-                        construction_payment.append(float(year_data["Cash_Outflow_Construction"].iloc[0]) / 1e9)
-                        
-                        # Land cash outflow (should be negative)
-                        land_payment.append(float(year_data["Cash_Outflow_Land"].iloc[0]) / 1e9)
-                        
-                        # SG&A cash outflow (should be negative)
-                        sga_payment.append(float(year_data["Cash_Outflow_SGA"].iloc[0]) / 1e9)
-                        
-                        # Tax cash outflow (should be negative)
-                        tax_expense.append(float(year_data["Cash_Outflow_Tax"].iloc[0]) / 1e9)
-                    else:
-                        # Year not in balance sheet data
-                        selling_progress.append(0.0)
-                        construction_payment.append(0.0)
-                        land_payment.append(0.0)
-                        sga_payment.append(0.0)
-                        tax_expense.append(0.0)
-                
-                # Calculate RNAV using extracted cash flows
-                df_rnav = RNAV_Calculation(
-                    selling_progress,
-                    construction_payment,
-                    sga_payment,
-                    tax_expense,
-                    land_payment,
-                    float(edited.get('wacc_rate', 0.12)),
-                    int(project_start),
-                    int(current_year)
-                )
-                
-                # Get RNAV value - handle both cases where Total RNAV row exists or not
-                try:
-                    # Try to get from Total RNAV row
-                    total_row = df_rnav[df_rnav["Year"] == "Total RNAV"]
-                    if not total_row.empty:
-                        rnav_value = float(total_row["Discounted Cash Flow"].iloc[0]) * 1e9
-                    else:
-                        # Get from last numeric year row
-                        numeric_rows = df_rnav[df_rnav["Year"].apply(lambda x: str(x).isdigit())]
-                        if not numeric_rows.empty:
-                            rnav_value = float(numeric_rows.iloc[-1]["Discounted Cash Flow"]) * 1e9
-                        else:
-                            # Fallback to last row
-                            rnav_value = float(df_rnav.iloc[-1]["Discounted Cash Flow"]) * 1e9
-                except Exception as e:
-                    st.error(f"Error extracting RNAV value: {e}")
-                    rnav_value = 0
-                
-                # Display RNAV result
-                st.success(f"🎯 RNAV Calculated Successfully!")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Project RNAV", f"{rnav_value/1e9:,.1f}B VND")
-                    ownership = edited.get('project_ownership', 1.0)
-                    st.metric("RNAV to Company", f"{(rnav_value * ownership)/1e9:,.1f}B VND")
-                
-                with col2:
-                    if 'rnav_value' in project_data and project_data['rnav_value']:
-                        old_rnav = project_data['rnav_value']
-                        st.metric(
-                            "Previous RNAV",
-                            f"{old_rnav/1e9:,.1f}B VND",
-                            delta=f"{(rnav_value - old_rnav)/1e9:,.1f}B"
-                        )
-                
-                # Store RNAV in both places for consistency (ensure it's a float)
-                rnav_value_float = float(rnav_value) if rnav_value else 0
-                st.session_state.edited_project['rnav_value'] = rnav_value_float
-                st.session_state['last_calculated_rnav'] = rnav_value_float
-                
-                # Display RNAV Schedule (transposed with years as columns)
-                st.subheader("RNAV Calculation Details")
-                
-                # Prepare dataframe for transposition
-                # Separate the Total RNAV row
+                    # Construction cash outflow (should be negative)
+                    construction_payment.append(float(year_data["Cash_Outflow_Construction"].iloc[0]) / 1e9)
+                    
+                    # Land cash outflow (should be negative)
+                    land_payment.append(float(year_data["Cash_Outflow_Land"].iloc[0]) / 1e9)
+                    
+                    # SG&A cash outflow (should be negative)
+                    sga_payment.append(float(year_data["Cash_Outflow_SGA"].iloc[0]) / 1e9)
+                    
+                    # Tax cash outflow (should be negative)
+                    tax_expense.append(float(year_data["Cash_Outflow_Tax"].iloc[0]) / 1e9)
+                else:
+                    # Year not in balance sheet data
+                    selling_progress.append(0.0)
+                    construction_payment.append(0.0)
+                    land_payment.append(0.0)
+                    sga_payment.append(0.0)
+                    tax_expense.append(0.0)
+            
+            # Calculate RNAV using extracted cash flows
+            df_rnav = RNAV_Calculation(
+                selling_progress,
+                construction_payment,
+                sga_payment,
+                tax_expense,
+                land_payment,
+                float(edited.get('wacc_rate', 0.12)),
+                int(project_start),
+                int(current_year)
+            )
+            
+            # Get RNAV value - handle both cases where Total RNAV row exists or not
+            try:
+                # Try to get from Total RNAV row
                 total_row = df_rnav[df_rnav["Year"] == "Total RNAV"]
-                year_rows = df_rnav[df_rnav["Year"] != "Total RNAV"].copy()
-                
-                # Set Year as index for year rows
-                year_rows = year_rows.set_index("Year")
-                
-                # Transpose so years become columns
-                df_transposed = year_rows.T
-                
-                # Add Total RNAV column if it exists
                 if not total_row.empty:
-                    # Get the total values (excluding Year column)
-                    total_values = total_row.drop(columns=["Year"]).iloc[0]
-                    df_transposed["Total"] = total_values
-                
-                # Rename the index to be more descriptive
-                index_labels = {
-                    'Inflow (Revenue)': 'Revenue Inflow',
-                    'Construction Cost': 'Construction Cost',
-                    'Land Cost': 'Land Cost', 
-                    'SG&A': 'SG&A Expense',
-                    'Tax': 'Tax Payment',
-                    'Total Outflow': 'Total Cash Outflow',
-                    'Net Cash Flow': 'Net Cash Flow',
-                    'Discount Factor': 'Discount Factor',
-                    'Discounted Cash Flow': 'NPV (Discounted CF)'
-                }
-                df_transposed.index = df_transposed.index.map(lambda x: index_labels.get(x, x))
-                
-                # Format for display - all values as integers with comma separator except Discount Factor
-                def format_rnav_value(val, row_name):
-                    """Format RNAV values based on row type"""
-                    if row_name == 'Discount Factor':
-                        return f"{val:.4f}"
+                    rnav_value = float(total_row["Discounted Cash Flow"].iloc[0]) * 1e9
+                else:
+                    # Get from last numeric year row
+                    numeric_rows = df_rnav[df_rnav["Year"].apply(lambda x: str(x).isdigit())]
+                    if not numeric_rows.empty:
+                        rnav_value = float(numeric_rows.iloc[-1]["Discounted Cash Flow"]) * 1e9
                     else:
-                        # Format as integer with comma separator
-                        return f"{int(val):,}"
+                        # Fallback to last row
+                        rnav_value = float(df_rnav.iloc[-1]["Discounted Cash Flow"]) * 1e9
+            except Exception as e:
+                st.error(f"Error extracting RNAV value: {e}")
+                rnav_value = 0
+            
+            # Display RNAV result
+            st.success(f"RNAV Calculated Successfully!")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Project RNAV", f"{rnav_value/1e9:,.1f}B VND")
+                ownership = edited.get('project_ownership', 1.0)
+                st.metric("RNAV to Company", f"{(rnav_value * ownership)/1e9:,.1f}B VND")
+            
+            with col2:
+                if 'rnav_value' in project_data and project_data['rnav_value']:
+                    old_rnav = project_data['rnav_value']
+                    st.metric(
+                        "Previous RNAV",
+                        f"{old_rnav/1e9:,.1f}B VND",
+                        delta=f"{(rnav_value - old_rnav)/1e9:,.1f}B"
+                    )
+            
+            # Store RNAV in both places for consistency (ensure it's a float)
+            rnav_value_float = float(rnav_value) if rnav_value else 0
+            st.session_state.edited_project['rnav_value'] = rnav_value_float
+            st.session_state['last_calculated_rnav'] = rnav_value_float
+            
+            # Store RNAV calculation details for saving to MongoDB
+            rnav_details = df_rnav.to_dict('records')
+            st.session_state.edited_project['rnav_calculation_details'] = rnav_details
+            st.session_state['current_rnav_df'] = df_rnav.copy()
+            
+            # Display RNAV Schedule (transposed with years as columns)
+            col_header, col_compare = st.columns([3, 1])
+            with col_header:
+                st.subheader("RNAV Calculation Details")
+            with col_compare:
+                # Add comparison toggle
+                show_comparison = st.toggle("Compare with previous", key="compare_rnav_toggle")
+            
+            # Prepare dataframe for transposition
+            # Separate the Total RNAV row
+            total_row = df_rnav[df_rnav["Year"] == "Total RNAV"]
+            year_rows = df_rnav[df_rnav["Year"] != "Total RNAV"].copy()
+            
+            # Set Year as index for year rows
+            year_rows = year_rows.set_index("Year")
+            
+            # Transpose so years become columns
+            df_transposed = year_rows.T
+            
+            # Add Total RNAV column if it exists
+            if not total_row.empty:
+                # Get the total values (excluding Year column)
+                total_values = total_row.drop(columns=["Year"]).iloc[0]
+                df_transposed["Total"] = total_values
+            
+            # Rename the index to be more descriptive
+            index_labels = {
+                'Inflow (Revenue)': 'Revenue Inflow',
+                'Construction Cost': 'Construction Cost',
+                'Land Cost': 'Land Cost', 
+                'SG&A': 'SG&A Expense',
+                'Tax': 'Tax Payment',
+                'Total Outflow': 'Total Cash Outflow',
+                'Net Cash Flow': 'Net Cash Flow',
+                'Discount Factor': 'Discount Factor',
+                'Discounted Cash Flow': 'NPV (Discounted CF)'
+            }
+            df_transposed.index = df_transposed.index.map(lambda x: index_labels.get(x, x))
+            
+            # Check if we should show comparison and have previous data
+            if show_comparison and 'rnav_calculation_details' in project_data:
+                # Load previous RNAV calculation details
+                previous_rnav_details = project_data.get('rnav_calculation_details', [])
                 
+                if previous_rnav_details:
+                    # Convert previous details back to DataFrame
+                    df_previous = pd.DataFrame(previous_rnav_details)
+                    
+                    # Process previous data same way as current
+                    prev_total_row = df_previous[df_previous["Year"] == "Total RNAV"]
+                    prev_year_rows = df_previous[df_previous["Year"] != "Total RNAV"].copy()
+                    prev_year_rows = prev_year_rows.set_index("Year")
+                    df_prev_transposed = prev_year_rows.T
+                    
+                    if not prev_total_row.empty:
+                        prev_total_values = prev_total_row.drop(columns=["Year"]).iloc[0]
+                        df_prev_transposed["Total"] = prev_total_values
+                    
+                    df_prev_transposed.index = df_prev_transposed.index.map(lambda x: index_labels.get(x, x))
+                    
+                    # Create comparison DataFrame showing changes
+                    comparison_data = []
+                    for row_idx in df_transposed.index:
+                        row_data = {'Metric': row_idx}
+                        for col in df_transposed.columns:
+                            current_val = df_transposed.loc[row_idx, col] if row_idx in df_transposed.index and col in df_transposed.columns else 0
+                            prev_val = df_prev_transposed.loc[row_idx, col] if row_idx in df_prev_transposed.index and col in df_prev_transposed.columns else 0
+                            
+                            # Check if values are different
+                            if row_idx == 'Discount Factor':
+                                # For discount factor, check with precision
+                                if abs(current_val - prev_val) > 0.0001:
+                                    row_data[col] = f"{current_val:.4f} ({prev_val:.4f})"
+                                else:
+                                    row_data[col] = f"{current_val:.4f}"
+                            else:
+                                # For other values, compare as integers
+                                if abs(current_val - prev_val) > 1:
+                                    row_data[col] = f"{int(current_val):,} ({int(prev_val):,})"
+                                else:
+                                    row_data[col] = f"{int(current_val):,}"
+                        comparison_data.append(row_data)
+                    
+                    df_comparison = pd.DataFrame(comparison_data).set_index('Metric')
+                    
+                    # Style the comparison DataFrame
+                    def highlight_changes(val):
+                        """Highlight cells that have changed"""
+                        if '(' in str(val) and ')' in str(val):
+                            return 'background-color: #E8F5E9'  # Very light green for changed values
+                        return ''
+                    
+                    styled_df = df_comparison.style.applymap(highlight_changes)
+                    
+                    # st.info("📊 Comparison with previous calculation - Changed values shown as: new (old) with green background")
+                    st.dataframe(styled_df, use_container_width=True)
+                else:
+                    st.warning("No previous RNAV calculation details found for comparison")
+            else:
+                # Display normal table without comparison
                 # Create a styled dataframe with custom formatting
                 styled_df = df_transposed.style
                 
@@ -3113,9 +3192,9 @@ class ProjectPipelineRealEstateTab:
                 
                 # Display the transposed table
                 st.dataframe(styled_df, use_container_width=True)
-                    
-            except Exception as e:
-                st.error(f"Error calculating RNAV: {str(e)}")
+                
+        except Exception as e:
+            st.error(f"Error calculating RNAV: {str(e)}")
     
     def render_project_save_interface(self, project_data):
         """Render interface to save project changes to MongoDB"""
@@ -3128,6 +3207,10 @@ class ProjectPipelineRealEstateTab:
         
         # Check what has been modified
         for key, value in edited.items():
+            # Skip RNAV calculation details as they have their own comparison view
+            if key == 'rnav_calculation_details':
+                continue
+                
             try:
                 if key in project_data:
                     old_value = project_data[key]
@@ -3178,7 +3261,7 @@ class ProjectPipelineRealEstateTab:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 Save to MongoDB", type="primary", use_container_width=True):
+            if st.button("Save to MongoDB", type="primary", use_container_width=True):
                 try:
                     # For new projects, validate the project name
                     if is_new_project:
@@ -3319,9 +3402,15 @@ class ProjectPipelineRealEstateTab:
                     
                     # Debug: Check what's in edited before saving
                     if 'comprehensive_financial_statements' in edited:
-                        st.info(f"📊 About to save {len(edited['comprehensive_financial_statements'])} years of financial data to MongoDB")
+                        st.info(f"About to save {len(edited['comprehensive_financial_statements'])} years of financial data to MongoDB")
                     else:
                         st.warning("⚠️ Note: Financial statements data not found in save data")
+                    
+                    # Check if RNAV calculation details are present
+                    if 'rnav_calculation_details' in edited:
+                        st.info(f"✅ RNAV calculation details will be saved ({len(edited['rnav_calculation_details'])} rows)")
+                    else:
+                        st.info("ℹ️ RNAV calculation details not available yet")
                     
                     # Save to MongoDB
                     from utils.mongodb_utils import save_project_to_mongodb
@@ -3371,7 +3460,7 @@ class ProjectPipelineRealEstateTab:
         
         # Delete button
         with col2:
-            if st.button("🗑️ Delete from MongoDB", type="secondary", use_container_width=True):
+            if st.button("Delete from MongoDB", type="secondary", use_container_width=True):
                 # Add confirmation dialog
                 if 'confirm_delete' not in st.session_state:
                     st.session_state.confirm_delete = True
@@ -3399,7 +3488,7 @@ class ProjectPipelineRealEstateTab:
         
         # Cancel button
         with col3:
-            if st.button("❌ Cancel", use_container_width=True):
+            if st.button("Cancel", use_container_width=True):
                 if 'current_editing_project' in st.session_state:
                     del st.session_state.current_editing_project
                 if 'confirm_delete' in st.session_state:
