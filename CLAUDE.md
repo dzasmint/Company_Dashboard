@@ -4,23 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Vietnamese financial analytics dashboard** built with Streamlit, focusing on company financial analysis, bank sector analytics, and real estate RNAV calculations for the Vietnamese stock market. The application serves as a comprehensive tool for Dragon Capital's investment analysis workflows.
+This is a **Real Estate Financial Model** application built with Streamlit, focusing on comprehensive real estate financial analysis, RNAV calculations, and AI-powered project discovery for the Vietnamese stock market. The main application (`pages/Real_Estate_Financial_Model_God_AI.py`) serves as the primary tool for Dragon Capital's real estate investment analysis workflows, with additional legacy dashboards for company financial analysis and bank sector analytics.
 
 ## Essential Commands
 
 ### Running the Application
 ```bash
-# Main company dashboard (original)
-streamlit run Company_Dashboard.py
-
-# Refactored version (recommended)
-streamlit run Company_Dashboard_Refactored.py
-
-# Individual specialized pages
-streamlit run pages/Bank_Dashboard.py
-streamlit run pages/RNAV_Calculator_MongoDB.py
+# Main application - Real Estate Financial Model
 streamlit run pages/Real_Estate_Financial_Model_God_AI.py
-streamlit run pages/Sector_Valuation.py
+
+# Other available specialized pages
+streamlit run pages/RNAV_Calculator_MongoDB.py
 
 # Install dependencies
 pip install -r requirements.txt
@@ -37,7 +31,7 @@ PERPLEXITY_API_KEY="your_perplexity_key"
 ## High-Level Architecture
 
 ### Core Application Structure
-- **Main Dashboard** (`Company_Dashboard.py`, `Company_Dashboard_Refactored.py`) - Primary financial analysis interface
+- **Main Application** (`pages/Real_Estate_Financial_Model_God_AI.py`) - Primary real estate financial modeling interface
 - **Specialized Pages** (`/pages/`) - Domain-specific dashboards (banking, real estate, sector comparison)  
 - **Core Modules** (`/core/`) - Refactored utilities for data loading and plotting
   - `data_loader.py` - Centralized data loading with caching
