@@ -216,7 +216,7 @@ class ModelForecastTab:
                 historical_data = self.load_historical_data_from_csv(selected_ticker)
                 if not historical_data.empty:
                     st.session_state.historical_data = historical_data
-                    st.success(f"Loaded historical data with {len(historical_data)} records")
+                    st.toast(f"✅ Loaded historical data with {len(historical_data)} records")
                 else:
                     st.warning(f"No historical data found for {selected_ticker}")
     
@@ -477,7 +477,7 @@ class ModelForecastTab:
         
             # Display data source indicator if we have projects
             if not df_projects.empty:
-                st.success(f"✅ {len(df_projects)} project(s) using Comprehensive Financial Statements from MongoDB (values converted to Billion VND)")
+                st.toast(f"✅ {len(df_projects)} project(s) using Comprehensive Financial Statements from DB")
         
             # Project breakdown data is now incorporated into Total Revenue Forecast table
         
@@ -1591,29 +1591,47 @@ class ModelForecastTab:
                         saved_values_map[year_str] = {}
                 
                     saved_year = saved_forecast[year_str]
+                    
+                    # Check if this is the P&L data directly or nested
+                    if 'pnl' in saved_year:
+                        # P&L data is nested under 'pnl' key
+                        saved_pnl = saved_year['pnl']
+                    else:
+                        # P&L data is at the root level
+                        saved_pnl = saved_year
                 
                     # Map saved values to P&L row items
-                    saved_values_map[year_str]['  Real Estate Revenue'] = saved_year.get('real_estate_revenue', None)
-                    saved_values_map[year_str]['Net Revenue'] = saved_year.get('net_revenue', None)
-                    saved_values_map[year_str]['  Real Estate COGS'] = saved_year.get('real_estate_cogs', None)
-                    saved_values_map[year_str]['Total COGS'] = saved_year.get('total_cogs', None)
-                    saved_values_map[year_str]['Gross Profit'] = saved_year.get('gross_profit', None)
-                    saved_values_map[year_str]['SG&A'] = saved_year.get('sga', None)
-                    saved_values_map[year_str]['EBITDA'] = saved_year.get('ebitda', None)
-                    saved_values_map[year_str]['  Interest Expense - Projects'] = saved_year.get('project_interest_expense', None)
-                    saved_values_map[year_str]['  Interest Expense - Existing Debt'] = saved_year.get('existing_debt_interest_expense', None)
-                    saved_values_map[year_str]['Total Interest Expense'] = saved_year.get('interest_expense', None)
-                    saved_values_map[year_str]['Profit Before Tax'] = saved_year.get('pbt', None)
-                    saved_values_map[year_str]['Tax'] = saved_year.get('tax', None)
-                    saved_values_map[year_str]['Profit After Tax'] = saved_year.get('pat', None)
-                    saved_values_map[year_str]['Minority Interest'] = saved_year.get('minority_interest', None)
-                    saved_values_map[year_str]['NPATMI (Net Profit After Tax and MI)'] = saved_year.get('npatmi', None)
+                    # Convert from raw VND values back to billions for comparison
+                    saved_values_map[year_str]['  Real Estate Revenue'] = saved_pnl.get('real_estate_revenue', 0) / 1e9 if saved_pnl.get('real_estate_revenue') else None
+                    saved_values_map[year_str]['Net Revenue'] = saved_pnl.get('net_revenue', 0) / 1e9 if saved_pnl.get('net_revenue') else None
+                    saved_values_map[year_str]['  Real Estate COGS'] = saved_pnl.get('real_estate_cogs', 0) / 1e9 if saved_pnl.get('real_estate_cogs') else None
+                    saved_values_map[year_str]['Total COGS'] = saved_pnl.get('total_cogs', 0) / 1e9 if saved_pnl.get('total_cogs') else None
+                    saved_values_map[year_str]['Gross Profit'] = saved_pnl.get('gross_profit', 0) / 1e9 if saved_pnl.get('gross_profit') else None
+                    saved_values_map[year_str]['SG&A'] = saved_pnl.get('sga', 0) / 1e9 if saved_pnl.get('sga') else None
+                    saved_values_map[year_str]['EBITDA'] = saved_pnl.get('ebitda', 0) / 1e9 if saved_pnl.get('ebitda') else None
+                    saved_values_map[year_str]['Interest Income'] = saved_pnl.get('interest_income', 0) / 1e9 if saved_pnl.get('interest_income') else None
+                    saved_values_map[year_str]['  Interest Expense - Projects'] = saved_pnl.get('project_interest_expense', 0) / 1e9 if saved_pnl.get('project_interest_expense') else None
+                    saved_values_map[year_str]['  Interest Expense - Existing Debt'] = saved_pnl.get('existing_debt_interest_expense', 0) / 1e9 if saved_pnl.get('existing_debt_interest_expense') else None
+                    saved_values_map[year_str]['Total Interest Expense'] = saved_pnl.get('interest_expense', 0) / 1e9 if saved_pnl.get('interest_expense') else None
+                    saved_values_map[year_str]['Profit Before Tax'] = saved_pnl.get('pbt', 0) / 1e9 if saved_pnl.get('pbt') else None
+                    
+                    # Handle Tax row with dynamic label
+                    tax_value = saved_pnl.get('tax', 0) / 1e9 if saved_pnl.get('tax') else None
+                    # Try to map to any tax row (could be "Tax (20%)" or "Tax (0% - Not Set)" etc.)
+                    for item in pnl_df['P&L Item'].values:
+                        if item.startswith('Tax'):
+                            saved_values_map[year_str][item] = tax_value
+                            break
+                    
+                    saved_values_map[year_str]['Profit After Tax'] = saved_pnl.get('pat', 0) / 1e9 if saved_pnl.get('pat') else None
+                    saved_values_map[year_str]['Minority Interest'] = saved_pnl.get('minority_interest', 0) / 1e9 if saved_pnl.get('minority_interest') else None
+                    saved_values_map[year_str]['NPATMI (Net Profit After Tax and MI)'] = saved_pnl.get('npatmi', 0) / 1e9 if saved_pnl.get('npatmi') else None
                 
                     # Map business segments
-                    if 'business_segments' in saved_year:
-                        for segment_name, segment_data in saved_year['business_segments'].items():
-                            saved_values_map[year_str][f'  {segment_name}'] = segment_data.get('revenue', None)
-                            saved_values_map[year_str][f'  {segment_name} COGS'] = segment_data.get('cogs', None)
+                    if 'business_segments' in saved_pnl:
+                        for segment_name, segment_data in saved_pnl['business_segments'].items():
+                            saved_values_map[year_str][f'  {segment_name}'] = segment_data.get('revenue', 0) / 1e9 if segment_data.get('revenue') else None
+                            saved_values_map[year_str][f'  {segment_name} COGS'] = segment_data.get('cogs', 0) / 1e9 if segment_data.get('cogs') else None
         
             # Create display DataFrame with change indicators
             display_df = pnl_df.copy()
@@ -1639,22 +1657,22 @@ class ModelForecastTab:
                 # Create style DataFrame
                 styles = pd.DataFrame('', index=df_style.index, columns=df_style.columns)
             
-                # Apply row-level styles with enhanced formatting
+                # Apply row-level styles with enhanced formatting (no background colors)
                 for idx, row in df_style.iterrows():
                     item = pnl_df.iloc[idx]['P&L Item']
                 
-                    # Major totals - bold with dark background
+                    # Major totals - bold
                     if item in ['Net Revenue', 'NPATMI (Net Profit After Tax and MI)']:
-                        styles.iloc[idx] = 'font-weight: bold; background-color: #d4edda; color: #155724'  # Green highlight
-                    # Important subtotals - bold with light background
+                        styles.iloc[idx] = 'font-weight: bold; color: #155724'  # Bold with green text
+                    # Important subtotals - bold
                     elif item in ['Total COGS', 'Gross Profit', 'EBITDA', 'Profit Before Tax', 'Profit After Tax']:
-                        styles.iloc[idx] = 'font-weight: bold; background-color: #f0f2f6'  # Light gray
+                        styles.iloc[idx] = 'font-weight: bold'  # Bold only
                     # Other totals - just bold
                     elif item in ['Total Interest Expense', 'SG&A']:
-                        styles.iloc[idx] = 'font-weight: bold; background-color: #f8f9fa'  # Very light gray
+                        styles.iloc[idx] = 'font-weight: bold'  # Bold only
                     # Minority Interest - special formatting
                     elif item == 'Minority Interest':
-                        styles.iloc[idx] = 'font-style: italic; background-color: #fff3cd; color: #856404'  # Yellow highlight
+                        styles.iloc[idx] = 'font-style: italic; color: #856404'  # Italic with brown text
                     # Tax row - red text
                     elif item == 'Tax' or 'Tax (' in item:
                         styles.iloc[idx] = 'color: #dc3545'  # Red text for expense
@@ -1665,7 +1683,7 @@ class ModelForecastTab:
                 # Apply cell-level highlighting for changes
                 for idx, col in changed_cells:
                     current_style = styles.at[idx, col]
-                    styles.at[idx, col] = f"{current_style}; background-color: #90EE90"  # Light green
+                    styles.at[idx, col] = f"{current_style}; background-color: #E8F5E9"  # Very light green (same as RNAV)
             
                 return styles
         
@@ -1683,8 +1701,8 @@ class ModelForecastTab:
                         return f"{val:,.0f}"
         
             st.write("**Consolidated P&L Statement (Billion VND)**")
-            if compare_mode and changed_cells:
-                st.caption("🟢 Green cells indicate changes from saved forecast (showing: current value / saved value)")
+            #if compare_mode and changed_cells:
+            #    st.caption("🟢 Green cells indicate changes from saved forecast (showing: current value / saved value)")
         
             # Define column configuration for consistent width
             pnl_column_config = {

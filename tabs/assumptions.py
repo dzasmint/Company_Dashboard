@@ -35,6 +35,13 @@ class AssumptionsTab:
             # Ticker changed, force reload from MongoDB
             if 'model_assumptions' in st.session_state and selected_ticker in st.session_state.model_assumptions:
                 del st.session_state.model_assumptions[selected_ticker]
+            
+            # Clear old editor state to prevent stale data
+            if st.session_state.last_assumptions_ticker:
+                old_editor_key = f"assumptions_editor_{st.session_state.last_assumptions_ticker}_direct"
+                if old_editor_key in st.session_state:
+                    del st.session_state[old_editor_key]
+            
             st.session_state.refresh_assumptions = True
             st.session_state.last_assumptions_ticker = selected_ticker
         
@@ -95,11 +102,11 @@ class AssumptionsTab:
                 if mongodb_assumptions:
                     # Use MongoDB data
                     st.session_state.model_assumptions[selected_ticker] = mongodb_assumptions
-                    st.toast(f"✅ Loaded saved assumptions for {selected_ticker}", icon="✅")
+                    st.toast(f"Loaded saved assumptions for {selected_ticker}", icon="✅")
                 else:
                     # Use default assumptions
                     st.session_state.model_assumptions[selected_ticker] = self._get_default_assumptions()
-                    st.toast(f"📦 Using default assumptions for {selected_ticker}", icon="📦")
+                    st.toast(f"Using default assumptions for {selected_ticker}", icon="📦")
                 
                 st.session_state.refresh_assumptions = False
         
@@ -210,9 +217,15 @@ class AssumptionsTab:
         elif 'Type' not in assumptions_df.columns:
             assumptions_df['Type'] = 'N/A'
         
+        # Use widget's internal state if it exists, otherwise use loaded data
+        if editor_key in st.session_state and isinstance(st.session_state[editor_key], pd.DataFrame):
+            display_df = st.session_state[editor_key]
+        else:
+            display_df = assumptions_df
+        
         # Direct data editor without form
         edited_df = st.data_editor(
-            assumptions_df,
+            display_df,
             hide_index=True,
             use_container_width=True,
             num_rows="dynamic",
@@ -256,11 +269,8 @@ class AssumptionsTab:
             key=editor_key
         )
         
-        # Auto-save to session state
-        if edited_df is not None:
-            if 'model_assumptions' not in st.session_state:
-                st.session_state.model_assumptions = {}
-            st.session_state.model_assumptions[selected_ticker] = edited_df.to_dict('records')
+        # Note: edited_df is automatically stored in session_state[editor_key] by Streamlit
+        # We'll sync to model_assumptions only on explicit save actions
         
         # Action buttons
         col1, col2, col3 = st.columns(3)
@@ -270,10 +280,8 @@ class AssumptionsTab:
                 if 'model_assumptions' not in st.session_state:
                     st.session_state.model_assumptions = {}
                 
-                # Get current assumptions
-                current_assumptions = st.session_state.model_assumptions.get(selected_ticker, [])
-                if not isinstance(current_assumptions, list):
-                    current_assumptions = edited_df.to_dict('records') if edited_df is not None else []
+                # Get current assumptions from the data editor
+                current_assumptions = edited_df.to_dict('records') if edited_df is not None else []
                 
                 # Define the 5 default financial rows
                 default_financial_rows = [
@@ -314,8 +322,12 @@ class AssumptionsTab:
             if st.button("Save to Database", use_container_width=True):
                 try:
                     from utils.mongodb_utils import save_assumptions_to_mongodb
-                    result = save_assumptions_to_mongodb(selected_ticker, edited_df.to_dict('records'))
+                    # Save the edited data to both database and model_assumptions
+                    data_to_save = edited_df.to_dict('records') if edited_df is not None else []
+                    result = save_assumptions_to_mongodb(selected_ticker, data_to_save)
                     if result.get('success'):
+                        # Also update model_assumptions to keep in sync
+                        st.session_state.model_assumptions[selected_ticker] = data_to_save
                         st.success("✅ Saved to database!")
                     else:
                         st.error(f"Error: {result.get('message')}")
@@ -325,6 +337,10 @@ class AssumptionsTab:
         with col3:
             if st.button("Reload from Database", use_container_width=True):
                 from utils.mongodb_utils import load_assumptions_from_mongodb
+                
+                # Clear the editor state to force reload
+                if editor_key in st.session_state:
+                    del st.session_state[editor_key]
                 
                 # Force reload from MongoDB
                 with st.spinner(f"Reloading assumptions for {selected_ticker}..."):
@@ -369,10 +385,8 @@ class AssumptionsTab:
                         {"Category": "Business Segment", "Type": "SG&A % of Revenue", "Item": new_segment_name.strip(), "Value": 0.0, "Unit": "%"}
                     ]
                     
-                    # Get current assumptions
-                    current_assumptions = st.session_state.model_assumptions.get(selected_ticker, [])
-                    if not isinstance(current_assumptions, list):
-                        current_assumptions = edited_df.to_dict('records') if edited_df is not None else []
+                    # Get current assumptions from the data editor
+                    current_assumptions = edited_df.to_dict('records') if edited_df is not None else []
                     
                     # Add new segment assumptions
                     current_assumptions.extend(new_segment_assumptions)

@@ -54,7 +54,7 @@ def decimal_input(
         value_key = f"decimal_{unique_id}_value"
         error_key = f"decimal_{unique_id}_error"
     
-    # Initialize session state
+    # Initialize session state only if not exists
     if value_key not in st.session_state:
         st.session_state[value_key] = float(value)
         st.session_state[text_key] = str(value) if value != 0 else ""
@@ -69,10 +69,16 @@ def decimal_input(
     
     with input_col:
         # Text input for decimal number
+        # Use the widget key directly without value parameter to avoid conflicts
+        widget_key = text_key + "_widget"
+        
+        # Initialize widget session state if needed
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = st.session_state[text_key]
+        
         user_input = st.text_input(
             label=label,
-            value=st.session_state[text_key],
-            key=text_key + "_widget",
+            key=widget_key,
             help=help,
             label_visibility=label_visibility,
             disabled=disabled,

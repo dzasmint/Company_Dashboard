@@ -335,11 +335,13 @@ class ProjectPipelineRealEstateTab:
         st.subheader("➕ Create New Project")
         st.info("Enter details for your new project. All fields start with default values.")
         
-        # Clear any existing editing state to ensure clean slate
-        if 'edited_project' in st.session_state:
-            del st.session_state.edited_project
-        if 'current_editing_project' in st.session_state:
-            del st.session_state.current_editing_project
+        # Only clear editing state if we're switching from a different project
+        if 'current_editing_project' in st.session_state and st.session_state.current_editing_project != 'NEW_PROJECT_TEMP':
+            # We're switching from another project to new project creation
+            if 'edited_project' in st.session_state:
+                del st.session_state.edited_project
+            if 'new_project_name_input' in st.session_state:
+                del st.session_state.new_project_name_input
         
         # Create a new project template with default values
         current_year = datetime.now().year
@@ -665,14 +667,19 @@ class ProjectPipelineRealEstateTab:
         
         # Check if we're switching to a different project or creating new
         if is_creating_new:
-            # For new projects, always use fresh template data
-            st.session_state.current_editing_project = 'NEW_PROJECT_TEMP'
-            st.session_state.edited_project = project_data.copy()
-            # Clear the relative collection schedule for new projects
-            if 'relative_collection_schedule' in st.session_state:
-                del st.session_state.relative_collection_schedule
-            # Clear all cached input values to force reload
-            self.clear_project_input_cache()
+            # For new projects, only initialize if not already initialized
+            if 'current_editing_project' not in st.session_state or st.session_state.current_editing_project != 'NEW_PROJECT_TEMP':
+                # First time creating new project or switching from another project
+                st.session_state.current_editing_project = 'NEW_PROJECT_TEMP'
+                st.session_state.edited_project = project_data.copy()
+                # Clear the relative collection schedule for new projects
+                if 'relative_collection_schedule' in st.session_state:
+                    del st.session_state.relative_collection_schedule
+                # Clear all cached input values to force reload
+                self.clear_project_input_cache()
+            elif 'edited_project' not in st.session_state:
+                # edited_project was deleted but we're still in new project mode
+                st.session_state.edited_project = project_data.copy()
         elif 'current_editing_project' not in st.session_state:
             st.session_state.current_editing_project = project_name
             st.session_state.edited_project = project_data.copy()
@@ -725,6 +732,14 @@ class ProjectPipelineRealEstateTab:
         project_data_with_flag['is_new_project'] = is_new_project
         self.render_project_save_interface(project_data_with_flag)
     
+    def get_field_value(self, field_name, default_value=None):
+        """Get field value from edited_project, falling back to default if needed"""
+        if 'edited_project' in st.session_state:
+            value = st.session_state.edited_project.get(field_name, default_value)
+            return value if value is not None else (default_value if default_value is not None else 0)
+        # If edited_project doesn't exist (shouldn't happen), return default
+        return default_value if default_value is not None else 0
+    
     def render_project_basic_info(self, project_data):
         """Render basic project information editor"""
         st.subheader("Basic Project Information")
@@ -734,38 +749,57 @@ class ProjectPipelineRealEstateTab:
             st.error("Invalid project data format")
             return
         
+        # Note: edited_project should already be initialized by render_individual_project_editor
+        # We don't re-initialize it here to preserve user input
+        
         # Get AI suggestions if available
         project_name = project_data.get('project_name', '')
         ai_suggestions_key = f"ai_suggestions_{project_name}"
         ai_suggestions = st.session_state.get(ai_suggestions_key, {})
         
-        # Create a unique key prefix for this project to avoid caching issues
-        key_prefix = f"{project_name}_" if project_name else "new_"
-        
         # Each field on its own row with label and input side by side
+        
+        # Check if this is a new project
+        is_new_project = project_data.get('is_new_project', False)
         
         # Project Name - FIRST field for new projects
         col1, col2 = st.columns([1, 3])
         with col1:
             st.markdown("**Project Name**")
         with col2:
-            # Check if this is a new project
-            is_new_project = project_data.get('is_new_project', False)
-            
             if is_new_project:
                 # For new projects, allow editing the name
                 project_name_input = st.text_input(
                     "Project Name",
-                    value=str(project_data.get('project_name', 'New Project') or 'New Project'),
+                    value=str(self.get_field_value('project_name', '') or ''),
                     key="edit_project_name",
                     label_visibility="collapsed",
                     placeholder="Enter a unique project name",
-                    help="Please enter a unique project name (not 'New Project')"
+                    help="Please enter a unique project name"
                 )
                 
                 # Validate project name
-                if project_name_input == 'New Project' or not project_name_input.strip():
-                    st.error("⚠️ Please enter a unique project name (not 'New Project')")
+                if project_name_input:
+                    # Check if name already exists
+                    from utils.mongodb_utils import load_projects_data
+                    company_ticker = st.session_state.get('selected_company', '')
+                    all_projects = load_projects_data()
+                    
+                    # Filter for current company
+                    if not all_projects.empty and company_ticker:
+                        existing_projects = all_projects[all_projects['company_ticker'] == company_ticker]
+                        if not existing_projects.empty:
+                            existing_names = existing_projects['project_name'].tolist()
+                            if project_name_input in existing_names:
+                                st.error(f"❌ Project name '{project_name_input}' already exists. Please choose a different name.")
+                    
+                    # Check for invalid characters or empty name
+                    if not project_name_input.strip():
+                        st.error("❌ Project name cannot be empty.")
+                    elif project_name_input == 'New Project':
+                        st.warning("⚠️ Please change the default project name.")
+                else:
+                    st.error("❌ Please enter a project name.")
                 
                 st.session_state.edited_project['project_name'] = project_name_input
             else:
@@ -785,14 +819,14 @@ class ProjectPipelineRealEstateTab:
             st.markdown("**Project Ownership (%)**")
         with col2:
             # Convert from decimal to percentage for display (0.5 -> 50)
-            ownership_decimal = float(project_data.get('project_ownership', 1.0) or 1.0)
+            ownership_decimal = float(self.get_field_value('project_ownership', 1.0) or 1.0)
             ownership_percentage = ownership_decimal * 100
             
             ownership_input = percentage_input(
                 label="Project Ownership (%)",
                 value=ownership_percentage,
                 max_value=100.0,
-                key=f"{key_prefix}edit_ownership_pct",
+                key="edit_ownership_pct",
                 label_visibility="collapsed"
             )
             # Convert back from percentage to decimal for storage (50 -> 0.5)
@@ -806,8 +840,8 @@ class ProjectPipelineRealEstateTab:
         with col2:
             location = st.text_input(
                 "Location",
-                value=str(project_data.get('location', '') or ''),
-                key=f"{key_prefix}edit_location",
+                value=str(self.get_field_value('location', '') or ''),
+                key="edit_location",
                 label_visibility="collapsed"
             )
             if ai_suggestions.get("location"):
@@ -835,9 +869,9 @@ class ProjectPipelineRealEstateTab:
             with col2:
                 low_rise_units = int(decimal_input(
                     label="Low-Rise Units",
-                    value=float(project_data.get('low_rise_units', 0) or 0),
+                    value=float(self.get_field_value('low_rise_units', 0) or 0),
                     min_value=0.0,
-                    key=f"{key_prefix}edit_low_rise_units",
+                    key="edit_low_rise_units",
                     label_visibility="collapsed",
                     help="Number of low-rise units"
                 ))
@@ -850,15 +884,16 @@ class ProjectPipelineRealEstateTab:
             with col2:
                 low_rise_avg_unit_size = int(decimal_input(
                     label="Low-Rise Average Unit Size (m²)",
-                    value=float(project_data.get('low_rise_avg_unit_size', 0) or 0),
+                    value=float(self.get_field_value('low_rise_avg_unit_size', 0) or 0),
                     min_value=0.0,
-                    key=f"{key_prefix}edit_low_rise_avg_unit_size",
+                    key="edit_low_rise_avg_unit_size",
                     label_visibility="collapsed",
                     help="Average unit size in square meters"
                 ))
             st.session_state.edited_project['low_rise_avg_unit_size'] = low_rise_avg_unit_size
             
             # Calculate and display Low-Rise NSA
+            # Use the values just captured from the input widgets
             low_rise_nsa = low_rise_units * low_rise_avg_unit_size
             col1, col2 = st.columns([1, 3])
             with col1:
@@ -878,7 +913,7 @@ class ProjectPipelineRealEstateTab:
             with col1:
                 st.markdown("**Low-Rise ASP (VND mn/m²)**")
             with col2:
-                low_rise_asp_raw = float(project_data.get('low_rise_asp', 0) or 0)
+                low_rise_asp_raw = float(self.get_field_value('low_rise_asp', 0) or 0)
                 low_rise_asp_million = low_rise_asp_raw / 1_000_000
                 
                 low_rise_asp_million_input = decimal_input(
@@ -900,7 +935,7 @@ class ProjectPipelineRealEstateTab:
             with col2:
                 high_rise_units = int(decimal_input(
                     label="High-Rise Units",
-                    value=float(project_data.get('high_rise_units', 0) or 0),
+                    value=float(self.get_field_value('high_rise_units', 0) or 0),
                     min_value=0.0,
                     key="edit_high_rise_units",
                     label_visibility="collapsed",
@@ -915,7 +950,7 @@ class ProjectPipelineRealEstateTab:
             with col2:
                 high_rise_avg_unit_size = int(decimal_input(
                     label="High-Rise Average Unit Size (m²)",
-                    value=float(project_data.get('high_rise_avg_unit_size', 0) or 0),
+                    value=float(self.get_field_value('high_rise_avg_unit_size', 0) or 0),
                     min_value=0.0,
                     key="edit_high_rise_avg_unit_size",
                     label_visibility="collapsed",
@@ -924,6 +959,7 @@ class ProjectPipelineRealEstateTab:
             st.session_state.edited_project['high_rise_avg_unit_size'] = high_rise_avg_unit_size
             
             # Calculate and display High-Rise NSA
+            # Use the values just captured from the input widgets
             high_rise_nsa = high_rise_units * high_rise_avg_unit_size
             col1, col2 = st.columns([1, 3])
             with col1:
@@ -943,7 +979,7 @@ class ProjectPipelineRealEstateTab:
             with col1:
                 st.markdown("**High-Rise ASP (VND mn/m²)**")
             with col2:
-                high_rise_asp_raw = float(project_data.get('high_rise_asp', 0) or 0)
+                high_rise_asp_raw = float(self.get_field_value('high_rise_asp', 0) or 0)
                 high_rise_asp_million = high_rise_asp_raw / 1_000_000
                 
                 high_rise_asp_million_input = decimal_input(
@@ -1035,7 +1071,7 @@ class ProjectPipelineRealEstateTab:
             st.markdown("**Price Annual Increment (%)**")
         with col2:
             # Load price_increment_factor from MongoDB (stored as decimal, e.g., 0.05 for 5%)
-            price_increment_raw = float(project_data.get('price_increment_factor', 0) or 0)
+            price_increment_raw = float(self.get_field_value('price_increment_factor', 0) or 0)
             # Convert to percentage for display
             price_increment_pct = price_increment_raw * 100
             
@@ -1062,7 +1098,7 @@ class ProjectPipelineRealEstateTab:
         with col2:
             land_area = int(decimal_input(
                 label="Land Area (m²)",
-                value=float(project_data.get('land_area', 0) or 0),
+                value=float(self.get_field_value('land_area', 0) or 0),
                 min_value=0.0,
                 key="edit_land_area",
                 label_visibility="collapsed",
@@ -1082,7 +1118,7 @@ class ProjectPipelineRealEstateTab:
             st.markdown("**Land Cost (VND mn/m²)**")
         with col2:
             # Convert from raw VND to VND million for display
-            land_cost_raw = float(project_data.get('land_cost_per_sqm', 0) or 0)
+            land_cost_raw = float(self.get_field_value('land_cost_per_sqm', 0) or 0)
             land_cost_million = land_cost_raw / 1_000_000  # Convert to million VND
             
             land_cost_million_input = decimal_input(
@@ -1133,7 +1169,7 @@ class ProjectPipelineRealEstateTab:
         with col2:
             gfa = int(decimal_input(
                 label="Gross Floor Area (m²)",
-                value=float(project_data.get('gross_floor_area', 0) or 0),
+                value=float(self.get_field_value('gross_floor_area', 0) or 0),
                 min_value=0.0,
                 key="edit_gfa",
                 label_visibility="collapsed",
@@ -1153,7 +1189,7 @@ class ProjectPipelineRealEstateTab:
             st.markdown("**Construction Cost (VND mn/m²)**")
         with col2:
             # Convert from raw VND to VND million for display
-            const_cost_raw = float(project_data.get('construction_cost_per_sqm', 0) or 0)
+            const_cost_raw = float(self.get_field_value('construction_cost_per_sqm', 0) or 0)
             const_cost_million = const_cost_raw / 1_000_000  # Convert to million VND
             
             const_cost_million_input = decimal_input(
@@ -1218,8 +1254,8 @@ class ProjectPipelineRealEstateTab:
             # Calculate default total debt
             default_total_debt = total_project_cost * debt_financing_pct
             
-            # Get existing total debt from project data or use calculated default
-            existing_total_debt_raw = project_data.get('total_debt', default_total_debt)
+            # Get existing total debt from edited project or use calculated default
+            existing_total_debt_raw = self.get_field_value('total_debt', default_total_debt)
             
             # Convert to billions for display
             existing_total_debt_bn = existing_total_debt_raw / 1_000_000_000
@@ -3266,15 +3302,24 @@ class ProjectPipelineRealEstateTab:
                     # For new projects, validate the project name
                     if is_new_project:
                         new_name = edited.get('project_name', '').strip()
-                        if not new_name or new_name == 'New Project':
-                            st.error("❌ Please enter a unique project name (not 'New Project')")
+                        if not new_name:
+                            st.error("❌ Project name cannot be empty.")
+                            return
+                        elif new_name == 'New Project':
+                            st.error("❌ Please change the default project name.")
                             return
                         
-                        # Check for duplicate project name
-                        if 'project_data' in st.session_state and st.session_state.project_data is not None:
-                            existing_projects = st.session_state.project_data
-                            if not existing_projects.empty and 'project_name' in existing_projects.columns:
-                                if new_name in existing_projects['project_name'].values:
+                        # Check for duplicate project name using MongoDB
+                        from utils.mongodb_utils import load_projects_data
+                        company_ticker = st.session_state.get('selected_company', '')
+                        all_projects = load_projects_data()
+                        
+                        # Filter for current company
+                        if not all_projects.empty and company_ticker:
+                            existing_projects = all_projects[all_projects['company_ticker'] == company_ticker]
+                            if not existing_projects.empty:
+                                existing_names = existing_projects['project_name'].tolist()
+                                if new_name in existing_names:
                                     st.error(f"❌ A project with the name '{new_name}' already exists. Please choose a different name.")
                                     return
                         

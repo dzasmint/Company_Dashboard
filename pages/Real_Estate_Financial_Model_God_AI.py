@@ -360,7 +360,7 @@ class RealEstateFinancialModel:
                 st.session_state.project_data = pd.DataFrame()
             else:
                 st.session_state.project_data = ticker_projects
-                st.success(f"✅ Loaded {len(ticker_projects)} projects for {ticker}")
+                st.toast(f"✅ Loaded {len(ticker_projects)} projects for {ticker}")
                 
         except Exception as e:
             st.error(f"Error loading project data: {str(e)}")
