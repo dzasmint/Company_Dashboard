@@ -237,7 +237,7 @@ class RealEstateFinancialModel:
                 "Research Insights",
                 "Export Model",
                 # "God AI Assistant",  # Hidden per user request
-                "Enhanced AI",
+                "BDS-GPT",
                 "Generate Report"
             ]
             
