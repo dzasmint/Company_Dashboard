@@ -237,8 +237,8 @@ class ModelForecastTab:
                     # Fallback: try to convert directly
                     base_year = int(max(historical_data.index))
             except:
-                # If all else fails, default to 2024
-                base_year = 2024
+                # If all else fails, default to current year - 1
+                base_year = datetime.now().year - 1
         
             # Store base_year in session state for use throughout the app
             st.session_state.base_year = base_year
@@ -340,7 +340,7 @@ class ModelForecastTab:
             current_year = datetime.now().year
         
             # Get base year from session state
-            base_year = st.session_state.get('base_year', 2024)
+            base_year = st.session_state.get('base_year', datetime.now().year - 1)
             hist_col = f'{base_year}H'  # Historical column name
         
             # Add historical year to display columns
@@ -1072,7 +1072,7 @@ class ModelForecastTab:
                         if segment_name in segment_metrics:
                             gross_margin = segment_metrics[segment_name]['gross_margin']
                         else:
-                            gross_margin = 0.3
+                            gross_margin = 0.0
                         # Simplified cash = revenue * gross margin
                         year_cash_change += revenue * gross_margin
                 
