@@ -3981,7 +3981,7 @@ CRITICAL TOOL SELECTION RULES:
 def render_enhanced_ai_interface():
     """Render the enhanced AI interface in Streamlit"""
     
-    st.header("🚀 Enhanced AI Assistant")
+    st.header("Enhanced AI Assistant")
     st.markdown("Powered by GPT with automatic tool selection for comprehensive financial analysis")
     
     # Initialize tool system
