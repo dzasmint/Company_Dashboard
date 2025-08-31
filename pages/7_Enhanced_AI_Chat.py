@@ -16,7 +16,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
 # Import utilities
-from utils.enhanced_ai_assistant import EnhancedAIToolSystem
+from tabs.enhanced_ai_assistant import EnhancedAIToolSystem
 from utils.chart_utils import create_plotly_chart
 
 # Load environment variables

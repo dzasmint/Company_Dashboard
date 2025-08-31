@@ -61,7 +61,7 @@ streamlit run test_enhanced_ai_chart_integration.py
 
 ### Direct Test
 ```python
-from utils.enhanced_ai_assistant import EnhancedAIToolSystem
+from tabs.enhanced_ai_assistant import EnhancedAIToolSystem
 system = EnhancedAIToolSystem()
 
 # Execute render_chart
@@ -96,7 +96,7 @@ result = system.execute_tool('render_chart', {
 
 ## Files Modified
 
-1. **utils/enhanced_ai_assistant.py**
+1. **tabs/enhanced_ai_assistant.py**
    - Added `render_chart` tool
    - Updated `create_financial_chart` to use render_chart
    - Added chart handling in `chat_with_ai()`

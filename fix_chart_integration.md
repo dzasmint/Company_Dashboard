@@ -59,7 +59,7 @@ Here's a minimal example showing the complete integration:
 
 ```python
 import streamlit as st
-from utils.enhanced_ai_assistant import EnhancedAIToolSystem
+from tabs.enhanced_ai_assistant import EnhancedAIToolSystem
 from utils.chart_utils import create_plotly_chart
 import json
 
@@ -140,6 +140,6 @@ st.plotly_chart(fig, use_container_width=True)
 
 1. Your main application file - needs the chart rendering logic
 2. `/utils/chart_utils.py` - should exist with `create_plotly_chart()` function
-3. `/utils/enhanced_ai_assistant.py` - should have the `render_chart` tool
+3. `/tabs/enhanced_ai_assistant.py` - should have the `render_chart` tool
 
 The key is that the chart specification is being generated correctly (as shown in your screenshot), but the rendering step is missing. Add the rendering logic shown above to your application where the AI responses are displayed.

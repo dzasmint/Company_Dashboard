@@ -5,7 +5,7 @@ This shows how to use the Enhanced AI Assistant with proper chart handling
 
 import streamlit as st
 import json
-from utils.enhanced_ai_assistant import EnhancedAIToolSystem
+from tabs.enhanced_ai_assistant import EnhancedAIToolSystem
 from utils.chart_utils import create_plotly_chart, handle_tool_charts
 from openai import OpenAI
 import os

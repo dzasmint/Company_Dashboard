@@ -89,13 +89,13 @@ except ImportError:
     create_plotly_chart = None
 
 # Import utilities
-from .mongodb_utils import (
+from utils.mongodb_utils import (
     init_mongodb_connection,
     load_projects_data,
     get_company_assumptions,
     save_project_to_mongodb
 )
-from .perplexity_utils import get_project_basic_info_perplexity
+from utils.perplexity_utils import get_project_basic_info_perplexity
 
 load_dotenv()
 
