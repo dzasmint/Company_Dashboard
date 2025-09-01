@@ -1002,7 +1002,7 @@ class EnhancedAIToolSystem:
         
         @self.tool(
             name="compare_companies",
-            description="Compare financial metrics across multiple companies",
+            description="Compare financial metrics and project margins across multiple companies",
             parameters={
                 "tickers": {
                     "type": "array",
@@ -1020,12 +1020,17 @@ class EnhancedAIToolSystem:
                     "type": "integer",
                     "description": "Year for comparison",
                     "required": False
+                },
+                "include_project_margins": {
+                    "type": "boolean",
+                    "description": "Include project-level margin comparison",
+                    "required": False
                 }
             }
         )
         def compare_companies(tickers: List[str], metrics: List[str] = None,
-                            year: int = None) -> Dict:
-            """Compare companies on financial metrics"""
+                            year: int = None, include_project_margins: bool = False) -> Dict:
+            """Compare companies on financial metrics and project margins"""
             
             tickers = [t.upper() for t in tickers]
             
@@ -1051,6 +1056,8 @@ class EnhancedAIToolSystem:
             # Filter and pivot
             df = df[df['KEYCODE'].isin(metrics)]
             
+            result = {}
+            
             if not df.empty:
                 comparison_df = df.pivot_table(
                     index='TICKER',
@@ -1064,17 +1071,71 @@ class EnhancedAIToolSystem:
                     if col != 'TICKER':
                         comparison_df[f'{col}_rank'] = comparison_df[col].rank(ascending=False)
                 
-                return {
-                    "comparison": comparison_df.to_dict('records'),
-                    "year": year,
-                    "metrics": metrics,
-                    "status": "success"
-                }
+                result["comparison"] = comparison_df.to_dict('records')
+                result["year"] = year
+                result["metrics"] = metrics
             
-            return {
-                "error": "No data found for comparison",
-                "status": "failed"
-            }
+            # Add project margin comparison if requested
+            if include_project_margins and self.vietnam_stocks_db:
+                try:
+                    margin_comparison = {}
+                    year_str = str(year)
+                    
+                    for ticker in tickers:
+                        # Get company forecast from MongoDB
+                        from utils.mongodb_utils import load_company_forecast
+                        forecast_doc = load_company_forecast(ticker)
+                        
+                        if forecast_doc and 'forecast_data' in forecast_doc:
+                            if year_str in forecast_doc['forecast_data']:
+                                year_data = forecast_doc['forecast_data'][year_str]
+                                
+                                # Extract enhanced margin data
+                                if 'profitability_metrics' in year_data:
+                                    metrics = year_data['profitability_metrics']
+                                    
+                                    margin_comparison[ticker] = {
+                                        "consolidated_margins": metrics.get('consolidated_margins', {}),
+                                        "aggregated_project_margins": metrics.get('aggregated_project_margins', {}),
+                                        "project_count": len(metrics.get('project_margins', {}))
+                                    }
+                                    
+                                    # Add best performing project
+                                    if 'project_margins' in metrics:
+                                        best_project = max(
+                                            metrics['project_margins'].items(),
+                                            key=lambda x: x[1].get('patmi_margin', 0),
+                                            default=(None, {})
+                                        )
+                                        if best_project[0]:
+                                            margin_comparison[ticker]["best_project"] = {
+                                                "name": best_project[0],
+                                                "patmi_margin": best_project[1].get('patmi_margin', 0)
+                                            }
+                    
+                    if margin_comparison:
+                        result["project_margin_comparison"] = margin_comparison
+                        
+                        # Add margin rankings
+                        margin_rankings = {}
+                        for margin_type in ['gross_margin', 'pbt_margin', 'pat_margin', 'patmi_margin']:
+                            rankings = []
+                            for ticker, data in margin_comparison.items():
+                                cons_margin = data.get('consolidated_margins', {}).get(margin_type, 0)
+                                if cons_margin > 0:
+                                    rankings.append((ticker, cons_margin))
+                            
+                            if rankings:
+                                rankings.sort(key=lambda x: x[1], reverse=True)
+                                margin_rankings[margin_type] = rankings
+                        
+                        result["margin_rankings"] = margin_rankings
+                
+                except Exception as e:
+                    result["margin_comparison_error"] = str(e)
+            
+            result["status"] = "success"
+            return result
         
         @self.tool(
             name="get_financial_forecasts",
@@ -1229,6 +1290,12 @@ class EnhancedAIToolSystem:
                         # Add profitability metrics if available (keep as percentages)
                         if 'profitability_metrics' in year_data:
                             result_data[year]['profitability_metrics'] = year_data['profitability_metrics']
+                            
+                            # Highlight new enhanced margins in the response
+                            if 'aggregated_project_margins' in year_data['profitability_metrics']:
+                                result_data[year]['aggregated_project_margins'] = year_data['profitability_metrics']['aggregated_project_margins']
+                            if 'project_margins' in year_data['profitability_metrics']:
+                                result_data[year]['project_margins'] = year_data['profitability_metrics']['project_margins']
                 
                 # Extract key metrics for summary
                 summary = {}
@@ -1260,6 +1327,213 @@ class EnhancedAIToolSystem:
                 
             except Exception as e:
                 return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
+            name="analyze_project_margins",
+            description="Analyze detailed project-level margins including gross, SG&A, PBT, PAT, and PATMI margins",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker symbol",
+                    "required": True
+                },
+                "years": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of years to analyze",
+                    "required": False
+                },
+                "margin_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Types of margins to analyze: gross, sga, pbt, pat, patmi",
+                    "required": False
+                },
+                "include_aggregated": {
+                    "type": "boolean",
+                    "description": "Include aggregated project margins",
+                    "required": False
+                }
+            }
+        )
+        def analyze_project_margins(ticker: str, years: List[str] = None, 
+                                   margin_types: List[str] = None,
+                                   include_aggregated: bool = True) -> Dict:
+            """Analyze comprehensive project margins with new enhanced schema"""
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            ticker = ticker.upper()
+            
+            try:
+                # Get company forecast
+                from utils.mongodb_utils import load_company_forecast
+                forecast_doc = load_company_forecast(ticker)
+                
+                if not forecast_doc or 'forecast_data' not in forecast_doc:
+                    return {"error": f"No forecast data for {ticker}", "status": "failed"}
+                
+                forecast_data = forecast_doc['forecast_data']
+                
+                # Use provided years or all available years
+                if not years:
+                    years = list(forecast_data.keys())
+                
+                # Default to all margin types
+                if not margin_types:
+                    margin_types = ['gross', 'sga', 'pbt', 'pat', 'patmi']
+                
+                result = {
+                    "ticker": ticker,
+                    "years_analyzed": years,
+                    "margin_types": margin_types,
+                    "project_margins": {},
+                    "aggregated_margins": {} if include_aggregated else None,
+                    "consolidated_margins": {},
+                    "margin_comparison": {}
+                }
+                
+                for year in years:
+                    if year not in forecast_data:
+                        continue
+                    
+                    year_data = forecast_data[year]
+                    metrics = year_data.get('profitability_metrics', {})
+                    
+                    # Extract project-level margins (NEW enhanced data)
+                    if 'project_margins' in metrics:
+                        result['project_margins'][year] = {}
+                        for project, margins in metrics['project_margins'].items():
+                            result['project_margins'][year][project] = {
+                                m: round(margins.get(f'{m}_margin', 0), 2) 
+                                for m in margin_types
+                            }
+                    
+                    # Extract aggregated project margins (NEW)
+                    if include_aggregated and 'aggregated_project_margins' in metrics:
+                        agg = metrics['aggregated_project_margins']
+                        result['aggregated_margins'][year] = {
+                            'revenue': round(agg.get('total_projects_revenue', 0) / 1e9, 2),
+                            'gross_profit': round(agg.get('total_projects_gross_profit', 0) / 1e9, 2),
+                            'margins': {
+                                m: round(agg.get(f'total_projects_{m}_margin', 0), 2)
+                                for m in margin_types
+                            }
+                        }
+                    
+                    # Extract consolidated margins
+                    if 'consolidated_margins' in metrics:
+                        cons = metrics['consolidated_margins']
+                        result['consolidated_margins'][year] = {
+                            m: round(cons.get(f'{m}_margin', 0), 2)
+                            for m in margin_types
+                        }
+                    
+                    # Compare project vs company margins
+                    if include_aggregated and 'aggregated_project_margins' in metrics and 'consolidated_margins' in metrics:
+                        agg_margins = metrics['aggregated_project_margins']
+                        cons_margins = metrics['consolidated_margins']
+                        result['margin_comparison'][year] = {}
+                        for m in margin_types:
+                            proj_margin = agg_margins.get(f'total_projects_{m}_margin', 0)
+                            cons_margin = cons_margins.get(f'{m}_margin', 0)
+                            result['margin_comparison'][year][m] = {
+                                'projects': round(proj_margin, 2),
+                                'consolidated': round(cons_margin, 2),
+                                'difference': round(proj_margin - cons_margin, 2)
+                            }
+                
+                # Add trend analysis
+                if len(years) > 1:
+                    result['trends'] = self._calculate_margin_trends(result)
+                
+                # Add insights
+                result['insights'] = self._generate_margin_insights(result)
+                
+                return result
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+        
+        def _calculate_margin_trends(self, margin_data: Dict) -> Dict:
+            """Calculate margin trends over time"""
+            trends = {}
+            
+            # Calculate consolidated margin trends
+            if margin_data.get('consolidated_margins'):
+                cons_margins = margin_data['consolidated_margins']
+                years = sorted(cons_margins.keys())
+                if len(years) >= 2:
+                    first_year = years[0]
+                    last_year = years[-1]
+                    
+                    for margin_type in ['gross', 'sga', 'pbt', 'pat', 'patmi']:
+                        if margin_type in cons_margins[first_year] and margin_type in cons_margins[last_year]:
+                            first_val = cons_margins[first_year].get(margin_type, 0)
+                            last_val = cons_margins[last_year].get(margin_type, 0)
+                            change = last_val - first_val
+                            trends[f'{margin_type}_margin_change'] = round(change, 2)
+            
+            # Calculate project margin trends
+            if margin_data.get('aggregated_margins'):
+                agg_margins = margin_data['aggregated_margins']
+                years = sorted(agg_margins.keys())
+                if len(years) >= 2:
+                    first_year = years[0]
+                    last_year = years[-1]
+                    
+                    for margin_type in ['gross', 'sga', 'pbt', 'pat', 'patmi']:
+                        if 'margins' in agg_margins[first_year] and 'margins' in agg_margins[last_year]:
+                            first_val = agg_margins[first_year]['margins'].get(margin_type, 0)
+                            last_val = agg_margins[last_year]['margins'].get(margin_type, 0)
+                            change = last_val - first_val
+                            trends[f'project_{margin_type}_margin_change'] = round(change, 2)
+            
+            return trends
+        
+        def _generate_margin_insights(self, margin_data: Dict) -> List[str]:
+            """Generate insights from margin analysis"""
+            insights = []
+            
+            # Check for best performing projects
+            if margin_data.get('project_margins'):
+                for year in margin_data['project_margins']:
+                    year_margins = margin_data['project_margins'][year]
+                    if year_margins:
+                        # Find best gross margin project
+                        best_gross = max(year_margins.items(), 
+                                       key=lambda x: x[1].get('gross', 0) if x[1] else 0)
+                        if best_gross[1].get('gross', 0) > 0:
+                            insights.append(f"In {year}, {best_gross[0]} has the highest gross margin at {best_gross[1]['gross']}%")
+                        
+                        # Find best PATMI margin project
+                        if 'patmi' in margin_data['margin_types']:
+                            best_patmi = max(year_margins.items(),
+                                           key=lambda x: x[1].get('patmi', 0) if x[1] else 0)
+                            if best_patmi[1].get('patmi', 0) > 0:
+                                insights.append(f"In {year}, {best_patmi[0]} has the highest PATMI margin at {best_patmi[1]['patmi']}%")
+            
+            # Check margin trends
+            if margin_data.get('trends'):
+                trends = margin_data['trends']
+                for key, value in trends.items():
+                    if 'margin_change' in key and abs(value) > 2:  # Significant change > 2%
+                        margin_type = key.replace('_margin_change', '').replace('project_', '')
+                        direction = "improved" if value > 0 else "declined"
+                        insights.append(f"{margin_type.upper()} margin {direction} by {abs(value)}% over the period")
+            
+            # Compare project vs company margins
+            if margin_data.get('margin_comparison'):
+                for year in margin_data['margin_comparison']:
+                    year_comp = margin_data['margin_comparison'][year]
+                    for margin_type in year_comp:
+                        diff = year_comp[margin_type].get('difference', 0)
+                        if abs(diff) > 5:  # Significant difference > 5%
+                            better = "higher" if diff > 0 else "lower"
+                            insights.append(f"Project {margin_type} margins are {abs(diff)}% {better} than company average in {year}")
+            
+            return insights[:5]  # Return top 5 insights
     
     def _register_real_estate_tools(self):
         """Register real estate project tools"""
