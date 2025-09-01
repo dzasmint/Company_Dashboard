@@ -532,6 +532,7 @@ def save_project_to_mongodb(project_data, project_name, rnav_value=None):
             "total_sga_cost": project_data.get('total_sga_cost', 0),
             "total_debt": project_data.get('total_debt', 0),
             "debt_financing_pct": project_data.get('debt_financing_pct', 0.3),
+            "project_irr": project_data.get('project_irr', None),  # IRR calculated from cash flows
             # Distribution percentages
             "revenue_distribution": project_data.get('revenue_distribution', {}),
             "presales_distribution": project_data.get('presales_distribution', {}),

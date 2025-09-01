@@ -14,6 +14,96 @@ class ProjectPipelineRealEstateTab:
     def __init__(self, parent):
         self.parent = parent
     
+    def calculate_project_irr(self, comprehensive_financial_statements):
+        """Calculate IRR from project's comprehensive financial statements.
+        
+        Args:
+            comprehensive_financial_statements: Dict with year keys containing cash flow data
+            
+        Returns:
+            float: IRR as decimal (e.g., 0.15 for 15%) or None if cannot calculate
+        """
+        try:
+            from scipy.optimize import newton
+            
+            if not comprehensive_financial_statements:
+                return None
+            
+            cash_flows = []
+            years = []
+            
+            # Extract cash flows from financial statements
+            for year_str, year_data in comprehensive_financial_statements.items():
+                try:
+                    year = int(year_str)
+                    if isinstance(year_data, dict):
+                        # Use cash_balance_change if available (net cash flow)
+                        if 'cash_balance_change' in year_data:
+                            net_cf = year_data['cash_balance_change']
+                        else:
+                            # Calculate from components
+                            inflow = year_data.get('cash_inflow_presales', 0) or 0
+                            outflows = sum([
+                                abs(year_data.get('cash_outflow_land', 0) or 0),
+                                abs(year_data.get('cash_outflow_construction', 0) or 0),
+                                abs(year_data.get('cash_outflow_interest', 0) or 0),
+                                abs(year_data.get('cash_outflow_sga', 0) or 0),
+                                abs(year_data.get('cash_outflow_tax', 0) or 0)
+                            ])
+                            net_cf = inflow - outflows
+                        
+                        if net_cf != 0:  # Only include non-zero cash flows
+                            cash_flows.append(net_cf / 1e9)  # Convert to billions for numerical stability
+                            years.append(year)
+                except (ValueError, TypeError):
+                    # Skip non-year entries like 'Total'
+                    continue
+            
+            # Need at least 2 cash flows to calculate IRR
+            if len(cash_flows) < 2:
+                return None
+            
+            # Sort by year to ensure correct order
+            sorted_data = sorted(zip(years, cash_flows))
+            cash_flows = [cf for _, cf in sorted_data]
+            
+            # IRR calculation using Newton's method
+            def npv(rate, cash_flows):
+                """Calculate NPV at given rate"""
+                return sum(cf / (1 + rate) ** i for i, cf in enumerate(cash_flows))
+            
+            def npv_derivative(rate, cash_flows):
+                """Calculate derivative of NPV for Newton's method"""
+                return sum(-i * cf / (1 + rate) ** (i + 1) for i, cf in enumerate(cash_flows))
+            
+            # Try different initial guesses for robustness
+            for initial_guess in [0.1, 0.15, 0.2, 0.05, 0.25, 0.3]:
+                try:
+                    irr = newton(
+                        lambda r: npv(r, cash_flows),
+                        initial_guess,
+                        fprime=lambda r: npv_derivative(r, cash_flows),
+                        maxiter=100,
+                        tol=1e-6
+                    )
+                    
+                    # Check if IRR is in reasonable range
+                    if -1 < irr < 10:  # Between -100% and 1000%
+                        return irr
+                        
+                except Exception:
+                    # Try next initial guess
+                    continue
+            
+            return None  # Could not converge
+            
+        except ImportError:
+            st.warning("⚠️ scipy not installed. IRR calculation unavailable. Run: pip install scipy")
+            return None
+        except Exception as e:
+            st.warning(f"⚠️ Could not calculate IRR: {str(e)}")
+            return None
+    
     def clear_project_input_cache(self):
         """Clear all cached input values when switching projects"""
         # List of keys to clear from session state
@@ -3105,6 +3195,40 @@ class ProjectPipelineRealEstateTab:
                         delta=f"{(rnav_value - old_rnav)/1e9:,.1f}B"
                     )
             
+            # Calculate and display IRR
+            st.markdown("---")  # Separator between RNAV and IRR
+            
+            # Calculate IRR from the balance sheet data (cash flows)
+            if 'comprehensive_financial_statements' in st.session_state.edited_project:
+                project_irr = self.calculate_project_irr(st.session_state.edited_project['comprehensive_financial_statements'])
+                
+                # Display IRR metrics
+                col3, col4 = st.columns(2)
+                with col3:
+                    if project_irr is not None:
+                        st.metric("Project IRR", f"{project_irr:.2%}")
+                        # Store the calculated IRR
+                        st.session_state.edited_project['project_irr'] = project_irr
+                        st.session_state['last_calculated_irr'] = project_irr
+                    else:
+                        st.metric("Project IRR", "N/A", help="IRR could not be calculated (insufficient cash flows or no convergence)")
+                
+                with col4:
+                    # Show previous IRR if available
+                    if 'project_irr' in project_data and project_data['project_irr'] is not None:
+                        old_irr = project_data['project_irr']
+                        if project_irr is not None:
+                            delta_irr = (project_irr - old_irr) * 100  # Convert to percentage points
+                            st.metric(
+                                "Previous IRR",
+                                f"{old_irr:.2%}",
+                                delta=f"{delta_irr:+.1f}pp"  # pp for percentage points
+                            )
+                        else:
+                            st.metric("Previous IRR", f"{old_irr:.2%}")
+                    elif project_irr is not None:
+                        st.info("No previous IRR to compare")
+            
             # Store RNAV in both places for consistency (ensure it's a float)
             rnav_value_float = float(rnav_value) if rnav_value else 0
             st.session_state.edited_project['rnav_value'] = rnav_value_float
@@ -3408,6 +3532,15 @@ class ProjectPipelineRealEstateTab:
                         # Store complete financial statements in project data
                         edited['comprehensive_financial_statements'] = balance_sheet_data
                         
+                        # Calculate IRR from the financial statements
+                        project_irr = self.calculate_project_irr(balance_sheet_data)
+                        if project_irr is not None:
+                            edited['project_irr'] = project_irr
+                            st.success(f"✅ Calculated IRR: {project_irr:.2%}")
+                        else:
+                            edited['project_irr'] = None
+                            st.info("ℹ️ IRR could not be calculated (insufficient cash flows or no convergence)")
+                        
                         # Debug: Show how many years of data we're saving
                         st.success(f"✅ Captured {len(balance_sheet_data)} years of financial statements data")
                         
@@ -3456,6 +3589,22 @@ class ProjectPipelineRealEstateTab:
                         st.info(f"✅ RNAV calculation details will be saved ({len(edited['rnav_calculation_details'])} rows)")
                     else:
                         st.info("ℹ️ RNAV calculation details not available yet")
+                    
+                    # Get IRR from session state or calculate if needed
+                    irr_to_save = st.session_state.get('last_calculated_irr', edited.get('project_irr', None))
+                    
+                    # If we have IRR from session state, use it
+                    if irr_to_save is not None:
+                        edited['project_irr'] = irr_to_save
+                        st.info(f"✅ IRR will be saved: {irr_to_save:.2%}")
+                    # Otherwise calculate IRR if we have financial statements
+                    elif 'comprehensive_financial_statements' in edited:
+                        project_irr = self.calculate_project_irr(edited['comprehensive_financial_statements'])
+                        if project_irr is not None:
+                            edited['project_irr'] = project_irr
+                            st.info(f"ℹ️ IRR calculated: {project_irr:.2%}")
+                    else:
+                        st.info("ℹ️ IRR not available (requires financial statements)")
                     
                     # Save to MongoDB
                     from utils.mongodb_utils import save_project_to_mongodb
