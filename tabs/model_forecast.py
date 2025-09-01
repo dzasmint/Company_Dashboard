@@ -450,26 +450,26 @@ class ModelForecastTab:
                         project_ownership = project.get('project_ownership', 1.0)
                         
                         # Calculate minority interest and PATMI based on ownership
-                        if project_ownership <= 1.0:
-                            # Calculate minority interest = PAT * (1 - ownership)
-                            minority_stake = 1 - project_ownership
-                            minority_interest_value = project_pat * minority_stake
-                            
-                            # Store minority interest breakdown
-                            if project_name not in project_minority_interest_breakdown:
-                                project_minority_interest_breakdown[project_name] = {}
-                            project_minority_interest_breakdown[project_name][year] = {
-                                'ownership': project_ownership,
-                                'minority_stake': minority_stake,
-                                'project_pat': project_pat,
-                                'minority_interest': minority_interest_value
-                            }
-                            
-                            # Calculate PATMI = PAT - Minority Interest
-                            project_patmi_value = project_pat - minority_interest_value
-                        else:
+                        #if project_ownership <= 1.0:
+                        # Calculate minority interest = PAT * (1 - ownership)
+                        minority_stake = 1 - project_ownership
+                        minority_interest_value = project_pat * minority_stake
+                        
+                        # Store minority interest breakdown
+                        if project_name not in project_minority_interest_breakdown:
+                            project_minority_interest_breakdown[project_name] = {}
+                        project_minority_interest_breakdown[project_name][year] = {
+                            'ownership': project_ownership,
+                            'minority_stake': minority_stake,
+                            'project_pat': project_pat,
+                            'minority_interest': minority_interest_value
+                        }
+                        
+                        # Calculate PATMI = PAT - Minority Interest
+                        project_patmi_value = project_pat - minority_interest_value
+                        #else:
                             # 100% ownership - no minority interest
-                            project_patmi_value = project_pat
+                        #    project_patmi_value = project_pat
                         
                         # Store PATMI
                         project_patmi_breakdown[project_name][year] = project_patmi_value
