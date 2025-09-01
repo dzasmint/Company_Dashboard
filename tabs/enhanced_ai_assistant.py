@@ -3666,7 +3666,7 @@ Return a JSON response with:
 
         try:
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.3,
@@ -3800,7 +3800,7 @@ Include a "confidence" field (high/medium/low) based on data quality."""
 
         try:
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.2,
@@ -4517,7 +4517,7 @@ CRITICAL TOOL SELECTION RULES:
             # Call OpenAI
             try:
                 response = st.session_state.openai_client.chat.completions.create(
-                    model=os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview"),
+                    model=os.getenv("OPENAI_MODEL", "gpt-4.1"),
                     messages=messages,
                     tools=tools,
                     tool_choice="auto",
