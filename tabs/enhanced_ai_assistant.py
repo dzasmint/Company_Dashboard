@@ -82,7 +82,7 @@ import plotly.express as px
 
 # Import chart utilities (if available)
 try:
-    from .chart_utils import create_plotly_chart
+    from utils.chart_utils import create_plotly_chart
     CHART_UTILS_AVAILABLE = True
 except ImportError:
     CHART_UTILS_AVAILABLE = False
@@ -4386,14 +4386,6 @@ def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
     Send message to OpenAI and handle tool calls with compressed memory
     Similar to Bank_Sample/7_DucGPT_Chatbot.py implementation
     """
-    # Import chart utilities if not already imported
-    global create_plotly_chart
-    if not CHART_UTILS_AVAILABLE:
-        try:
-            from utils.chart_utils import create_plotly_chart
-        except ImportError:
-            create_plotly_chart = None
-    
     # Initialize session state for memory
     if 'compressed_conversation_history' not in st.session_state:
         st.session_state.compressed_conversation_history = []
