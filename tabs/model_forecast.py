@@ -7,6 +7,12 @@ from datetime import datetime, timedelta
 import json
 import os
 from utils.mongodb_utils import load_assumptions_from_mongodb
+from utils.model_forecast_project_breakdown_utils import (
+    render_revenue_forecast_tab,
+    render_cogs_forecast_tab,
+    render_gross_profit_tab,
+    render_pbt_tab
+)
 
 
 class ModelForecastTab:
@@ -594,361 +600,49 @@ class ModelForecastTab:
             ])
             
             with tab_revenue:
-                # Section 2: Total Revenue Forecast
-                st.subheader("Revenue Forecast")
-        
-                # Create revenue table with rows as revenue sources and columns as years
-                revenue_rows = []
-        
-                # Add individual project revenues
-                for project_name in project_revenue_breakdown.keys():
-                    row_data = {'Revenue Source': f"{project_name}"}
-                    row_data[hist_col] = 0  # No historical breakdown by project
-                    for year in years:
-                        row_data[str(year)] = project_revenue_breakdown[project_name].get(year, 0)
-                    revenue_rows.append(row_data)
-        
-                # Add separator row for projects total
-                if revenue_rows:
-                    total_projects_row = {'Revenue Source': 'Subtotal: Projects'}
-                    total_projects_row[hist_col] = 0  # No historical breakdown
-                    for year in years:
-                        total_projects_row[str(year)] = project_revenue_by_year[year]
-                    revenue_rows.append(total_projects_row)
-        
-                # Add other revenue streams
-                for segment_name in st.session_state.base_year_revenues.keys():
-                    row_data = {'Revenue Source': f"{segment_name}"}
-                    # Base year revenue goes in the historical column
-                    row_data[hist_col] = st.session_state.base_year_revenues[segment_name]
-                    base_revenue = st.session_state.base_year_revenues[segment_name]
-                
-                    # Get growth rate from segment_metrics
-                    if segment_name in segment_metrics:
-                        growth_rate = segment_metrics[segment_name]['revenue_growth']
-                    else:
-                        growth_rate = 0.0  # Default 0%
-                
-                    # Apply growth for forecast years
-                    for year in years:
-                        # Base year is the latest historical year, apply growth from there
-                        years_from_base = year - base_year
-                        row_data[str(year)] = base_revenue * ((1 + growth_rate) ** years_from_base)
-                    revenue_rows.append(row_data)
-        
-                # Add total row
-                total_row = {'Revenue Source': 'TOTAL REVENUE'}
-                total_row[hist_col] = hist_values.get('Net Revenue', 0)  # Historical Net Revenue
-                for year in years:
-                    total_revenue = project_revenue_by_year[year]
-                    for segment_name in st.session_state.base_year_revenues.keys():
-                        base_revenue = st.session_state.base_year_revenues[segment_name]
-                        if segment_name in segment_metrics:
-                            growth_rate = segment_metrics[segment_name]['revenue_growth']
-                        else:
-                            growth_rate = 0.0
-                    
-                        # Base year is the latest historical year, apply growth from there
-                        years_from_base = year - base_year
-                        total_revenue += base_revenue * ((1 + growth_rate) ** years_from_base)
-                    total_row[str(year)] = total_revenue
-                revenue_rows.append(total_row)
-        
-                # Create DataFrame
-                revenue_df = pd.DataFrame(revenue_rows)
-            
-                # Style the dataframe - highlight subtotal and total rows
-                def highlight_special_rows(row):
-                    if 'TOTAL' in str(row['Revenue Source']) or 'Subtotal' in str(row['Revenue Source']):
-                        return ['font-weight: bold'] * len(row)
-                    return [''] * len(row)
-            
-                st.write("**Revenue by Source (Billion VND)**")
-            
-                # Define column configuration for consistent width
-                column_config = {
-                    'Revenue Source': st.column_config.TextColumn('Revenue Source', width='medium'),
-                }
-                for col in [hist_col] + [str(y) for y in years]:
-                    column_config[col] = st.column_config.NumberColumn(col, width='small')
-            
-                st.dataframe(
-                    revenue_df.style
-                    .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
-                    .apply(highlight_special_rows, axis=1),
-                    use_container_width=True,
-                    column_config=column_config,
-                    hide_index=True
+                revenue_df = render_revenue_forecast_tab(
+                    project_revenue_breakdown,
+                    project_revenue_by_year,
+                    hist_col,
+                    years,
+                    base_year,
+                    segment_metrics,
+                    hist_values
                 )
         
             with tab_cogs:
-                # Section 3: COGS Table
-                st.subheader("Cost of Goods Sold (COGS)")
-        
-                # Create COGS table with rows as cost sources and columns as years
-                cogs_rows = []
-        
-                # Add individual project COGS
-                for project_name in project_cogs_breakdown.keys():
-                    row_data = {'COGS Source': f"{project_name}"}
-                    row_data[hist_col] = 0  # No historical breakdown by project
-                    for year in years:
-                        row_data[str(year)] = project_cogs_breakdown[project_name].get(year, 0)
-                    cogs_rows.append(row_data)
-        
-                # Add separator row for projects total
-                if cogs_rows:
-                    total_projects_row = {'COGS Source': 'Subtotal: Project COGS'}
-                    total_projects_row[hist_col] = 0  # No historical breakdown
-                    for year in years:
-                        total_projects_row[str(year)] = project_cogs_by_year[year]
-                    cogs_rows.append(total_projects_row)
-        
-                # Add COGS for other revenue streams
-                for segment_name in st.session_state.base_year_revenues.keys():
-                    row_data = {'COGS Source': f"{segment_name} COGS"}
-                    base_revenue = st.session_state.base_year_revenues[segment_name]
-                
-                    # Get metrics from segment_metrics
-                    if segment_name in segment_metrics:
-                        growth_rate = segment_metrics[segment_name]['revenue_growth']
-                        gross_margin = segment_metrics[segment_name]['gross_margin']
-                    else:
-                        growth_rate = 0.0  # Default 0%
-                        gross_margin = 0.0  # Default 0%
-                
-                    # Base year COGS in historical column (negative)
-                    row_data[hist_col] = -base_revenue * (1 - gross_margin)
-                
-                    # Calculate COGS for forecast years (negative)
-                    for year in years:
-                        # Base year is the latest historical year, apply growth from there
-                        years_from_base = year - base_year
-                        year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
-                    
-                        row_data[str(year)] = -year_revenue * (1 - gross_margin)
-                    cogs_rows.append(row_data)
-        
-                # Add total row
-                total_row = {'COGS Source': 'TOTAL COGS'}
-                total_row[hist_col] = -abs(hist_values.get('COGS', 0))  # Historical COGS as negative
-                for year in years:
-                    total_cogs = project_cogs_by_year[year]  # Already negative from projects
-                    for segment_name in st.session_state.base_year_revenues.keys():
-                        base_revenue = st.session_state.base_year_revenues[segment_name]
-                    
-                        if segment_name in segment_metrics:
-                            growth_rate = segment_metrics[segment_name]['revenue_growth']
-                            gross_margin = segment_metrics[segment_name]['gross_margin']
-                        else:
-                            growth_rate = 0.0
-                            gross_margin = 0.0
-                    
-                        # Base year is the latest historical year, apply growth from there
-                        years_from_base = year - base_year
-                        year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
-                    
-                        # Add negative COGS for other segments
-                        total_cogs -= year_revenue * (1 - gross_margin)
-                    total_row[str(year)] = total_cogs
-                cogs_rows.append(total_row)
-        
-                # Create DataFrame
-                cogs_df = pd.DataFrame(cogs_rows)
-            
-                # Style the dataframe - highlight subtotal and total rows
-                def highlight_special_rows_cogs(row):
-                    if 'TOTAL' in str(row['COGS Source']) or 'Subtotal' in str(row['COGS Source']):
-                        return ['font-weight: bold'] * len(row)
-                    return [''] * len(row)
-            
-                st.write("**COGS by Source (Billion VND)**")
-            
-                # Define column configuration for consistent width
-                cogs_column_config = {
-                    'COGS Source': st.column_config.TextColumn('COGS Source', width='medium'),
-                }
-                for col in [hist_col] + [str(y) for y in years]:
-                    cogs_column_config[col] = st.column_config.NumberColumn(col, width='small')
-            
-                st.dataframe(
-                    cogs_df.style
-                    .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
-                    .apply(highlight_special_rows_cogs, axis=1),
-                    use_container_width=True,
-                    column_config=cogs_column_config,
-                    hide_index=True
+                cogs_df = render_cogs_forecast_tab(
+                    project_cogs_breakdown,
+                    project_cogs_by_year,
+                    hist_col,
+                    years,
+                    base_year,
+                    segment_metrics,
+                    hist_values
                 )
         
             with tab_gp:
-                # Section 4: Gross Profit
-                st.subheader("Gross Profit Analysis")
-        
-                # Get total revenue and COGS from the last row of each DataFrame
-                total_revenue_row = revenue_df[revenue_df['Revenue Source'] == 'TOTAL REVENUE'].iloc[0]
-                total_cogs_row = cogs_df[cogs_df['COGS Source'] == 'TOTAL COGS'].iloc[0]
-        
-                # Create gross profit breakdown by segment (rows = segments, columns = years)
-                gross_profit_rows = []
-        
-                # Add individual project gross profit
-                projects_gp_total_by_year = {year: 0 for year in years}
-                for project_name in project_revenue_breakdown.keys():
-                    gp_row = {'Gross Profit Source': f"{project_name}"}
-                    gp_row[hist_col] = 0  # No historical breakdown by project
-                    for year in years:
-                        year_str = str(year)
-                        project_revenue = project_revenue_breakdown[project_name].get(year, 0)
-                        project_cogs = project_cogs_breakdown[project_name].get(year, 0)  # Already negative
-                        project_gp = project_revenue + project_cogs  # Add negative COGS to revenue
-                        gp_row[year_str] = project_gp
-                        projects_gp_total_by_year[year] += project_gp
-                    gross_profit_rows.append(gp_row)
-        
-                # Add subtotal for projects
-                if gross_profit_rows:
-                    projects_subtotal_row = {'Gross Profit Source': 'Subtotal: Projects'}
-                    projects_subtotal_row[hist_col] = 0  # No historical breakdown
-                    for year in years:
-                        year_str = str(year)
-                        projects_subtotal_row[year_str] = projects_gp_total_by_year[year]
-                    gross_profit_rows.append(projects_subtotal_row)
-        
-                # Calculate gross profit for each other segment
-                for segment_name in st.session_state.base_year_revenues.keys():
-                    gp_row = {'Gross Profit Source': f"{segment_name}"}
-                    gp_row[hist_col] = 0  # No historical breakdown
-                    base_revenue = st.session_state.base_year_revenues[segment_name]
-                
-                    # Get metrics from segment_metrics
-                    if segment_name in segment_metrics:
-                        growth_rate = segment_metrics[segment_name]['revenue_growth']
-                        gross_margin = segment_metrics[segment_name]['gross_margin']
-                    else:
-                        growth_rate = 0.0  # Default 0%
-                        gross_margin = 0.0  # Default 0%
-                
-                    for year in years:
-                        year_str = str(year)
-                        # Base year is the latest historical year, apply growth from there
-                        years_from_base = year - base_year
-                        year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
-                    
-                        year_cogs = year_revenue * (1 - gross_margin)
-                        gp_row[year_str] = year_revenue - year_cogs
-                    gross_profit_rows.append(gp_row)
-        
-                # Add total gross profit row
-                total_gp_row = {'Gross Profit Source': 'TOTAL GROSS PROFIT'}
-                total_gp_row[hist_col] = hist_values.get('Gross profit', 0)  # Historical Gross Profit
-                for year in years:
-                    year_str = str(year)
-                    revenue = total_revenue_row[year_str]
-                    cogs = total_cogs_row[year_str]  # Already negative
-                    total_gp_row[year_str] = revenue + cogs  # Add negative COGS to revenue
-                gross_profit_rows.append(total_gp_row)
-        
-                # Create DataFrame for gross profit
-                gross_profit_df = pd.DataFrame(gross_profit_rows)
-            
-                # Style function to highlight subtotal and total rows
-                def highlight_special_gp_rows(row):
-                    if 'TOTAL' in str(row['Gross Profit Source']) or 'Subtotal' in str(row['Gross Profit Source']):
-                        return ['font-weight: bold'] * len(row)
-                    return [''] * len(row)
-            
-                st.write("**Gross Profit Summary by Segment (Billion VND)**")
-            
-                # Define column configuration for consistent width
-                gp_column_config = {
-                    'Gross Profit Source': st.column_config.TextColumn('Gross Profit Source', width='medium'),
-                }
-                for col in [hist_col] + [str(y) for y in years]:
-                    gp_column_config[col] = st.column_config.NumberColumn(col, width='small')
-            
-                st.dataframe(
-                    gross_profit_df.style
-                    .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
-                    .apply(highlight_special_gp_rows, axis=1),
-                    use_container_width=True,
-                    column_config=gp_column_config,
-                    hide_index=True
+                gross_profit_df, margin_df, projects_gp_total_by_year = render_gross_profit_tab(
+                    project_revenue_breakdown,
+                    project_cogs_breakdown,
+                    project_revenue_by_year,
+                    revenue_df,
+                    cogs_df,
+                    hist_col,
+                    years,
+                    base_year,
+                    segment_metrics,
+                    hist_values
                 )
         
-                # Create Gross Profit Margin table
-                margin_rows = []
-        
-                # Calculate margin for Projects (using subtotal)
-                projects_margin_row = {'Segment': 'Projects'}
-                projects_margin_row['2024H'] = 0  # Will calculate if historical data exists
-                for year in years:
-                    year_str = str(year)
-                    projects_revenue = project_revenue_by_year[year]
-                    if projects_revenue > 0:
-                        # Use Subtotal: Projects row for gross profit
-                        subtotal_row = gross_profit_df[gross_profit_df['Gross Profit Source'] == 'Subtotal: Projects']
-                        if not subtotal_row.empty:
-                            projects_gp = subtotal_row.iloc[0][year_str]
-                        else:
-                            # Fallback: sum individual projects
-                            projects_gp = projects_gp_total_by_year[year]
-                        projects_margin_row[year_str] = (projects_gp / projects_revenue) * 100
-                    else:
-                        projects_margin_row[year_str] = 0
-                margin_rows.append(projects_margin_row)
-        
-                # Calculate margin for each other segment
-                for segment_name in st.session_state.base_year_revenues.keys():
-                    margin_row = {'Segment': segment_name}
-                    margin_row['2024H'] = 0  # Will calculate if historical data exists
-                
-                    # Get gross margin from segment_metrics
-                    if segment_name in segment_metrics:
-                        gross_margin = segment_metrics[segment_name]['gross_margin'] * 100
-                    else:
-                        gross_margin = 0.0  # Default 0%
-                
-                    for year in years:
-                        year_str = str(year)
-                        margin_row[year_str] = gross_margin
-                    margin_rows.append(margin_row)
-        
-                # Add overall margin row
-                overall_margin_row = {'Segment': 'OVERALL MARGIN'}
-                # Calculate historical margin if data exists
-                if hist_values.get('Net Revenue', 0) > 0 and hist_values.get('Gross profit', 0) > 0:
-                    overall_margin_row['2024H'] = (hist_values['Gross profit'] / hist_values['Net Revenue']) * 100
-                else:
-                    overall_margin_row['2024H'] = 0
-                for year in years:
-                    year_str = str(year)
-                    revenue = total_revenue_row[year_str]
-                    if revenue > 0:
-                        gross_profit = total_gp_row[year_str]
-                        overall_margin_row[year_str] = (gross_profit / revenue) * 100
-                    else:
-                        overall_margin_row[year_str] = 0
-                margin_rows.append(overall_margin_row)
-        
-                # Create DataFrame for margins
-                margin_df = pd.DataFrame(margin_rows)
-            
-                st.write("**Gross Profit Margin by Segment (%)**")
-            
-                # Define column configuration for consistent width
-                margin_column_config = {
-                    'Segment': st.column_config.TextColumn('Segment', width='medium'),
-                }
-                for col in [hist_col] + [str(y) for y in years]:
-                    margin_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f%%')
-            
-                st.dataframe(
-                    margin_df.style
-                    .format("{:.1f}%", subset=[hist_col] + [str(y) for y in years])
-                    .apply(lambda row: ['font-weight: bold'] * len(row) if 'OVERALL' in str(row['Segment']) else [''] * len(row), axis=1),
-                    use_container_width=True,
-                    column_config=margin_column_config,
-                    hide_index=True
+            # Display PBT Breakdown in the PBT tab
+            with tab_pbt:
+                project_pbt_breakdown, project_pbt_total_by_year = render_pbt_tab(
+                    df_projects,
+                    project_revenue_breakdown,
+                    project_revenue_by_year,
+                    hist_col,
+                    years
                 )
         
             # Initialize SG&A data for later use in comprehensive P&L
@@ -1724,166 +1418,6 @@ class ModelForecastTab:
                 column_config=pnl_column_config,
                 hide_index=True
             )
-        
-            # Display PBT Breakdown in the PBT tab
-            with tab_pbt:
-                st.subheader("Profit Before Tax Analysis")
-                
-                # Create PBT breakdown table (rows = projects + other business, columns = years)
-                pbt_breakdown_rows = []
-                
-                # Calculate PBT for each project
-                project_pbt_total_by_year = {year: 0 for year in years}
-                for project_name in project_revenue_breakdown.keys():
-                    pbt_project_row = {'PBT Source': f"{project_name}"}
-                    pbt_project_row[hist_col] = 0  # No historical breakdown by project
-                    
-                    for year in years:
-                        year_str = str(year)
-                        
-                        # Calculate project PBT = Revenue - COGS - SG&A - Interest
-                        project_revenue = project_revenue_breakdown[project_name].get(year, 0)
-                        project_cogs = project_cogs_breakdown[project_name].get(year, 0)  # Already negative
-                        project_sga = project_sga_breakdown[project_name].get(year, 0)  # Already negative
-                        project_interest = project_interest_breakdown[project_name].get(year, 0)  # Already negative
-                        
-                        # All expenses are already negative, so we just add them
-                        project_pbt = project_revenue + project_cogs + project_sga + project_interest
-                        
-                        pbt_project_row[year_str] = project_pbt
-                        project_pbt_total_by_year[year] += project_pbt
-                    
-                    pbt_breakdown_rows.append(pbt_project_row)
-                
-                # Add subtotal for projects
-                if pbt_breakdown_rows:
-                    projects_pbt_subtotal = {'PBT Source': 'Subtotal: Projects PBT'}
-                    projects_pbt_subtotal[hist_col] = 0
-                    for year in years:
-                        year_str = str(year)
-                        projects_pbt_subtotal[year_str] = project_pbt_total_by_year[year]
-                    pbt_breakdown_rows.append(projects_pbt_subtotal)
-                
-                # Calculate PBT from other business
-                # PBT from other = Total PBT - Projects PBT
-                other_pbt_row = {'PBT Source': 'PBT from Other Business'}
-                other_pbt_row[hist_col] = pbt_row[hist_col]  # Use historical total PBT
-                for year in years:
-                    year_str = str(year)
-                    total_pbt = pbt_row[year_str]
-                    projects_pbt = project_pbt_total_by_year[year]
-                    other_pbt_row[year_str] = total_pbt - projects_pbt
-                pbt_breakdown_rows.append(other_pbt_row)
-                
-                # Add total PBT row
-                total_pbt_breakdown_row = {'PBT Source': 'TOTAL PBT'}
-                total_pbt_breakdown_row[hist_col] = pbt_row[hist_col]
-                for year in years:
-                    year_str = str(year)
-                    total_pbt_breakdown_row[year_str] = pbt_row[year_str]
-                pbt_breakdown_rows.append(total_pbt_breakdown_row)
-                
-                # Create DataFrame for PBT breakdown
-                pbt_breakdown_df = pd.DataFrame(pbt_breakdown_rows)
-                
-                # Style function to highlight special rows
-                def highlight_pbt_rows(row):
-                    if 'TOTAL' in str(row['PBT Source']) or 'Subtotal' in str(row['PBT Source']):
-                        return ['font-weight: bold'] * len(row)
-                    return [''] * len(row)
-                
-                st.write("**Profit Before Tax Breakdown (Billion VND)**")
-                
-                # Define column configuration for consistent width
-                pbt_column_config = {
-                    'PBT Source': st.column_config.TextColumn('PBT Source', width='medium'),
-                }
-                for col in [hist_col] + [str(y) for y in years]:
-                    pbt_column_config[col] = st.column_config.NumberColumn(col, width='small')
-                
-                st.dataframe(
-                    pbt_breakdown_df.style
-                    .format("{:,.0f}", subset=[hist_col] + [str(y) for y in years])
-                    .apply(highlight_pbt_rows, axis=1),
-                    use_container_width=True,
-                    column_config=pbt_column_config,
-                    hide_index=True
-                )
-                
-                # Create PBT margin table
-                st.write("**PBT Margin Analysis (%)**")
-                pbt_margin_rows = []
-                
-                # Calculate margin for Projects
-                projects_margin_row = {'Segment': 'Projects'}
-                projects_margin_row[hist_col] = 0
-                for year in years:
-                    year_str = str(year)
-                    projects_revenue = project_revenue_by_year[year]
-                    if projects_revenue > 0:
-                        projects_pbt = project_pbt_total_by_year[year]
-                        projects_margin_row[year_str] = (projects_pbt / projects_revenue) * 100
-                    else:
-                        projects_margin_row[year_str] = 0
-                pbt_margin_rows.append(projects_margin_row)
-                
-                # Calculate margin for Other Business
-                other_margin_row = {'Segment': 'Other Business'}
-                other_margin_row[hist_col] = 0
-                for year in years:
-                    year_str = str(year)
-                    # Calculate other business revenue
-                    other_revenue = 0
-                    for segment_name in st.session_state.base_year_revenues.keys():
-                        base_revenue = st.session_state.base_year_revenues[segment_name]
-                        if segment_name in segment_metrics:
-                            growth_rate = segment_metrics[segment_name]['revenue_growth']
-                        else:
-                            growth_rate = 0.0
-                        years_from_base = year - base_year
-                        other_revenue += base_revenue * ((1 + growth_rate) ** years_from_base)
-                    
-                    if other_revenue > 0:
-                        other_pbt = other_pbt_row[year_str]
-                        other_margin_row[year_str] = (other_pbt / other_revenue) * 100
-                    else:
-                        other_margin_row[year_str] = 0
-                pbt_margin_rows.append(other_margin_row)
-                
-                # Calculate overall PBT margin
-                overall_margin_row = {'Segment': 'Overall'}
-                if hist_values.get('Net Revenue', 0) > 0:
-                    overall_margin_row[hist_col] = (pbt_row[hist_col] / hist_values['Net Revenue']) * 100
-                else:
-                    overall_margin_row[hist_col] = 0
-                for year in years:
-                    year_str = str(year)
-                    total_revenue = total_revenue_row[year_str]
-                    if total_revenue > 0:
-                        total_pbt = pbt_row[year_str]
-                        overall_margin_row[year_str] = (total_pbt / total_revenue) * 100
-                    else:
-                        overall_margin_row[year_str] = 0
-                pbt_margin_rows.append(overall_margin_row)
-                
-                # Create DataFrame for PBT margins
-                pbt_margin_df = pd.DataFrame(pbt_margin_rows)
-                
-                # Define column configuration for margins
-                margin_column_config = {
-                    'Segment': st.column_config.TextColumn('Segment', width='medium'),
-                }
-                for col in [hist_col] + [str(y) for y in years]:
-                    margin_column_config[col] = st.column_config.NumberColumn(col, width='small', format='%.1f%%')
-                
-                st.dataframe(
-                    pbt_margin_df.style
-                    .format("{:.1f}", subset=[hist_col] + [str(y) for y in years])
-                    .apply(lambda row: ['font-weight: bold'] * len(row) if row['Segment'] == 'Overall' else [''] * len(row), axis=1),
-                    use_container_width=True,
-                    column_config=margin_column_config,
-                    hide_index=True
-                )
         
             # Display Profit After Tax Breakdown in the PAT tab
             with tab_pat:
