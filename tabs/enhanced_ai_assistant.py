@@ -3541,6 +3541,281 @@ Be concise and data-driven."""
                 
             except Exception as e:
                 return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
+            name="get_latest_market_info",
+            description="Get latest market information from the internet using intelligent search",
+            parameters={
+                "query": {
+                    "type": "string",
+                    "description": "Natural language query about market information (e.g., 'How many units left in Vinhomes Grand Park?', 'What is the latest consensus forecast for VHM?')",
+                    "required": True
+                },
+                "ticker": {
+                    "type": "string", 
+                    "description": "Company ticker if applicable",
+                    "required": False
+                },
+                "project_name": {
+                    "type": "string",
+                    "description": "Real estate project name if applicable",
+                    "required": False
+                },
+                "query_type": {
+                    "type": "string",
+                    "enum": ["project_update", "consensus_forecast", "market_news", "price_check", "general"],
+                    "description": "Type of query to optimize search",
+                    "required": False
+                }
+            }
+        )
+        def get_latest_market_info(query: str, ticker: str = None, project_name: str = None, query_type: str = "general") -> Dict:
+            """Get latest market information using ChatGPT to build queries and Perplexity to search"""
+            
+            # Check API keys
+            openai_key = os.getenv('OPENAI_API_KEY')
+            perplexity_key = os.getenv('PERPLEXITY_API_KEY')
+            
+            if not openai_key:
+                return {"error": "OpenAI API key not configured", "status": "failed"}
+            if not perplexity_key:
+                return {"error": "Perplexity API key not configured", "status": "failed"}
+            
+            try:
+                # Initialize OpenAI client
+                openai_client = OpenAI(api_key=openai_key)
+                
+                # Step 1: Use ChatGPT to build optimized search query
+                search_query = self._build_search_query_with_chatgpt(
+                    openai_client, query, ticker, project_name, query_type
+                )
+                
+                if search_query.get("status") != "success":
+                    return search_query
+                
+                # Step 2: Execute search with Perplexity
+                search_results = self._search_with_perplexity(
+                    perplexity_key, search_query["search_query"], search_query["search_context"]
+                )
+                
+                if search_results.get("status") != "success":
+                    return search_results
+                
+                # Step 3: Use ChatGPT to parse and structure the results
+                structured_results = self._parse_results_with_chatgpt(
+                    openai_client, query, search_results["content"], query_type
+                )
+                
+                return {
+                    "query": query,
+                    "ticker": ticker,
+                    "project_name": project_name,
+                    "query_type": query_type,
+                    "search_query_used": search_query["search_query"],
+                    "raw_results": search_results["content"],
+                    "structured_results": structured_results,
+                    "sources": search_results.get("sources", []),
+                    "timestamp": datetime.now().isoformat(),
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": f"Failed to get market information: {str(e)}", "status": "failed"}
+    
+    def _build_search_query_with_chatgpt(self, openai_client, user_query: str, ticker: str = None, 
+                                        project_name: str = None, query_type: str = "general") -> Dict:
+        """Use ChatGPT to build an optimized search query for Perplexity"""
+        
+        prompt = f"""You are a search query optimizer for Vietnamese financial and real estate markets.
+Convert the user's natural language query into an optimized search query for web search.
+
+User Query: {user_query}
+Query Type: {query_type}
+{"Ticker: " + ticker if ticker else ""}
+{"Project Name: " + project_name if project_name else ""}
+
+Based on the query type, create an optimized search query:
+
+1. For project_update queries:
+   - Include project name, developer, location
+   - Add keywords: "units sold", "remaining inventory", "price list", "latest update"
+   - Include Vietnamese real estate sites: batdongsan.com.vn
+
+2. For consensus_forecast queries:
+   - Include ticker and company name
+   - Add keywords: "analyst consensus", "target price", "earnings forecast", "SSI", "HSC", "VCSC"
+   - Focus on recent reports (2024, 2025)
+
+3. For market_news queries:
+   - Include relevant market terms
+   - Add "Vietnam", "latest news", current year
+   - Include major Vietnamese news sources
+
+4. For price_check queries:
+   - Include specific product/project name
+   - Add "current price", "price per sqm", "VND"
+   - Include comparison terms if relevant
+
+Return a JSON response with:
+{{
+    "search_query": "the optimized search query string",
+    "search_context": "brief context about what to look for",
+    "search_tips": ["tip1", "tip2"],
+    "expected_sources": ["source1", "source2"]
+}}"""
+
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+                max_tokens=500
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            result["status"] = "success"
+            return result
+            
+        except Exception as e:
+            return {"error": f"Failed to build search query: {str(e)}", "status": "failed"}
+    
+    def _search_with_perplexity(self, api_key: str, search_query: str, search_context: str) -> Dict:
+        """Execute search using Perplexity API"""
+        
+        import requests
+        
+        url = "https://api.perplexity.ai/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Build the search prompt
+        system_prompt = """You are a financial and real estate market researcher specializing in Vietnam.
+Provide accurate, up-to-date information from reliable sources.
+Focus on specific numbers, dates, and facts.
+Always cite your sources."""
+
+        user_prompt = f"""Search for: {search_query}
+
+Context: {search_context}
+
+Provide:
+1. Specific facts and figures found
+2. Dates and timeline information
+3. Source credibility assessment
+4. Any conflicting information from different sources
+
+Focus on the most recent and reliable information available."""
+
+        payload = {
+            "model": "sonar-pro",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "max_tokens": 2000,
+            "temperature": 0.2,
+            "stream": False
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "choices" in data and len(data["choices"]) > 0:
+                content = data["choices"][0]["message"]["content"]
+                
+                # Try to extract sources from the content
+                sources = []
+                if "source" in content.lower():
+                    # Simple extraction of URLs or source mentions
+                    import re
+                    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]*'
+                    urls = re.findall(url_pattern, content)
+                    sources.extend(urls)
+                
+                return {
+                    "content": content,
+                    "sources": sources,
+                    "status": "success"
+                }
+            else:
+                return {"error": "Unexpected Perplexity API response", "status": "failed"}
+                
+        except Exception as e:
+            return {"error": f"Perplexity search failed: {str(e)}", "status": "failed"}
+    
+    def _parse_results_with_chatgpt(self, openai_client, original_query: str, 
+                                   search_results: str, query_type: str) -> Dict:
+        """Use ChatGPT to parse and structure the search results"""
+        
+        # Build parsing prompt based on query type
+        if query_type == "project_update":
+            parse_prompt = """Extract the following information:
+- Total units in project
+- Units sold to date
+- Units remaining
+- Current average price per sqm
+- Recent price changes
+- Sales momentum (fast/moderate/slow)
+- Latest update date"""
+        
+        elif query_type == "consensus_forecast":
+            parse_prompt = """Extract the following information:
+- Revenue forecasts (next 3 years)
+- EPS forecasts
+- Target prices from different brokers
+- Buy/Hold/Sell recommendations count
+- Recent rating changes
+- Key assumptions
+- Risk factors mentioned"""
+        
+        elif query_type == "price_check":
+            parse_prompt = """Extract the following information:
+- Current price or price range
+- Price per unit (sqm, unit, etc.)
+- Recent price changes
+- Comparison with similar products
+- Factors affecting price
+- Last updated date"""
+        
+        else:
+            parse_prompt = """Extract key information relevant to the query."""
+        
+        prompt = f"""Parse the following search results to answer the user's query.
+
+Original Query: {original_query}
+
+Search Results:
+{search_results}
+
+{parse_prompt}
+
+Return a JSON response with the extracted information. Use null for any information not found.
+Include a "summary" field with a brief answer to the original query.
+Include a "confidence" field (high/medium/low) based on data quality."""
+
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+                max_tokens=1000
+            )
+            
+            return json.loads(response.choices[0].message.content)
+            
+        except Exception as e:
+            # Fallback to simple text summary
+            return {
+                "summary": search_results[:500],
+                "error": f"Failed to parse results: {str(e)}",
+                "raw_content": search_results
+            }
     
     def execute_tool(self, tool_name: str, arguments: Dict = None) -> Dict:
         """Execute a tool by name"""
