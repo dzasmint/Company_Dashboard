@@ -2709,7 +2709,32 @@ class ModelForecastTab:
                 sga_rows=sga_rows,
                 interest_income_by_year=interest_income_by_year
             )
-        
+
+            # Create consolidated cash flow rows using the utility function
+            consol_cf_rows, other_sga_cf_row = create_consolidated_cashflow_rows(
+                years=years,
+                hist_col=hist_col,
+                hist_operating_cf=hist_operating_cf_detail,
+                hist_investing_cf=hist_investing_cf_detail,
+                hist_financing_cf=hist_financing_cf_detail,
+                operating_cf_by_year=operating_cf_by_year,
+                investing_cf_by_year=investing_cf_by_year,
+                financing_cf_by_year=financing_cf_by_year,
+                net_cf_by_year=net_cf_by_year,
+                presales_cf_breakdown=presales_cf_breakdown,
+                interest_outflow_breakdown=interest_outflow_breakdown,
+                sga_outflow_breakdown=sga_outflow_breakdown,
+                land_outflow_breakdown=land_outflow_breakdown,
+                construction_outflow_breakdown=construction_outflow_breakdown,
+                other_segment_revenue_cf=other_segment_revenue_cf,
+                other_segment_cogs_cf=other_segment_cogs_cf,
+                existing_debt_interest_row=existing_debt_interest_row,
+                sga_rows=sga_rows,
+                tax_row=tax_row,
+                interest_income_by_year=interest_income_by_year,
+                df_projects=df_projects
+            )
+            
             # Create tabs for cash flow statements
             tab_detail_cf, tab_consolidated_cf = st.tabs([
                 "Detail Project Breakdown",
@@ -2721,31 +2746,6 @@ class ModelForecastTab:
                 render_detail_cf_tab(cf_rows, hist_col, years)
             
             with tab_consolidated_cf:
-                # Create consolidated cash flow rows using the utility function
-                consol_cf_rows, other_sga_cf_row = create_consolidated_cashflow_rows(
-                    years=years,
-                    hist_col=hist_col,
-                    hist_operating_cf=hist_operating_cf_detail,
-                    hist_investing_cf=hist_investing_cf_detail,
-                    hist_financing_cf=hist_financing_cf_detail,
-                    operating_cf_by_year=operating_cf_by_year,
-                    investing_cf_by_year=investing_cf_by_year,
-                    financing_cf_by_year=financing_cf_by_year,
-                    net_cf_by_year=net_cf_by_year,
-                    presales_cf_breakdown=presales_cf_breakdown,
-                    interest_outflow_breakdown=interest_outflow_breakdown,
-                    sga_outflow_breakdown=sga_outflow_breakdown,
-                    land_outflow_breakdown=land_outflow_breakdown,
-                    construction_outflow_breakdown=construction_outflow_breakdown,
-                    other_segment_revenue_cf=other_segment_revenue_cf,
-                    other_segment_cogs_cf=other_segment_cogs_cf,
-                    existing_debt_interest_row=existing_debt_interest_row,
-                    sga_rows=sga_rows,
-                    tax_row=tax_row,
-                    interest_income_by_year=interest_income_by_year,
-                    df_projects=df_projects
-                )
-                
                 # Render the consolidated cash flow tab using the utility function
                 render_consolidated_cf_tab(consol_cf_rows, hist_col, years)
             
