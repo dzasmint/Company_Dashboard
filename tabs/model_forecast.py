@@ -15,7 +15,8 @@ from utils.model_forecast_project_breakdown_utils import (
     render_pbt_tab,
     render_pat_tab,
     render_patmi_tab,
-    render_minority_interest_tab
+    render_minority_interest_tab,
+    load_project_financial_data
 )
 from utils.model_forecast_cashflow_utils import (
     create_detail_cashflow_rows,
@@ -363,184 +364,38 @@ class ModelForecastTab:
         if st.session_state.project_data is not None and not st.session_state.project_data.empty:
             df_projects = st.session_state.project_data
             # Years were already calculated above at line 235
-        
+            
             # Get base year from session state
             base_year = st.session_state.get('base_year', datetime.now().year - 1)
-            hist_col = f'{base_year}H'  # Historical column name
-        
-            # Add historical year to display columns
-            display_years = [hist_col] + [str(y) for y in years]
-        
-            # Initialize data structures
-            project_revenue_by_year = {}
-            project_cogs_by_year = {}
-            other_revenue_by_year = {}
-            other_cogs_by_year = {}
-        
-            # Store individual project details for breakdown
-            project_revenue_breakdown = {}
-            project_cogs_breakdown = {}
-            project_land_breakdown = {}
-            project_sga_breakdown = {}
-            project_interest_breakdown = {}
-            project_pat_breakdown = {}
-            project_patmi_breakdown = {}
-            project_minority_interest_breakdown = {}
             
-            # Initialize P&L rows that will be populated later
-            minority_interest_row = {'P&L Item': 'Minority Interest'}
-            minority_interest_row[hist_col] = hist_values.get('Minority Interest', 0)  # Historical from CSV
-            npatmi_row = {'P&L Item': 'NPATMI (Net Profit After Tax and MI)'}
-            npatmi_row[hist_col] = hist_values.get('NPATMI (Net Profit After Tax and MI)', 0)  # Historical
-            revenue_row = {'P&L Item': 'Net Revenue'}
-            revenue_row[hist_col] = hist_values.get('Net Revenue', 0)  # Historical, will be updated later with forecast values
-        
-            # Store other business segment revenue breakdown
-            other_revenue_breakdown = {}
-        
-            # Track logged projects for debug output
-            logged_projects = set()
-        
-            # Load project schedules from MongoDB P&L schedule
-            for year in years:
-                project_revenue_by_year[year] = 0
-                project_cogs_by_year[year] = 0
+            # Load project financial data using utility function
+            project_data = load_project_financial_data(
+                df_projects=df_projects,
+                years=years,
+                base_year=base_year,
+                hist_values=hist_values,
+                segment_metrics=segment_metrics
+            )
             
-                for _, project in df_projects.iterrows():
-                    project_name = project.get('project_name', 'Unknown')
-                
-                    # Initialize project breakdown if not exists
-                    if project_name not in project_revenue_breakdown:
-                        project_revenue_breakdown[project_name] = {}
-                        project_cogs_breakdown[project_name] = {}
-                        project_land_breakdown[project_name] = {}
-                        project_sga_breakdown[project_name] = {}
-                        project_interest_breakdown[project_name] = {}
-                        project_pat_breakdown[project_name] = {}
-                        project_patmi_breakdown[project_name] = {}
-                
-                    # Get data from comprehensive_financial_statements only
-                    financial_statements = project.get('comprehensive_financial_statements', {})
-                
-                    # Ensure schedule is a dictionary
-                    if not isinstance(financial_statements, dict):
-                        financial_statements = {}
-                
-                    # Add to yearly totals
-                    year_str = str(year)
-                
-                    if year_str in financial_statements:
-                        year_data = financial_statements[year_str]
-                    
-                        # Process data from comprehensive_financial_statements
-                        # Values are in raw VND, expenses are already negative in MongoDB
-                        
-                        # Get revenue (convert to billions)
-                        revenue_amount = year_data.get('revenue_recognition', 0) / 1e9
-                        project_revenue_by_year[year] += revenue_amount
-                        project_revenue_breakdown[project_name][year] = revenue_amount
-                    
-                        # Get COGS - already negative in MongoDB (convert to billions)
-                        project_cogs = year_data.get('cogs', 0) / 1e9  # Already negative in DB
-                        project_cogs_breakdown[project_name][year] = project_cogs
-                        project_cogs_by_year[year] += project_cogs
-                    
-                        # Get land cost separately for breakdown (convert to billions)
-                        land_cost = year_data.get('land_cost', 0) / 1e9
-                        project_land_breakdown[project_name][year] = land_cost
-                    
-                        # Get SG&A - already negative in MongoDB (convert to billions)
-                        sga_amount = year_data.get('sga_expense', 0) / 1e9  # Already negative in DB
-                        project_sga_breakdown[project_name][year] = sga_amount
-                    
-                        # Get Interest expense from P&L - already negative in MongoDB (convert to billions)
-                        interest_amount     = year_data.get('interest_expense_cash', 0) / 1e9  # Already negative in DB
-                        project_interest_breakdown[project_name][year] = interest_amount
-                        
-                        # Get PAT directly from database (convert to billions)
-                        project_pat = year_data.get('pat', 0) / 1e9
-                        project_pat_breakdown[project_name][year] = project_pat
-                        
-                        # Get project ownership to calculate minority interest and PATMI
-                        project_ownership = project.get('project_ownership', 1.0)
-                        
-                        # Calculate minority interest and PATMI based on ownership
-                        #if project_ownership <= 1.0:
-                        # Calculate minority interest = PAT * (1 - ownership)
-                        minority_stake = 1 - project_ownership
-                        minority_interest_value = project_pat * minority_stake
-                        
-                        # Store minority interest breakdown
-                        if project_name not in project_minority_interest_breakdown:
-                            project_minority_interest_breakdown[project_name] = {}
-                        project_minority_interest_breakdown[project_name][year] = {
-                            'ownership': project_ownership,
-                            'minority_stake': minority_stake,
-                            'project_pat': project_pat,
-                            'minority_interest': minority_interest_value
-                        }
-                        
-                        # Calculate PATMI = PAT - Minority Interest
-                        project_patmi_value = project_pat - minority_interest_value
-                        #else:
-                            # 100% ownership - no minority interest
-                        #    project_patmi_value = project_pat
-                        
-                        # Store PATMI
-                        project_patmi_breakdown[project_name][year] = project_patmi_value
-                    
-                        # Debug: Log first project's values for verification
-                        if year == years[0] and project_name not in logged_projects:
-                            logged_projects.add(project_name)
-                    else:
-                        # No data for this year
-                        project_revenue_breakdown[project_name][year] = 0
-                        project_cogs_breakdown[project_name][year] = 0
-                        project_land_breakdown[project_name][year] = 0
-                        project_sga_breakdown[project_name][year] = 0
-                        project_interest_breakdown[project_name][year] = 0
-                        project_pat_breakdown[project_name][year] = 0
-                        project_patmi_breakdown[project_name][year] = 0
-        
-            # Calculate other revenue streams and COGS
-            for year_idx, year in enumerate(years):
-                other_revenue_by_year[year] = 0
-                other_cogs_by_year[year] = 0
-            
-                # Check if base_year_revenues exists and has items
-                if 'base_year_revenues' not in st.session_state:
-                    st.session_state.base_year_revenues = {}
-            
-                for segment_name, base_revenue in st.session_state.base_year_revenues.items():
-                    # Initialize segment breakdown if not exists
-                    if segment_name not in other_revenue_breakdown:
-                        other_revenue_breakdown[segment_name] = {}
-                
-                    # Get metrics from segment_metrics if available
-                    if segment_name in segment_metrics:
-                        growth_rate = segment_metrics[segment_name]['revenue_growth']
-                        gross_margin = segment_metrics[segment_name]['gross_margin']
-                    else:
-                        # Fallback to defaults
-                        growth_rate = 0.0  # Default 0%
-                        gross_margin = 0.0  # Default 0%
-                
-                    # Calculate revenue with growth
-                    # Base year is the latest historical year, apply growth from there
-                    years_from_base = year - base_year
-                    year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
-                
-                    # Store in breakdown by segment
-                    other_revenue_breakdown[segment_name][str(year)] = year_revenue
-                    other_revenue_by_year[year] += year_revenue
-                
-                    # Calculate COGS from gross margin
-                    year_cogs = year_revenue * (1 - gross_margin)
-                    other_cogs_by_year[year] += year_cogs
-        
-            # Display data source indicator if we have projects
-            if not df_projects.empty:
-                st.toast(f"✅ {len(df_projects)} project(s) using Comprehensive Financial Statements from DB")
+            # Unpack all the returned values
+            project_revenue_by_year = project_data['project_revenue_by_year']
+            project_cogs_by_year = project_data['project_cogs_by_year']
+            other_revenue_by_year = project_data['other_revenue_by_year']
+            other_cogs_by_year = project_data['other_cogs_by_year']
+            project_revenue_breakdown = project_data['project_revenue_breakdown']
+            project_cogs_breakdown = project_data['project_cogs_breakdown']
+            project_land_breakdown = project_data['project_land_breakdown']
+            project_sga_breakdown = project_data['project_sga_breakdown']
+            project_interest_breakdown = project_data['project_interest_breakdown']
+            project_pat_breakdown = project_data['project_pat_breakdown']
+            project_patmi_breakdown = project_data['project_patmi_breakdown']
+            project_minority_interest_breakdown = project_data['project_minority_interest_breakdown']
+            other_revenue_breakdown = project_data['other_revenue_breakdown']
+            minority_interest_row = project_data['minority_interest_row']
+            npatmi_row = project_data['npatmi_row']
+            revenue_row = project_data['revenue_row']
+            hist_col = project_data['hist_col']
+            display_years = project_data['display_years']
         
             # Project breakdown data is now incorporated into Total Revenue Forecast table
         
@@ -1231,63 +1086,19 @@ class ModelForecastTab:
                 pat_row[year_str] = pbt_row[year_str] + tax_row[year_str]
             pnl_rows.append(pat_row)
         
-            # Calculate Minority Interest with project-level breakdown
-            # For forecast years: aggregate from projects based on (1 - ownership) * project PAT
-            # For historical: load from CSV
-        
-            # Continue populating minority interest data (already initialized earlier)
-        
+            # Aggregate minority interest from already calculated project breakdown
+            # The minority interest was already calculated in load_project_financial_data
+            # based on project PAT from MongoDB and ownership percentages
+            
             for year in years:
                 year_str = str(year)
                 total_minority_interest = 0
-            
-                # Calculate minority interest for each project
-                for project_name in project_revenue_breakdown.keys():
-                    # Find the project in df_projects to get ownership
-                    project_found = False
-                    project_ownership = 1.0  # Default to 100% ownership
                 
-                    for _, project in df_projects.iterrows():
-                        if project.get('project_name') == project_name:
-                            project_found = True
-                            # Get project ownership (default to 1.0 = 100% if not specified)
-                            project_ownership = project.get('project_ownership', 1.0)
-                            break
+                # Sum up minority interest from all projects
+                for project_name, project_mi_data in project_minority_interest_breakdown.items():
+                    if year in project_mi_data:
+                        total_minority_interest += project_mi_data[year]['minority_interest']
                 
-                    if project_found and project_ownership < 1.0:  # Only process if there's minority ownership
-                        # Calculate project PAT for this year
-                        # Project PAT = Project Revenue - Project COGS - Project SG&A - Project Interest - Tax
-                        project_revenue = project_revenue_breakdown[project_name].get(year, 0)
-                        project_cogs = project_cogs_breakdown[project_name].get(year, 0)
-                        project_sga = project_sga_breakdown[project_name].get(year, 0)
-                        project_interest = project_interest_breakdown[project_name].get(year, 0)
-                    
-                        # Calculate project PBT
-                        project_pbt = project_revenue + project_cogs + project_sga + project_interest
-                    
-                        # Calculate project tax (using tax rate from assumptions)
-                        project_tax = -max(0, project_pbt * tax_rate)
-                    
-                        # Calculate project PAT
-                        project_pat = project_pbt + project_tax
-                    
-                        # Calculate minority interest for this project
-                        # Minority Interest = PAT * (1 - Ownership)
-                        # Minority shareholders share in both profits and losses
-                        minority_stake = 1 - project_ownership
-                        project_minority_interest = project_pat * minority_stake
-                        total_minority_interest += project_minority_interest
-                    
-                        # Store breakdown for display (only if there's minority interest)
-                        if project_name not in project_minority_interest_breakdown:
-                            project_minority_interest_breakdown[project_name] = {}
-                        project_minority_interest_breakdown[project_name][year] = {
-                            'ownership': project_ownership,
-                            'minority_stake': minority_stake,
-                            'project_pat': project_pat,
-                            'minority_interest': project_minority_interest
-                        }
-            
                 minority_interest_row[year_str] = total_minority_interest
         
             pnl_rows.append(minority_interest_row)

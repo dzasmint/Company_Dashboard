@@ -5,6 +5,7 @@ Extracted from tabs/model_forecast.py for better organization
 
 import pandas as pd
 import streamlit as st
+from datetime import datetime
 
 
 def create_highlight_style_function(column_name='', keywords=None):
@@ -1818,3 +1819,230 @@ def render_minority_interest_tab(
     else:
         st.info("No minority interest to display. All projects are 100% owned or there are no projects with minority stakes.")
         return None
+
+
+def load_project_financial_data(df_projects, years, base_year, hist_values, segment_metrics):
+    """
+    Load and process project financial data from MongoDB comprehensive_financial_statements.
+    
+    Args:
+        df_projects: DataFrame containing project data
+        years: List of forecast years
+        base_year: Base historical year
+        hist_values: Dictionary of historical values
+        segment_metrics: Dictionary of business segment metrics
+        
+    Returns:
+        Dictionary containing all processed financial data including:
+        - project_revenue_by_year
+        - project_cogs_by_year
+        - other_revenue_by_year
+        - other_cogs_by_year
+        - project_revenue_breakdown
+        - project_cogs_breakdown
+        - project_land_breakdown
+        - project_sga_breakdown
+        - project_interest_breakdown
+        - project_pat_breakdown
+        - project_patmi_breakdown
+        - project_minority_interest_breakdown
+        - other_revenue_breakdown
+        - minority_interest_row
+        - npatmi_row
+        - revenue_row
+        - hist_col
+        - display_years
+    """
+    # Get base year from session state
+    hist_col = f'{base_year}H'  # Historical column name
+    
+    # Add historical year to display columns
+    display_years = [hist_col] + [str(y) for y in years]
+    
+    # Initialize data structures
+    project_revenue_by_year = {}
+    project_cogs_by_year = {}
+    other_revenue_by_year = {}
+    other_cogs_by_year = {}
+    
+    # Store individual project details for breakdown
+    project_revenue_breakdown = {}
+    project_cogs_breakdown = {}
+    project_land_breakdown = {}
+    project_sga_breakdown = {}
+    project_interest_breakdown = {}
+    project_pat_breakdown = {}
+    project_patmi_breakdown = {}
+    project_minority_interest_breakdown = {}
+    
+    # Initialize P&L rows that will be populated later
+    minority_interest_row = {'P&L Item': 'Minority Interest'}
+    minority_interest_row[hist_col] = hist_values.get('Minority Interest', 0)  # Historical from CSV
+    npatmi_row = {'P&L Item': 'NPATMI (Net Profit After Tax and MI)'}
+    npatmi_row[hist_col] = hist_values.get('NPATMI (Net Profit After Tax and MI)', 0)  # Historical
+    revenue_row = {'P&L Item': 'Net Revenue'}
+    revenue_row[hist_col] = hist_values.get('Net Revenue', 0)  # Historical, will be updated later with forecast values
+    
+    # Store other business segment revenue breakdown
+    other_revenue_breakdown = {}
+    
+    # Track logged projects for debug output
+    logged_projects = set()
+    
+    # Load project schedules from MongoDB P&L schedule
+    for year in years:
+        project_revenue_by_year[year] = 0
+        project_cogs_by_year[year] = 0
+        
+        for _, project in df_projects.iterrows():
+            project_name = project.get('project_name', 'Unknown')
+            
+            # Initialize project breakdown if not exists
+            if project_name not in project_revenue_breakdown:
+                project_revenue_breakdown[project_name] = {}
+                project_cogs_breakdown[project_name] = {}
+                project_land_breakdown[project_name] = {}
+                project_sga_breakdown[project_name] = {}
+                project_interest_breakdown[project_name] = {}
+                project_pat_breakdown[project_name] = {}
+                project_patmi_breakdown[project_name] = {}
+            
+            # Get data from comprehensive_financial_statements only
+            financial_statements = project.get('comprehensive_financial_statements', {})
+            
+            # Ensure schedule is a dictionary
+            if not isinstance(financial_statements, dict):
+                financial_statements = {}
+            
+            # Add to yearly totals
+            year_str = str(year)
+            
+            if year_str in financial_statements:
+                year_data = financial_statements[year_str]
+                
+                # Process data from comprehensive_financial_statements
+                # Values are in raw VND, expenses are already negative in MongoDB
+                
+                # Get revenue (convert to billions)
+                revenue_amount = year_data.get('revenue_recognition', 0) / 1e9
+                project_revenue_by_year[year] += revenue_amount
+                project_revenue_breakdown[project_name][year] = revenue_amount
+                
+                # Get COGS - already negative in MongoDB (convert to billions)
+                project_cogs = year_data.get('cogs', 0) / 1e9  # Already negative in DB
+                project_cogs_breakdown[project_name][year] = project_cogs
+                project_cogs_by_year[year] += project_cogs
+                
+                # Get land cost separately for breakdown (convert to billions)
+                land_cost = year_data.get('land_cost', 0) / 1e9
+                project_land_breakdown[project_name][year] = land_cost
+                
+                # Get SG&A - already negative in MongoDB (convert to billions)
+                sga_amount = year_data.get('sga_expense', 0) / 1e9  # Already negative in DB
+                project_sga_breakdown[project_name][year] = sga_amount
+                
+                # Get Interest expense from P&L - already negative in MongoDB (convert to billions)
+                interest_amount = year_data.get('interest_expense_cash', 0) / 1e9  # Already negative in DB
+                project_interest_breakdown[project_name][year] = interest_amount
+                
+                # Get PAT directly from database (convert to billions)
+                project_pat = year_data.get('pat', 0) / 1e9
+                project_pat_breakdown[project_name][year] = project_pat
+                
+                # Get project ownership to calculate minority interest and PATMI
+                project_ownership = project.get('project_ownership', 1.0)
+                
+                # Calculate minority interest and PATMI based on ownership
+                # Calculate minority interest = PAT * (1 - ownership)
+                minority_stake = 1 - project_ownership
+                minority_interest_value = project_pat * minority_stake
+                
+                # Store minority interest breakdown
+                if project_name not in project_minority_interest_breakdown:
+                    project_minority_interest_breakdown[project_name] = {}
+                project_minority_interest_breakdown[project_name][year] = {
+                    'ownership': project_ownership,
+                    'minority_stake': minority_stake,
+                    'project_pat': project_pat,
+                    'minority_interest': minority_interest_value
+                }
+                
+                # Calculate PATMI = PAT - Minority Interest
+                project_patmi_value = project_pat - minority_interest_value
+                
+                # Store PATMI
+                project_patmi_breakdown[project_name][year] = project_patmi_value
+                
+                # Debug: Log first project's values for verification
+                if year == years[0] and project_name not in logged_projects:
+                    logged_projects.add(project_name)
+            else:
+                # No data for this year
+                project_revenue_breakdown[project_name][year] = 0
+                project_cogs_breakdown[project_name][year] = 0
+                project_land_breakdown[project_name][year] = 0
+                project_sga_breakdown[project_name][year] = 0
+                project_interest_breakdown[project_name][year] = 0
+                project_pat_breakdown[project_name][year] = 0
+                project_patmi_breakdown[project_name][year] = 0
+    
+    # Calculate other revenue streams and COGS
+    for year in years:
+        other_revenue_by_year[year] = 0
+        other_cogs_by_year[year] = 0
+        
+        # Check if base_year_revenues exists and has items
+        if 'base_year_revenues' not in st.session_state:
+            st.session_state.base_year_revenues = {}
+        
+        for segment_name, base_revenue in st.session_state.base_year_revenues.items():
+            # Initialize segment breakdown if not exists
+            if segment_name not in other_revenue_breakdown:
+                other_revenue_breakdown[segment_name] = {}
+            
+            # Get metrics from segment_metrics if available
+            if segment_name in segment_metrics:
+                growth_rate = segment_metrics[segment_name]['revenue_growth']
+                gross_margin = segment_metrics[segment_name]['gross_margin']
+            else:
+                # Fallback to defaults
+                growth_rate = 0.0  # Default 0%
+                gross_margin = 0.0  # Default 0%
+            
+            # Calculate revenue with growth
+            # Base year is the latest historical year, apply growth from there
+            years_from_base = year - base_year
+            year_revenue = base_revenue * ((1 + growth_rate) ** years_from_base)
+            
+            # Store in breakdown by segment
+            other_revenue_breakdown[segment_name][str(year)] = year_revenue
+            other_revenue_by_year[year] += year_revenue
+            
+            # Calculate COGS from gross margin
+            year_cogs = year_revenue * (1 - gross_margin)
+            other_cogs_by_year[year] += year_cogs
+    
+    # Display data source indicator if we have projects
+    if not df_projects.empty:
+        st.toast(f"✅ {len(df_projects)} project(s) using Comprehensive Financial Statements from DB")
+    
+    return {
+        'project_revenue_by_year': project_revenue_by_year,
+        'project_cogs_by_year': project_cogs_by_year,
+        'other_revenue_by_year': other_revenue_by_year,
+        'other_cogs_by_year': other_cogs_by_year,
+        'project_revenue_breakdown': project_revenue_breakdown,
+        'project_cogs_breakdown': project_cogs_breakdown,
+        'project_land_breakdown': project_land_breakdown,
+        'project_sga_breakdown': project_sga_breakdown,
+        'project_interest_breakdown': project_interest_breakdown,
+        'project_pat_breakdown': project_pat_breakdown,
+        'project_patmi_breakdown': project_patmi_breakdown,
+        'project_minority_interest_breakdown': project_minority_interest_breakdown,
+        'other_revenue_breakdown': other_revenue_breakdown,
+        'minority_interest_row': minority_interest_row,
+        'npatmi_row': npatmi_row,
+        'revenue_row': revenue_row,
+        'hist_col': hist_col,
+        'display_years': display_years
+    }
