@@ -815,13 +815,14 @@ class MongoDBHelper:
             return []
 
 
-def save_company_forecast(ticker, forecast_data):
+def save_company_forecast(ticker, forecast_data, valuation_data=None):
     """
-    Save company P&L forecast to MongoDB CompanyForecast collection
+    Save company P&L forecast and valuation to MongoDB CompanyForecast collection
     
     Args:
         ticker (str): Company ticker symbol
         forecast_data (dict): Dictionary with year as key and P&L data as value
+        valuation_data (dict): Optional valuation data including RNAV and multiples
                              Example: {
                                  '2025': {
                                      'real_estate_revenue': 100,
@@ -861,6 +862,10 @@ def save_company_forecast(ticker, forecast_data):
             "forecast_data": forecast_data
         }
         
+        # Add valuation data if provided
+        if valuation_data:
+            document["valuation_data"] = valuation_data
+        
         # Upsert - update if exists, insert if not
         result = collection.update_one(
             {"ticker": ticker},
@@ -869,7 +874,10 @@ def save_company_forecast(ticker, forecast_data):
         )
         
         if result.modified_count > 0 or result.upserted_id:
-            return {"success": True, "message": f"Forecast saved successfully for {ticker}"}
+            if valuation_data:
+                return {"success": True, "message": f"Forecast and valuation saved successfully for {ticker}"}
+            else:
+                return {"success": True, "message": f"Forecast saved successfully for {ticker}"}
         else:
             return {"success": False, "message": "No changes made"}
             

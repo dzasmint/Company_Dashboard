@@ -274,6 +274,79 @@ def prepare_balance_sheet_detail_data(
     }
 
 
+def prepare_valuation_data(
+    current_price: float,
+    rnav_per_share: float,
+    rnav_details: list,
+    pe_values: dict,
+    pb_values: dict,
+    pe_mean: float,
+    pb_mean: float,
+    current_year: int,
+    next_year: int
+) -> Dict:
+    """Prepare valuation data for MongoDB storage
+    
+    Args:
+        current_price: Current stock price in VND
+        rnav_per_share: RNAV per share in VND
+        rnav_details: List of RNAV table rows
+        pe_values: Dict with trailing, current_year, and next_year P/E values
+        pb_values: Dict with trailing, current_year, and next_year P/B values
+        pe_mean: Historical mean P/E
+        pb_mean: Historical mean P/B
+        current_year: Current year (e.g., 2025)
+        next_year: Next year (e.g., 2026)
+    
+    Returns:
+        Dict: Formatted valuation data for MongoDB
+    """
+    # Format year-specific keys (e.g., "2025F_PE" instead of just 2025)
+    multiples = {}
+    
+    # Add P/E values with year-specific naming
+    if pe_values:
+        if 'trailing' in pe_values and pe_values['trailing']:
+            multiples['trailing_PE'] = convert_to_native(pe_values['trailing'])
+        if current_year in pe_values and pe_values[current_year]:
+            multiples[f'{current_year}F_PE'] = convert_to_native(pe_values[current_year])
+        if next_year in pe_values and pe_values[next_year]:
+            multiples[f'{next_year}F_PE'] = convert_to_native(pe_values[next_year])
+    
+    # Add P/B values with year-specific naming  
+    if pb_values:
+        if 'trailing' in pb_values and pb_values['trailing']:
+            multiples['trailing_PB'] = convert_to_native(pb_values['trailing'])
+        if current_year in pb_values and pb_values[current_year]:
+            multiples[f'{current_year}F_PB'] = convert_to_native(pb_values[current_year])
+        if next_year in pb_values and pb_values[next_year]:
+            multiples[f'{next_year}F_PB'] = convert_to_native(pb_values[next_year])
+    
+    # Add mean values
+    if pe_mean:
+        multiples['mean_PE'] = convert_to_native(pe_mean)
+    if pb_mean:
+        multiples['mean_PB'] = convert_to_native(pb_mean)
+    
+    # Process RNAV details
+    processed_rnav_details = []
+    for row in rnav_details:
+        processed_row = {
+            'item': row.get('item', ''),
+            'rnav_value': convert_to_native(row.get('rnav_value')) if row.get('rnav_value') is not None else None,
+            'ownership_pct': convert_to_native(row.get('ownership_pct')) if row.get('ownership_pct') is not None else None,
+            'rnav_to_company': convert_to_native(row.get('rnav_to_company')) if row.get('rnav_to_company') is not None else None
+        }
+        processed_rnav_details.append(processed_row)
+    
+    return {
+        'current_price': convert_to_native(current_price),
+        'rnav_per_share': convert_to_native(rnav_per_share),
+        'multiples': multiples,
+        'rnav_details': processed_rnav_details
+    }
+
+
 def prepare_cash_flow_detail_data(
     year_str: str,
     presales_cf_breakdown: Dict,
@@ -321,7 +394,8 @@ def save_consolidated_financial_statements(
     project_breakdowns: Dict[str, Dict],
     segment_data: Dict[str, Dict],
     balance_sheet_details: Dict[str, Dict],
-    session_state_data: Dict
+    session_state_data: Dict,
+    valuation_data: Dict = None
 ) -> Dict:
     """
     Save all consolidated financial statements to MongoDB
@@ -436,12 +510,14 @@ def save_consolidated_financial_statements(
             'profitability_metrics': year_data.get('profitability_metrics', {})
         }
     
-    # Save to CompanyForecast collection
-    result = save_company_forecast(selected_ticker, forecast_data)
+    # Save to CompanyForecast collection (include valuation_data if provided)
+    result = save_company_forecast(selected_ticker, forecast_data, valuation_data)
     
     # Store in session state for reference if successful
     if result['success']:
         st.session_state[f'saved_consolidated_{selected_ticker}'] = consolidated_data
+        if valuation_data:
+            st.session_state[f'saved_valuation_{selected_ticker}'] = valuation_data
     
     return result, forecast_data
 
@@ -457,16 +533,17 @@ def render_save_section(
     project_breakdowns: Dict[str, Dict],
     segment_data: Dict[str, Dict],
     balance_sheet_details: Dict[str, Dict],
-    session_state_data: Dict
+    session_state_data: Dict,
+    valuation_data: Dict = None
 ) -> None:
     """Render the save to MongoDB section with button and feedback"""
     
     st.markdown("---")
-    st.subheader("Save Consolidated Financial Statements")
+    st.subheader("Save Forecast and Valuation")
     
     col_save1, col_save2, col_save3 = st.columns([1, 2, 1])
     with col_save2:
-        if st.button("Save All Consolidated Statements to Database", type="primary", use_container_width=True):
+        if st.button("Save Forecast and Valuation to Database", type="primary", use_container_width=True):
             result, forecast_data = save_consolidated_financial_statements(
                 selected_ticker,
                 base_year,
@@ -478,7 +555,8 @@ def render_save_section(
                 project_breakdowns,
                 segment_data,
                 balance_sheet_details,
-                session_state_data
+                session_state_data,
+                valuation_data
             )
             
             # Debug: Check if interest_income is present in the data
@@ -501,4 +579,4 @@ def render_save_section(
             else:
                 st.error(f"❌ {result['message']}")
     
-    st.info("💡 This saves all three consolidated financial statements (P&L, Balance Sheet, Cash Flow) to the CompanyForecast collection in MongoDB for reporting and analysis.")
+    st.info("💡 This saves all consolidated financial statements (P&L, Balance Sheet, Cash Flow) and valuation metrics (RNAV, P/E, P/B) to the CompanyForecast collection in MongoDB for reporting and analysis.")

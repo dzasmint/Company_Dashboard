@@ -31,6 +31,7 @@ from utils.model_forecast_bs_utils import (
     render_consolidated_bs_tab,
     prepare_balance_sheet_data
 )
+from utils.model_forecast_valuation_utils import render_valuation_analysis
 
 
 class ModelForecastTab:
@@ -1651,8 +1652,34 @@ class ModelForecastTab:
                 # Render the consolidated cash flow tab using the utility function
                 render_consolidated_cf_tab(consol_cf_rows, hist_col, years)
             
-        
-        
+            # Add Valuation Section
+            st.markdown("---")
+            st.header("Valuation Analysis")
+            
+            # Render valuation sections (pass current forecast data and capture return data)
+            valuation_data_raw = render_valuation_analysis(selected_ticker, npatmi_row, total_equity_row)
+            
+            # Process valuation data for saving
+            from utils.model_forecast_save_to_db import prepare_valuation_data
+            
+            current_year = datetime.now().year
+            next_year = current_year + 1
+            
+            # Prepare valuation data if we have the raw data
+            valuation_data = None
+            if valuation_data_raw:
+                valuation_data = prepare_valuation_data(
+                    current_price=valuation_data_raw.get('current_price', 0),
+                    rnav_per_share=valuation_data_raw.get('rnav_per_share', 0),
+                    rnav_details=valuation_data_raw.get('rnav_details', []),
+                    pe_values=valuation_data_raw.get('pe_values', {}),
+                    pb_values=valuation_data_raw.get('pb_values', {}),
+                    pe_mean=valuation_data_raw.get('pe_mean'),
+                    pb_mean=valuation_data_raw.get('pb_mean'),
+                    current_year=current_year,
+                    next_year=next_year
+                )
+            
             # Save Consolidated Financial Statements to MongoDB
             # Prepare all required parameters for the save function
             pnl_rows = {
@@ -1756,7 +1783,8 @@ class ModelForecastTab:
                 project_breakdowns,
                 segment_data,
                 balance_sheet_details,
-                session_state_data
+                session_state_data,
+                valuation_data
             )
         
         else:
