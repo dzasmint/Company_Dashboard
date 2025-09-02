@@ -1512,34 +1512,7 @@ class ModelForecastTab:
             if has_changes:
                 st.info("ℹ️ Changes detected in the P&L forecast compared to the database")
         
-            # Key metrics
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                avg_revenue_growth = ((total_revenue_row[str(years[-1])] / total_revenue_row[str(years[0])]) ** (1/len(years)) - 1) * 100 if len(years) > 1 else 0
-                st.metric("Avg Revenue Growth", f"{avg_revenue_growth:.1f}%")
-            with col2:
-                # Calculate average gross margin from margin_df
-                overall_margins = []
-                for year in years:
-                    year_str = str(year)
-                    revenue = total_revenue_row[year_str]
-                    if revenue > 0:
-                        gross_profit = total_gp_row[year_str]
-                        overall_margins.append((gross_profit / revenue) * 100)
-                avg_gross_margin = sum(overall_margins) / len(overall_margins) if overall_margins else 0
-                st.metric("Avg Gross Margin", f"{avg_gross_margin:.1f}%")
-            with col3:
-                # Calculate EBITDA margin
-                total_ebitda = sum([ebitda_row[str(y)] for y in years])
-                total_revenue = sum([revenue_row[str(y)] for y in years])
-                avg_ebitda_margin = (total_ebitda / total_revenue * 100) if total_revenue > 0 else 0
-                st.metric("Avg EBITDA Margin", f"{avg_ebitda_margin:.1f}%")
-            with col4:
-                # Calculate PAT margin
-                total_pat = sum([pat_row[str(y)] for y in years])
-                avg_pat_margin = (total_pat / total_revenue * 100) if total_revenue > 0 else 0
-                st.metric("Avg PAT Margin", f"{avg_pat_margin:.1f}%")
-        
+            
             # Pre-calculate cash flows (needed for balance sheet cash calculation)
             cf_data = prepare_cashflow_data(
                 df_projects=df_projects,
