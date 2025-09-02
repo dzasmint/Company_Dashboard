@@ -884,7 +884,7 @@ def load_company_forecast(ticker):
         ticker (str): Company ticker symbol
     
     Returns:
-        dict: Forecast data or empty dict if not found
+        dict: Full forecast document or empty dict if not found
     """
     try:
         client = init_mongodb_connection()
@@ -899,7 +899,8 @@ def load_company_forecast(ticker):
         forecast_doc = collection.find_one({"ticker": ticker})
         
         if forecast_doc:
-            return forecast_doc.get('forecast_data', {})
+            # Return the full document to allow access to nested structure
+            return forecast_doc
         else:
             return {}
             

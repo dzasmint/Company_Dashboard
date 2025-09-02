@@ -4,6 +4,18 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 import os
+import sys
+
+# Add parent directory to path for imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Import stock price functions
+from utils.stock_candle import get_cached_stock_data
+from utils.mongodb_utils import load_company_forecast
+from datetime import datetime
 
 
 class ValuationTab:
@@ -16,10 +28,19 @@ class ValuationTab:
         """Render simplified valuation analysis based on RNAV and revenue forecasts"""
         #st.header("Valuation Analysis")
         
+        # Get selected ticker
+        selected_ticker = st.session_state.get('selected_company', None)
+        
+        # Display current stock price and chart if ticker is selected
+        latest_close_price = None
+        if selected_ticker:
+            latest_close_price = self.render_stock_price_section(selected_ticker)
+        
         # RNAV Valuation
         st.subheader("RNAV Valuation")
         
         total_rnav = 0  # Initialize total_rnav
+        outstanding_shares = 0  # Initialize outstanding_shares for use in multiple valuation
         if st.session_state.project_data is not None and isinstance(st.session_state.project_data, pd.DataFrame) and not st.session_state.project_data.empty:
             if 'rnav_value' in st.session_state.project_data.columns:
                 total_rnav = st.session_state.project_data['rnav_value'].sum()
@@ -52,21 +73,22 @@ class ValuationTab:
                     'RNAV to Company (B VND)': total_rnav_to_company
                 })
                 
-                # Load balance sheet items from FA_A_processed.parquet
+                # Load balance sheet items from FA_processed.parquet (quarterly data)
                 cash_equivalent = 0
                 short_term_investment = 0
                 short_term_debt = 0
                 long_term_debt = 0
                 outstanding_shares = 0
+                latest_quarter = 'N/A'  # Track which quarter is being used
                 
                 # Get selected ticker
                 selected_ticker = st.session_state.get('selected_company', None)
                 
                 if selected_ticker:
                     try:
-                        # Load financial data
+                        # Load financial data from quarterly parquet file
                         import os
-                        fa_path = os.path.join('data', 'FA_A_processed.parquet')
+                        fa_path = os.path.join('data', 'FA_processed.parquet')
                         if os.path.exists(fa_path):
                             fa_df = pd.read_parquet(fa_path)
                             
@@ -74,10 +96,11 @@ class ValuationTab:
                             ticker_data = fa_df[fa_df['TICKER'] == selected_ticker]
                             
                             if not ticker_data.empty:
-                                # Get the latest year available for this ticker
+                                # Get the latest quarter available for this ticker
                                 latest_date = ticker_data['DATE'].max()
+                                latest_quarter = latest_date  # Store the quarter (e.g., '2025Q2')
                                 
-                                # Filter for latest year data
+                                # Filter for latest quarter data
                                 latest_data = ticker_data[ticker_data['DATE'] == latest_date]
                                 
                                 # Helper function to get value for a specific keycode
@@ -101,7 +124,7 @@ class ValuationTab:
                                 short_term_debt = get_balance_sheet_value('ST_Debt', 0)
                                 long_term_debt = get_balance_sheet_value('LT_Debt', 0)
                                 
-                                # Load Outstanding Shares (OS) - the value in CSV is actual number of shares
+                                # Load Outstanding Shares (OS) - the value in parquet is actual number of shares
                                 # get_balance_sheet_value divides by 1e9, but OS is already in shares not VND
                                 # So we need to get the raw value differently
                                 os_row = latest_data[latest_data['KEYCODE'] == 'OS']
@@ -118,29 +141,39 @@ class ValuationTab:
                         st.warning(f"Could not load balance sheet data: {str(e)}")
                         # Keep default values of 0
                 
+                # Format quarter display (e.g., '2025Q2' -> '2Q25')
+                quarter_display = 'N/A'
+                if latest_quarter != 'N/A':
+                    # Extract year and quarter from format like '2025Q2'
+                    if 'Q' in latest_quarter:
+                        year_str = latest_quarter[:4]
+                        quarter_num = latest_quarter[-1]
+                        year_short = year_str[-2:]  # Get last 2 digits of year
+                        quarter_display = f'{quarter_num}Q{year_short}'  # Format as '2Q25'
+                
                 valuation_rows.append({
-                    'Item': 'Cash & Equivalent',
+                    'Item': f'Cash & Equivalent ({quarter_display})',
                     'RNAV Value (B VND)': None,  # Empty for balance sheet items
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': cash_equivalent
                 })
                 
                 valuation_rows.append({
-                    'Item': 'Short-term Investment',
+                    'Item': f'Short-term Investment ({quarter_display})',
                     'RNAV Value (B VND)': None,  # Empty for balance sheet items
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': short_term_investment
                 })
                 
                 valuation_rows.append({
-                    'Item': 'Short-term Debt',
+                    'Item': f'Short-term Debt ({quarter_display})',
                     'RNAV Value (B VND)': None,  # Empty for balance sheet items
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': -short_term_debt
                 })
                 
                 valuation_rows.append({
-                    'Item': 'Long-term Debt',
+                    'Item': f'Long-term Debt ({quarter_display})',
                     'RNAV Value (B VND)': None,  # Empty for balance sheet items
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': -long_term_debt
@@ -165,9 +198,9 @@ class ValuationTab:
                     'RNAV to Company (B VND)': total_equity
                 })
                 
-                # Add Outstanding Shares row
+                # Add Outstanding Shares row with quarter display
                 valuation_rows.append({
-                    'Item': 'Total Outstanding Shares (millions)',
+                    'Item': f'Total Outstanding Shares ({quarter_display}) (millions)',
                     'RNAV Value (B VND)': None,  # Empty for summary rows
                     'Ownership (%)': None,
                     'RNAV to Company (B VND)': outstanding_shares
@@ -188,9 +221,14 @@ class ValuationTab:
                 # Display metrics
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Total RNAV", f"{total_rnav/1e9:,.0f}B VND")
+                    st.metric("RNAV/share", f"{rnav_per_share:,.0f} VND")
                 with col2:
-                    st.metric("Total Equity", f"{total_equity:,.0f}B VND")
+                    # Calculate upside percentage if we have latest close price
+                    if latest_close_price and latest_close_price > 0:
+                        upside_pct = ((rnav_per_share / latest_close_price) - 1) * 100
+                        st.metric("Upside (%)", f"{upside_pct:+.1f}%")
+                    else:
+                        st.metric("Upside (%)", "N/A")
                 
                 # Create formatted columns for display
                 display_data = []
@@ -259,10 +297,27 @@ class ValuationTab:
         # Add separator
         st.markdown("---")
         
-        # Valuation Metrics Section
+        # Multiple Valuation Section
+        st.subheader("Multiple Valuation")
+        
+        # Get selected ticker (already defined above)
+        if selected_ticker and latest_close_price and outstanding_shares > 0:
+            self.render_multiple_valuation(selected_ticker, latest_close_price, outstanding_shares)
+        else:
+            if not selected_ticker:
+                st.info("Please select a company from the sidebar to view multiple valuation")
+            elif not latest_close_price:
+                st.info("Stock price data unavailable for multiple valuation")
+            elif outstanding_shares <= 0:
+                st.info("Outstanding shares data unavailable for multiple valuation")
+        
+        # Add separator
+        st.markdown("---")
+        
+        # Historical Valuation Metrics Section
         st.subheader("Historical Valuation Metrics")
         
-        # Get selected ticker
+        # Reuse the selected ticker from above
         selected_ticker = st.session_state.get('selected_company', None)
         
         if selected_ticker:
@@ -491,3 +546,173 @@ class ValuationTab:
                 }),
                 use_container_width=True
             )
+    
+    def render_stock_price_section(self, ticker):
+        """Render current stock price only"""
+        # Fetch current stock data
+        with st.spinner(f"Loading stock data for {ticker}..."):
+            df = get_cached_stock_data(ticker, days=30)  # Get 30 days of data
+        
+        if df is not None and not df.empty:
+            # Get latest price data
+            latest = df.iloc[-1]
+            previous = df.iloc[-2] if len(df) > 1 else latest
+            
+            # Calculate changes
+            price_change = latest['close'] - previous['close']
+            price_change_pct = (price_change / previous['close'] * 100) if previous['close'] > 0 else 0
+            
+            # Display current price as a simple metric
+            st.metric(
+                f"Current Price ({ticker})",
+                f"{latest['close']:,.0f} VND",
+                f"{price_change:+,.0f} ({price_change_pct:+.2f}%)"
+            )
+            
+            # Return the latest close price for upside calculation
+            return latest['close']
+        else:
+            st.warning(f"Unable to fetch stock price data for {ticker}")
+            return None
+    
+    def render_multiple_valuation(self, ticker, current_price, outstanding_shares):
+        """Render multiple valuation metrics based on model forecast"""
+        
+        # Get current year dynamically
+        current_year = datetime.now().year
+        next_year = current_year + 1
+        
+        # Load forecast data from MongoDB
+        forecast_doc = load_company_forecast(ticker)
+        
+        if not forecast_doc or 'forecast_data' not in forecast_doc:
+            st.warning(f"No forecast data available for {ticker}. Please complete the Model Forecast first.")
+            return
+        
+        # Extract forecast data
+        forecast = forecast_doc.get('forecast_data', {})
+        
+        # Initialize metrics
+        metrics = {
+            f'{current_year} P/E': 'N/A',
+            f'{next_year} P/E': 'N/A',
+            f'{current_year} P/B': 'N/A',
+            f'{next_year} P/B': 'N/A'
+        }
+        
+        # Calculate P/E ratios
+        for year in [current_year, next_year]:
+            year_str = str(year)
+            if year_str in forecast:
+                year_data = forecast[year_str]
+                
+                # Get NPATMI - check both old format (direct) and new format (nested)
+                npatmi = 0
+                if 'NPATMI' in year_data:
+                    # Old format: direct field in billions
+                    npatmi = year_data.get('NPATMI', 0)
+                elif 'pnl' in year_data and 'npatmi' in year_data['pnl']:
+                    # New format: nested in pnl, value in VND
+                    npatmi = year_data['pnl']['npatmi'] / 1e9  # Convert VND to billions
+                
+                if npatmi and outstanding_shares > 0:
+                    # Calculate EPS (Earnings Per Share)
+                    # NPATMI is in billions, outstanding_shares is in millions
+                    # Convert both to actual values for calculation
+                    eps = (npatmi * 1e9) / (outstanding_shares * 1e6)
+                    
+                    # Calculate P/E ratio
+                    if eps > 0:
+                        pe_ratio = current_price / eps
+                        metrics[f'{year} P/E'] = f"{pe_ratio:.2f}x"
+                
+                # Get Total Equity - check both old format (direct) and new format (nested)
+                total_equity = 0
+                if 'Total_Equity' in year_data:
+                    # Old format: direct field in billions
+                    total_equity = year_data.get('Total_Equity', 0)
+                elif 'balance_sheet' in year_data:
+                    # New format: nested in balance_sheet
+                    bs = year_data['balance_sheet']
+                    if 'equity' in bs and isinstance(bs['equity'], dict):
+                        # Nested structure with total_equity
+                        total_equity = bs['equity'].get('total_equity', 0) / 1e9  # Convert VND to billions
+                    elif 'total_equity' in bs:
+                        # Direct field in balance_sheet
+                        total_equity = bs.get('total_equity', 0) / 1e9  # Convert VND to billions
+                
+                if total_equity and outstanding_shares > 0:
+                    # Calculate Book Value Per Share
+                    # Total_Equity is in billions, outstanding_shares is in millions
+                    bvps = (total_equity * 1e9) / (outstanding_shares * 1e6)
+                    
+                    # Calculate P/B ratio
+                    if bvps > 0:
+                        pb_ratio = current_price / bvps
+                        metrics[f'{year} P/B'] = f"{pb_ratio:.2f}x"
+        
+        # Display metrics in columns
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(f"{current_year} P/E", metrics[f'{current_year} P/E'])
+        
+        with col2:
+            st.metric(f"{next_year} P/E", metrics[f'{next_year} P/E'])
+        
+        with col3:
+            st.metric(f"{current_year} P/B", metrics[f'{current_year} P/B'])
+        
+        with col4:
+            st.metric(f"{next_year} P/B", metrics[f'{next_year} P/B'])
+        
+        # Add detailed breakdown in expander
+        with st.expander("View Calculation Details"):
+            details = []
+            
+            for year in [current_year, next_year]:
+                year_str = str(year)
+                if year_str in forecast:
+                    year_data = forecast[year_str]
+                    
+                    # Get NPATMI - check both formats
+                    npatmi = 0
+                    if 'NPATMI' in year_data:
+                        npatmi = year_data.get('NPATMI', 0)
+                    elif 'pnl' in year_data and 'npatmi' in year_data['pnl']:
+                        npatmi = year_data['pnl']['npatmi'] / 1e9  # Convert VND to billions
+                    
+                    # Get Total Equity - check both formats
+                    total_equity = 0
+                    if 'Total_Equity' in year_data:
+                        total_equity = year_data.get('Total_Equity', 0)
+                    elif 'balance_sheet' in year_data:
+                        bs = year_data['balance_sheet']
+                        if 'equity' in bs and isinstance(bs['equity'], dict):
+                            total_equity = bs['equity'].get('total_equity', 0) / 1e9
+                        elif 'total_equity' in bs:
+                            total_equity = bs.get('total_equity', 0) / 1e9
+                    
+                    if npatmi:
+                        eps = (npatmi * 1e9) / (outstanding_shares * 1e6) if outstanding_shares > 0 else 0
+                        details.append({
+                            'Year': year,
+                            'Metric': 'EPS',
+                            'Value': f"{eps:,.0f} VND",
+                            'Formula': f"NPATMI ({npatmi:,.1f}B) / Shares ({outstanding_shares:,.0f}M)"
+                        })
+                    
+                    if total_equity:
+                        bvps = (total_equity * 1e9) / (outstanding_shares * 1e6) if outstanding_shares > 0 else 0
+                        details.append({
+                            'Year': year,
+                            'Metric': 'BVPS',
+                            'Value': f"{bvps:,.0f} VND",
+                            'Formula': f"Equity ({total_equity:,.1f}B) / Shares ({outstanding_shares:,.0f}M)"
+                        })
+            
+            if details:
+                details_df = pd.DataFrame(details)
+                st.dataframe(details_df, use_container_width=True, hide_index=True)
+            
+            st.info(f"Current Stock Price: {current_price:,.0f} VND")
