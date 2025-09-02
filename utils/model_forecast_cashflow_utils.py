@@ -679,3 +679,218 @@ def render_consolidated_cf_tab(consol_cf_rows: List[Dict], hist_col: str, years:
         use_container_width=True,
         hide_index=True
     )
+
+
+def prepare_cashflow_data(
+    df_projects: pd.DataFrame,
+    years: List[int],
+    other_revenue_breakdown: Dict[str, Dict[str, float]],
+    segment_metrics: Dict[str, Dict[str, float]],
+    existing_debt_interest_row: Dict[str, float],
+    sga_rows: List[Dict],
+    tax_row: Dict[str, float],
+    interest_income_by_year: Dict[str, float]
+) -> Dict[str, Any]:
+    """
+    Pre-calculate cash flow data needed for balance sheet and cash flow statements.
+    
+    Args:
+        df_projects: DataFrame containing project data
+        years: List of forecast years
+        other_revenue_breakdown: Revenue breakdown by segment
+        segment_metrics: Metrics for each segment including gross margins
+        existing_debt_interest_row: Existing debt interest by year
+        sga_rows: List of SG&A rows from P&L
+        tax_row: Tax row from P&L
+        interest_income_by_year: Interest income by year
+    
+    Returns:
+        Dictionary containing:
+        - operating_cf_by_year: Operating cash flow by year
+        - investing_cf_by_year: Investing cash flow by year
+        - financing_cf_by_year: Financing cash flow by year
+        - net_cf_by_year: Net cash flow by year
+        - other_segment_revenue_cf: Other segment revenue cash flow
+        - other_segment_cogs_cf: Other segment COGS cash flow
+        - presales_cf_breakdown: Presales cash flow breakdown by project
+        - interest_outflow_breakdown: Interest outflow breakdown by project
+        - sga_outflow_breakdown: SG&A outflow breakdown by project
+        - tax_outflow_breakdown: Tax outflow breakdown by project
+        - land_outflow_breakdown: Land outflow breakdown by project
+        - construction_outflow_breakdown: Construction outflow breakdown by project
+        - investing_cf_breakdown: Investing cash flow breakdown by project
+        - financing_cf_breakdown: Financing cash flow breakdown by project
+    """
+    # Initialize cash flow aggregates
+    operating_cf_by_year = {}
+    investing_cf_by_year = {}
+    financing_cf_by_year = {}
+    net_cf_by_year = {}
+    
+    # Initialize breakdown components
+    other_segment_revenue_cf = {}
+    other_segment_cogs_cf = {}
+    presales_cf_breakdown = {}
+    interest_outflow_breakdown = {}
+    sga_outflow_breakdown = {}
+    tax_outflow_breakdown = {}
+    land_outflow_breakdown = {}
+    construction_outflow_breakdown = {}
+    investing_cf_breakdown = {}
+    financing_cf_breakdown = {}
+    
+    # Initialize for all years
+    for year in years:
+        year_str = str(year)
+        operating_cf_by_year[year_str] = 0
+        investing_cf_by_year[year_str] = 0
+        financing_cf_by_year[year_str] = 0
+        net_cf_by_year[year_str] = 0
+        other_segment_revenue_cf[year_str] = 0
+        other_segment_cogs_cf[year_str] = 0
+    
+    # 1. Calculate revenue and COGS from other business segments (non-real estate)
+    if other_revenue_breakdown:
+        for segment_name, segment_revenue in other_revenue_breakdown.items():
+            for year in years:
+                year_str = str(year)
+                revenue = segment_revenue.get(year_str, 0)
+                other_segment_revenue_cf[year_str] += revenue
+                operating_cf_by_year[year_str] += revenue
+                
+                # Calculate COGS for this segment
+                if segment_name in segment_metrics:
+                    gross_margin = segment_metrics[segment_name]['gross_margin']
+                else:
+                    gross_margin = 0.0
+                
+                segment_cogs = revenue * (1 - gross_margin)
+                other_segment_cogs_cf[year_str] += segment_cogs
+                operating_cf_by_year[year_str] -= segment_cogs
+    
+    # 2. Aggregate cash flows from all projects
+    for _, project in df_projects.iterrows():
+        project_name = project.get('project_name', 'Unknown')
+        financial_statements = project.get('comprehensive_financial_statements', {})
+        
+        if not isinstance(financial_statements, dict):
+            financial_statements = {}
+        
+        # Initialize project breakdown
+        if project_name not in presales_cf_breakdown:
+            presales_cf_breakdown[project_name] = {}
+            interest_outflow_breakdown[project_name] = {}
+            sga_outflow_breakdown[project_name] = {}
+            tax_outflow_breakdown[project_name] = {}
+            land_outflow_breakdown[project_name] = {}
+            construction_outflow_breakdown[project_name] = {}
+            investing_cf_breakdown[project_name] = {}
+            financing_cf_breakdown[project_name] = {}
+        
+        for year in years:
+            year_str = str(year)
+            
+            if year_str in financial_statements:
+                year_data = financial_statements[year_str]
+                
+                # Operating Cash Flow Components
+                presales_inflow = year_data.get('cash_inflow_presales', 0) / 1e9
+                presales_cf_breakdown[project_name][year_str] = presales_inflow
+                operating_cf_by_year[year_str] += presales_inflow
+                
+                interest_outflow = year_data.get('cash_outflow_interest', 0) / 1e9
+                interest_outflow_breakdown[project_name][year_str] = interest_outflow
+                operating_cf_by_year[year_str] += interest_outflow
+                
+                sga_outflow = year_data.get('cash_outflow_sga', 0) / 1e9
+                sga_outflow_breakdown[project_name][year_str] = sga_outflow
+                operating_cf_by_year[year_str] += sga_outflow
+                
+                tax_outflow = year_data.get('cash_outflow_tax', 0) / 1e9
+                tax_outflow_breakdown[project_name][year_str] = tax_outflow
+                operating_cf_by_year[year_str] += tax_outflow
+                
+                # Investing Cash Flow
+                land_outflow = year_data.get('cash_outflow_land', 0) / 1e9
+                construction_outflow = year_data.get('cash_outflow_construction', 0) / 1e9
+                
+                land_outflow_breakdown[project_name][year_str] = land_outflow
+                construction_outflow_breakdown[project_name][year_str] = construction_outflow
+                
+                investing_cf = land_outflow + construction_outflow
+                investing_cf_by_year[year_str] += investing_cf
+                investing_cf_breakdown[project_name][year_str] = investing_cf
+                
+                # Financing Cash Flow
+                debt_disbursement = year_data.get('debt_disbursement', 0) / 1e9
+                debt_repayment = year_data.get('debt_repayment', 0) / 1e9
+                financing_cf = debt_disbursement + debt_repayment
+                financing_cf_by_year[year_str] += financing_cf
+                financing_cf_breakdown[project_name][year_str] = financing_cf
+            else:
+                presales_cf_breakdown[project_name][year_str] = 0
+                interest_outflow_breakdown[project_name][year_str] = 0
+                sga_outflow_breakdown[project_name][year_str] = 0
+                tax_outflow_breakdown[project_name][year_str] = 0
+                land_outflow_breakdown[project_name][year_str] = 0
+                construction_outflow_breakdown[project_name][year_str] = 0
+                investing_cf_breakdown[project_name][year_str] = 0
+                financing_cf_breakdown[project_name][year_str] = 0
+    
+    # Add existing debt interest expense to operating cash flow
+    for year in years:
+        year_str = str(year)
+        existing_debt_interest = existing_debt_interest_row.get(str(year), 0)
+        operating_cf_by_year[year_str] += existing_debt_interest
+    
+    # Add SG&A expense from other segments to operating cash flow
+    for year in years:
+        year_str = str(year)
+        total_sga = 0
+        for row in sga_rows:
+            if row['SG&A Source'] == 'TOTAL SG&A':
+                total_sga = row.get(str(year), 0)
+                break
+        total_proj_sga = sum(sga_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in sga_outflow_breakdown.keys())
+        other_sga = total_sga - total_proj_sga
+        operating_cf_by_year[year_str] += other_sga
+    
+    # Add total tax expense to operating cash flow
+    for year in years:
+        year_str = str(year)
+        project_taxes = sum(tax_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in tax_outflow_breakdown.keys())
+        operating_cf_by_year[year_str] -= project_taxes
+        total_tax_pnl = tax_row.get(year_str, 0)
+        operating_cf_by_year[year_str] += total_tax_pnl
+    
+    # Add interest income to investing cash flow
+    for year in years:
+        year_str = str(year)
+        interest_income_cf = interest_income_by_year.get(year_str, 0)
+        investing_cf_by_year[year_str] += interest_income_cf
+    
+    # Calculate net cash flow for each year
+    for year in years:
+        year_str = str(year)
+        net_cf_by_year[year_str] = (
+            operating_cf_by_year[year_str] + 
+            investing_cf_by_year[year_str] + 
+            financing_cf_by_year[year_str]
+        )
+    
+    return {
+        'operating_cf_by_year': operating_cf_by_year,
+        'investing_cf_by_year': investing_cf_by_year,
+        'financing_cf_by_year': financing_cf_by_year,
+        'net_cf_by_year': net_cf_by_year,
+        'other_segment_revenue_cf': other_segment_revenue_cf,
+        'other_segment_cogs_cf': other_segment_cogs_cf,
+        'presales_cf_breakdown': presales_cf_breakdown,
+        'interest_outflow_breakdown': interest_outflow_breakdown,
+        'sga_outflow_breakdown': sga_outflow_breakdown,
+        'tax_outflow_breakdown': tax_outflow_breakdown,
+        'land_outflow_breakdown': land_outflow_breakdown,
+        'construction_outflow_breakdown': construction_outflow_breakdown,
+        'investing_cf_breakdown': investing_cf_breakdown,
+        'financing_cf_breakdown': financing_cf_breakdown
+    }

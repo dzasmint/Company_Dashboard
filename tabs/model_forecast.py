@@ -21,7 +21,8 @@ from utils.model_forecast_cashflow_utils import (
     create_detail_cashflow_rows,
     create_consolidated_cashflow_rows,
     render_detail_cf_tab,
-    render_consolidated_cf_tab
+    render_consolidated_cf_tab,
+    prepare_cashflow_data
 )
 from utils.model_forecast_save_to_db import render_save_section
 from utils.model_forecast_bs_utils import (
@@ -1540,162 +1541,32 @@ class ModelForecastTab:
                 st.metric("Avg PAT Margin", f"{avg_pat_margin:.1f}%")
         
             # Pre-calculate cash flows (needed for balance sheet cash calculation)
-            # Initialize cash flow aggregates
-            operating_cf_by_year = {}
-            investing_cf_by_year = {}
-            financing_cf_by_year = {}
-            net_cf_by_year = {}
+            cf_data = prepare_cashflow_data(
+                df_projects=df_projects,
+                years=years,
+                other_revenue_breakdown=other_revenue_breakdown,
+                segment_metrics=segment_metrics,
+                existing_debt_interest_row=existing_debt_interest_row,
+                sga_rows=sga_rows,
+                tax_row=tax_row,
+                interest_income_by_year=interest_income_by_year
+            )
             
-            # Initialize breakdown components
-            other_segment_revenue_cf = {}
-            other_segment_cogs_cf = {}
-            presales_cf_breakdown = {}
-            interest_outflow_breakdown = {}
-            sga_outflow_breakdown = {}
-            tax_outflow_breakdown = {}
-            land_outflow_breakdown = {}
-            construction_outflow_breakdown = {}
-            investing_cf_breakdown = {}
-            financing_cf_breakdown = {}
-            
-            # Initialize for all years
-            for year in years:
-                year_str = str(year)
-                operating_cf_by_year[year_str] = 0
-                investing_cf_by_year[year_str] = 0
-                financing_cf_by_year[year_str] = 0
-                net_cf_by_year[year_str] = 0
-                other_segment_revenue_cf[year_str] = 0
-                other_segment_cogs_cf[year_str] = 0
-            
-            # 1. Calculate revenue and COGS from other business segments (non-real estate)
-            if other_revenue_breakdown:
-                for segment_name, segment_revenue in other_revenue_breakdown.items():
-                    for year in years:
-                        year_str = str(year)
-                        revenue = segment_revenue.get(year_str, 0)
-                        other_segment_revenue_cf[year_str] += revenue
-                        operating_cf_by_year[year_str] += revenue
-                        
-                        # Calculate COGS for this segment
-                        if segment_name in segment_metrics:
-                            gross_margin = segment_metrics[segment_name]['gross_margin']
-                        else:
-                            gross_margin = 0.0
-                        
-                        segment_cogs = revenue * (1 - gross_margin)
-                        other_segment_cogs_cf[year_str] += segment_cogs
-                        operating_cf_by_year[year_str] -= segment_cogs
-            
-            # 2. Aggregate cash flows from all projects
-            for _, project in df_projects.iterrows():
-                project_name = project.get('project_name', 'Unknown')
-                financial_statements = project.get('comprehensive_financial_statements', {})
-                
-                if not isinstance(financial_statements, dict):
-                    financial_statements = {}
-                
-                # Initialize project breakdown
-                if project_name not in presales_cf_breakdown:
-                    presales_cf_breakdown[project_name] = {}
-                    interest_outflow_breakdown[project_name] = {}
-                    sga_outflow_breakdown[project_name] = {}
-                    tax_outflow_breakdown[project_name] = {}
-                    land_outflow_breakdown[project_name] = {}
-                    construction_outflow_breakdown[project_name] = {}
-                    investing_cf_breakdown[project_name] = {}
-                    financing_cf_breakdown[project_name] = {}
-                
-                for year in years:
-                    year_str = str(year)
-                    
-                    if year_str in financial_statements:
-                        year_data = financial_statements[year_str]
-                        
-                        # Operating Cash Flow Components
-                        presales_inflow = year_data.get('cash_inflow_presales', 0) / 1e9
-                        presales_cf_breakdown[project_name][year_str] = presales_inflow
-                        operating_cf_by_year[year_str] += presales_inflow
-                        
-                        interest_outflow = year_data.get('cash_outflow_interest', 0) / 1e9
-                        interest_outflow_breakdown[project_name][year_str] = interest_outflow
-                        operating_cf_by_year[year_str] += interest_outflow
-                        
-                        sga_outflow = year_data.get('cash_outflow_sga', 0) / 1e9
-                        sga_outflow_breakdown[project_name][year_str] = sga_outflow
-                        operating_cf_by_year[year_str] += sga_outflow
-                        
-                        tax_outflow = year_data.get('cash_outflow_tax', 0) / 1e9
-                        tax_outflow_breakdown[project_name][year_str] = tax_outflow
-                        operating_cf_by_year[year_str] += tax_outflow
-                        
-                        # Investing Cash Flow
-                        land_outflow = year_data.get('cash_outflow_land', 0) / 1e9
-                        construction_outflow = year_data.get('cash_outflow_construction', 0) / 1e9
-                        
-                        land_outflow_breakdown[project_name][year_str] = land_outflow
-                        construction_outflow_breakdown[project_name][year_str] = construction_outflow
-                        
-                        investing_cf = land_outflow + construction_outflow
-                        investing_cf_by_year[year_str] += investing_cf
-                        investing_cf_breakdown[project_name][year_str] = investing_cf
-                        
-                        # Financing Cash Flow
-                        debt_disbursement = year_data.get('debt_disbursement', 0) / 1e9
-                        debt_repayment = year_data.get('debt_repayment', 0) / 1e9
-                        financing_cf = debt_disbursement + debt_repayment
-                        financing_cf_by_year[year_str] += financing_cf
-                        financing_cf_breakdown[project_name][year_str] = financing_cf
-                    else:
-                        presales_cf_breakdown[project_name][year_str] = 0
-                        interest_outflow_breakdown[project_name][year_str] = 0
-                        sga_outflow_breakdown[project_name][year_str] = 0
-                        tax_outflow_breakdown[project_name][year_str] = 0
-                        land_outflow_breakdown[project_name][year_str] = 0
-                        construction_outflow_breakdown[project_name][year_str] = 0
-                        investing_cf_breakdown[project_name][year_str] = 0
-                        financing_cf_breakdown[project_name][year_str] = 0
-            
-            # Add existing debt interest expense to operating cash flow
-            for year in years:
-                year_str = str(year)
-                existing_debt_interest = existing_debt_interest_row.get(str(year), 0)
-                operating_cf_by_year[year_str] += existing_debt_interest
-            
-            # Add SG&A expense from other segments to operating cash flow
-            for year in years:
-                year_str = str(year)
-                total_sga = 0
-                for row in sga_rows:
-                    if row['SG&A Source'] == 'TOTAL SG&A':
-                        total_sga = row.get(str(year), 0)
-                        break
-                total_proj_sga = sum(sga_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in sga_outflow_breakdown.keys())
-                other_sga = total_sga - total_proj_sga
-                operating_cf_by_year[year_str] += other_sga
-            
-            # Add total tax expense to operating cash flow
-            for year in years:
-                year_str = str(year)
-                project_taxes = sum(tax_outflow_breakdown.get(proj, {}).get(year_str, 0) for proj in tax_outflow_breakdown.keys())
-                operating_cf_by_year[year_str] -= project_taxes
-                total_tax_pnl = tax_row.get(year_str, 0)
-                operating_cf_by_year[year_str] += total_tax_pnl
-            
-            # Add interest income to investing cash flow
-            for year in years:
-                year_str = str(year)
-                interest_income_cf = interest_income_by_year.get(year_str, 0)
-                investing_cf_by_year[year_str] += interest_income_cf
-            
-            # Calculate net cash flow for each year
-            for year in years:
-                year_str = str(year)
-                net_cf_by_year[year_str] = (
-                    operating_cf_by_year[year_str] + 
-                    investing_cf_by_year[year_str] + 
-                    financing_cf_by_year[year_str]
-                )
+            # Unpack the returned values
+            operating_cf_by_year = cf_data['operating_cf_by_year']
+            investing_cf_by_year = cf_data['investing_cf_by_year']
+            financing_cf_by_year = cf_data['financing_cf_by_year']
+            net_cf_by_year = cf_data['net_cf_by_year']
+            other_segment_revenue_cf = cf_data['other_segment_revenue_cf']
+            other_segment_cogs_cf = cf_data['other_segment_cogs_cf']
+            presales_cf_breakdown = cf_data['presales_cf_breakdown']
+            interest_outflow_breakdown = cf_data['interest_outflow_breakdown']
+            sga_outflow_breakdown = cf_data['sga_outflow_breakdown']
+            tax_outflow_breakdown = cf_data['tax_outflow_breakdown']
+            land_outflow_breakdown = cf_data['land_outflow_breakdown']
+            construction_outflow_breakdown = cf_data['construction_outflow_breakdown']
+            investing_cf_breakdown = cf_data['investing_cf_breakdown']
+            financing_cf_breakdown = cf_data['financing_cf_breakdown']
             
             # Section 6: Balance Sheet Statements
             st.markdown("---")
@@ -1820,15 +1691,6 @@ class ModelForecastTab:
             # Populate breakdown data from the aggregation loop above
             # All detail balance sheet code has been moved inside tab_detail_bs above
             
-            # Format function to handle NaN values (used by both tabs)
-            def format_bs_value(x):
-                if pd.isna(x) or x is None:
-                    return "-"
-                try:
-                    return f"{int(x):,}"
-                except (ValueError, OverflowError):
-                    return f"{x:,.0f}"
-            
             with tab_detail_bs:
                 # Render detail balance sheet tab using utility function
                 render_detail_bs_tab(
@@ -1849,8 +1711,7 @@ class ModelForecastTab:
                     cash_change_breakdown=cash_change_breakdown,
                     total_debt_by_year=total_debt_by_year,
                     total_inventory_by_year=total_inventory_by_year,
-                    total_customer_prepayment_by_year=total_customer_prepayment_by_year,
-                    format_bs_value=format_bs_value
+                    total_customer_prepayment_by_year=total_customer_prepayment_by_year
                 )
             
             with tab_consolidated_bs:

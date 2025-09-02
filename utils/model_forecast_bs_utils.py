@@ -6,6 +6,16 @@ import pandas as pd
 from typing import Dict, List, Any, Optional
 
 
+def format_bs_value(x):
+    """Format balance sheet values, handling NaN values"""
+    if pd.isna(x) or x is None:
+        return "-"
+    try:
+        return f"{int(x):,}"
+    except (ValueError, OverflowError):
+        return f"{x:,.0f}"
+
+
 def render_detail_bs_tab(
     df_projects: pd.DataFrame,
     hist_col: str,
@@ -24,8 +34,7 @@ def render_detail_bs_tab(
     cash_change_breakdown: Dict,
     total_debt_by_year: Dict,
     total_inventory_by_year: Dict,
-    total_customer_prepayment_by_year: Dict,
-    format_bs_value: callable
+    total_customer_prepayment_by_year: Dict
 ) -> None:
     """
     Render the detail balance sheet tab showing project-level breakdown
@@ -49,7 +58,6 @@ def render_detail_bs_tab(
         total_debt_by_year: Total debt by year
         total_inventory_by_year: Total inventory by year
         total_customer_prepayment_by_year: Total customer prepayment by year
-        format_bs_value: Function to format balance sheet values
     """
     # Detail Project Breakdown Balance Sheet content
     bs_rows = []
