@@ -515,37 +515,6 @@ class ValuationTab:
         
         # Display the figure
         st.plotly_chart(fig, use_container_width=True)
-        
-        # Add statistics summary
-        st.subheader("Valuation Statistics")
-        
-        stats_data = []
-        for metric, title in metrics:
-            if metric in data.columns:
-                metric_data = data[metric].dropna()
-                if not metric_data.empty:
-                    stats_data.append({
-                        'Metric': title,
-                        'Current': metric_data.iloc[-1] if len(metric_data) > 0 else np.nan,
-                        'Mean': metric_data.mean(),
-                        'Std Dev': metric_data.std(),
-                        'Min': metric_data.min(),
-                        'Max': metric_data.max(),
-                        'Current vs Mean': f"{((metric_data.iloc[-1] / metric_data.mean() - 1) * 100):.1f}%" if len(metric_data) > 0 else "N/A"
-                    })
-        
-        if stats_data:
-            stats_df = pd.DataFrame(stats_data)
-            st.dataframe(
-                stats_df.style.format({
-                    'Current': '{:.2f}',
-                    'Mean': '{:.2f}',
-                    'Std Dev': '{:.2f}',
-                    'Min': '{:.2f}',
-                    'Max': '{:.2f}'
-                }),
-                use_container_width=True
-            )
     
     def render_stock_price_section(self, ticker):
         """Render current stock price only"""
@@ -701,7 +670,7 @@ class ValuationTab:
         
         # Display P/E metrics in first row
         st.markdown("**P/E Ratios**")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             val, delta = format_metric_with_mean(pe_values['trailing'], pe_mean)
@@ -715,9 +684,13 @@ class ValuationTab:
             val, delta = format_metric_with_mean(pe_values[next_year], pe_mean)
             st.metric(f"{next_year}F P/E", val, delta)
         
+        with col4:
+            mean_val = f"{pe_mean:.2f}x" if pe_mean else "N/A"
+            st.metric("Mean P/E", mean_val, "Historical Average")
+        
         # Display P/B metrics in second row
         st.markdown("**P/B Ratios**")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             val, delta = format_metric_with_mean(pb_values['trailing'], pb_mean)
@@ -730,6 +703,10 @@ class ValuationTab:
         with col3:
             val, delta = format_metric_with_mean(pb_values[next_year], pb_mean)
             st.metric(f"{next_year}F P/B", val, delta)
+        
+        with col4:
+            mean_val = f"{pb_mean:.2f}x" if pb_mean else "N/A"
+            st.metric("Mean P/B", mean_val, "Historical Average")
         
         # Add detailed breakdown in expander
         with st.expander("View Calculation Details"):
