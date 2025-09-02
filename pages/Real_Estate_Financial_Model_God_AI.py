@@ -274,8 +274,8 @@ class RealEstateFinancialModel:
         st.session_state.forecast_years = st.sidebar.slider(
             "Forecast Years",
             min_value=3,
-            max_value=10,
-            value=5
+            max_value=20,
+            value=10
         )
         
         # Data refresh buttons

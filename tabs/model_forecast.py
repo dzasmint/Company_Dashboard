@@ -229,8 +229,10 @@ class ModelForecastTab:
         if not business_segments:
             st.info("No business segments defined. Add business segment assumptions in the Assumptions tab.")
         
-        # Revenue Forecast from Projects (data preparation)
-        revenue_forecast = self.generate_revenue_forecast()
+        # Calculate forecast years directly
+        current_year = datetime.now().year
+        forecast_years = st.session_state.forecast_years
+        years = list(range(current_year, current_year + forecast_years + 1))
     
         # Get historical data for 2024
         # First ensure historical data is loaded
@@ -246,7 +248,8 @@ class ModelForecastTab:
         historical_data = st.session_state.get('historical_data')
     
         # Dynamically determine the latest historical year
-        base_year = st.session_state.get('base_year', 2024)  # Default to 2024 if not set
+        current_year = datetime.now().year
+        base_year = st.session_state.get('base_year', current_year - 1)  # Default to current year - 1 if not set
         hist_values = {}
     
         if historical_data is not None and not historical_data.empty:
@@ -359,8 +362,7 @@ class ModelForecastTab:
         # Get project revenue data
         if st.session_state.project_data is not None and not st.session_state.project_data.empty:
             df_projects = st.session_state.project_data
-            years = revenue_forecast['years']
-            current_year = datetime.now().year
+            # Years were already calculated above at line 235
         
             # Get base year from session state
             base_year = st.session_state.get('base_year', datetime.now().year - 1)
@@ -952,7 +954,6 @@ class ModelForecastTab:
         
             # Calculate interest expense for all projects
             project_interest_by_year = {}
-            cumulative_debt = 0
             debt_financing_pct = company_assumptions.get('debt_financing_pct', 0.0)  # Default 30%
         
             for year in years:
@@ -1538,7 +1539,6 @@ class ModelForecastTab:
             tax_outflow_breakdown = cf_data['tax_outflow_breakdown']
             land_outflow_breakdown = cf_data['land_outflow_breakdown']
             construction_outflow_breakdown = cf_data['construction_outflow_breakdown']
-            investing_cf_breakdown = cf_data['investing_cf_breakdown']
             financing_cf_breakdown = cf_data['financing_cf_breakdown']
             
             # Section 6: Balance Sheet Statements
@@ -1612,7 +1612,7 @@ class ModelForecastTab:
                 hist_date_idx=hist_date_idx
             )
             
-            # Unpack all the returned values
+            # Unpack only the values that are actually used
             total_debt_by_year = bs_data_result['total_debt_by_year']
             total_inventory_by_year = bs_data_result['total_inventory_by_year']
             total_customer_prepayment_by_year = bs_data_result['total_customer_prepayment_by_year']
@@ -1620,18 +1620,7 @@ class ModelForecastTab:
             hist_bs_data = bs_data_result['hist_bs_data']
             hist_debt = bs_data_result['hist_debt']
             hist_inventory = bs_data_result['hist_inventory']
-            hist_cash = bs_data_result['hist_cash']
             hist_customer_prepayment = bs_data_result['hist_customer_prepayment']
-            hist_retained_earnings = bs_data_result['hist_retained_earnings']
-            hist_minority_interest = bs_data_result['hist_minority_interest']
-            debt_changes_by_year = bs_data_result['debt_changes_by_year']
-            inventory_changes_by_year = bs_data_result['inventory_changes_by_year']
-            prepayment_changes_by_year = bs_data_result['prepayment_changes_by_year']
-            cash_changes_by_year = bs_data_result['cash_changes_by_year']
-            cumulative_debt = bs_data_result['cumulative_debt']
-            cumulative_inventory = bs_data_result['cumulative_inventory']
-            cumulative_prepayment = bs_data_result['cumulative_prepayment']
-            cumulative_cash = bs_data_result['cumulative_cash']
             debt_breakdown = bs_data_result['debt_breakdown']
             inventory_breakdown = bs_data_result['inventory_breakdown']
             prepayment_breakdown = bs_data_result['prepayment_breakdown']
@@ -1962,206 +1951,4 @@ class ModelForecastTab:
         else:
             st.info("No project data available. Please add projects in the Project Pipeline tab.")
     
-    def generate_revenue_forecast(self):
-        """Generate revenue forecast from project pipeline"""
-        current_year = datetime.now().year
-        forecast_years = st.session_state.forecast_years
-    
-        # Initialize forecast structure
-        years = list(range(current_year, current_year + forecast_years + 1))
-        forecast = {
-            'years': years,
-            'presales': [0] * len(years),
-            'handover': [0] * len(years),
-            'recurring': [0] * len(years),
-            'total': [0] * len(years),
-            'project_details': {},  # Store project-level breakdown
-            'revenue_by_project': {},  # Store revenue schedules by project
-            'construction_by_project': {},  # Store construction schedules by project
-            'land_by_project': {},  # Store land schedules by project
-            'sga_by_project': {}  # Store SG&A schedules by project
-        }
-    
-        # If we have project data, calculate revenue from projects
-        if st.session_state.project_data is not None and isinstance(st.session_state.project_data, pd.DataFrame) and not st.session_state.project_data.empty:
-            forecast = self.calculate_project_based_revenue(forecast)
-        # If no project data, forecast remains with zero values
-    
-        return forecast
-    
-    def calculate_project_based_revenue(self, forecast):
-        """Calculate revenue forecast based on actual project details"""
-        df_projects = st.session_state.project_data
-        current_year = datetime.now().year
-    
-        # Initialize project details dictionary and schedule dictionaries
-        for year in forecast['years']:
-            forecast['project_details'][year] = []
-            if year not in forecast['revenue_by_project']:
-                forecast['revenue_by_project'][year] = {}
-            if year not in forecast['construction_by_project']:
-                forecast['construction_by_project'][year] = {}
-            if year not in forecast['land_by_project']:
-                forecast['land_by_project'][year] = {}
-            if year not in forecast['sga_by_project']:
-                forecast['sga_by_project'][year] = {}
-    
-        # Process each project
-        for _, project in df_projects.iterrows():
-            project_name = project.get('project_name', 'Unknown Project')
-        
-            # First check if project has saved schedules
-            revenue_schedule = project.get('revenue_schedule', {})
-            construction_schedule = project.get('construction_schedule', {})
-            land_schedule = project.get('land_schedule', {})
-            sga_schedule = project.get('sga_schedule', {})
-        
-            # Ensure schedules are dictionaries
-            if not isinstance(revenue_schedule, dict):
-                revenue_schedule = {}
-            if not isinstance(construction_schedule, dict):
-                construction_schedule = {}
-            if not isinstance(land_schedule, dict):
-                land_schedule = {}
-            if not isinstance(sga_schedule, dict):
-                sga_schedule = {}
-        
-            # If we have saved schedules, use them preferentially
-            if revenue_schedule:
-                for year in forecast['years']:
-                    year_str = str(year)
-                    if year_str in revenue_schedule:
-                        year_revenue = revenue_schedule[year_str]  # Already in billions
-                        if year_revenue > 0:
-                            year_idx = forecast['years'].index(year)
-                            # For simplicity, split between presales (40%) and handover (60%)
-                            forecast['presales'][year_idx] += year_revenue * 0.4
-                            forecast['handover'][year_idx] += year_revenue * 0.6
-                            forecast['revenue_by_project'][year][project_name] = year_revenue
-                        
-                            forecast['project_details'][year].append({
-                                'project': project_name,
-                                'type': 'Revenue',
-                                'amount': year_revenue
-                            })
-                
-                    # Add cost schedules
-                    if year_str in construction_schedule:
-                        forecast['construction_by_project'][year][project_name] = construction_schedule[year_str]
-                    if year_str in land_schedule:
-                        forecast['land_by_project'][year][project_name] = land_schedule[year_str]
-                    if year_str in sga_schedule:
-                        forecast['sga_by_project'][year][project_name] = sga_schedule[year_str]
-            
-                continue  # Skip to next project since we used saved schedules
-        
-            # Get project timeline parameters
-            construction_start = int(project.get('construction_start_year', current_year))
-            completion_year = int(project.get('project_completion_year', current_year + 3))
-            revenue_start = int(project.get('revenue_booking_start_year', construction_start + 1))
-        
-            # Calculate total project revenue
-            total_revenue = 0
-            if 'total_revenue' in project and pd.notna(project['total_revenue']) and project['total_revenue'] > 0:
-                total_revenue = project['total_revenue'] / 1e9  # Convert to billions
-            else:
-                # Calculate from components
-                total_units = project.get('total_units', 0)
-                nsa = project.get('net_sellable_area', 0)
-                avg_price = project.get('average_selling_price', 0)  # Price per sqm in millions VND
-            
-                if nsa > 0 and avg_price > 0:
-                    # Total revenue = NSA * Price per sqm
-                    total_revenue = (nsa * avg_price) / 1e3  # Convert from millions to billions
-                elif total_units > 0 and avg_price > 0:
-                    # If we have units but not NSA, estimate average unit size
-                    avg_unit_size = project.get('average_unit_size', 70)  # Default 70 sqm
-                    total_revenue = (total_units * avg_unit_size * avg_price) / 1e3
-        
-            if total_revenue <= 0:
-                continue  # Skip projects with no revenue data
-        
-            # Get distribution schedules (always use them now)
-            revenue_distribution = project.get('revenue_distribution', {})
-            presales_distribution = project.get('presales_distribution', {})
-        
-            # Calculate presales revenue with custom or default distribution
-            sales_start = int(project.get('sale_start_year', current_year))
-            sales_years = int(project.get('sales_years', 3))
-            sales_end = sales_start + sales_years - 1
-        
-            if presales_distribution:
-                # Use custom presales distribution
-                for year in forecast['years']:
-                    if sales_start <= year <= sales_end:
-                        year_pct = presales_distribution.get(str(year), 0) / 100.0
-                        year_presales = total_revenue * 0.4 * year_pct  # 40% of total as presales
-                    
-                        if year_presales > 0:
-                            year_idx = forecast['years'].index(year)
-                            forecast['presales'][year_idx] += year_presales
-                            forecast['project_details'][year].append({
-                                'project': project_name,
-                                'type': 'Presales',
-                                'amount': year_presales
-                            })
-            else:
-                # Default presales distribution (even across sales years)
-                presales_revenue = total_revenue * 0.4  # 40% as presales
-                for year in forecast['years']:
-                    if sales_start <= year <= sales_end:
-                        annual_presales = presales_revenue / sales_years
-                    
-                        year_idx = forecast['years'].index(year)
-                        forecast['presales'][year_idx] += annual_presales
-                        forecast['project_details'][year].append({
-                            'project': project_name,
-                            'type': 'Presales',
-                            'amount': annual_presales
-                        })
-        
-            # Calculate handover revenue with custom or default distribution
-            if revenue_distribution:
-                # Use custom revenue distribution for handover
-                for year in forecast['years']:
-                    if revenue_start <= year <= completion_year:
-                        year_pct = revenue_distribution.get(str(year), 0) / 100.0
-                        year_handover = total_revenue * 0.6 * year_pct  # 60% of total as handover
-                    
-                        if year_handover > 0:
-                            year_idx = forecast['years'].index(year)
-                            forecast['handover'][year_idx] += year_handover
-                            forecast['project_details'][year].append({
-                                'project': project_name,
-                                'type': 'Handover',
-                                'amount': year_handover
-                            })
-            else:
-                # Default handover distribution (even across revenue booking years)
-                handover_revenue = total_revenue * 0.6  # 60% as handover revenue
-                for year in forecast['years']:
-                    if revenue_start <= year <= completion_year:
-                        handover_years = max(completion_year - revenue_start + 1, 1)
-                        annual_handover = handover_revenue / handover_years
-                    
-                        year_idx = forecast['years'].index(year)
-                        forecast['handover'][year_idx] += annual_handover
-                        forecast['project_details'][year].append({
-                            'project': project_name,
-                            'type': 'Handover',
-                            'amount': annual_handover
-                        })
-    
-        # Add recurring revenue (property management, rental income)
-        # Estimate as 5% of cumulative delivered projects
-        cumulative_delivered = 0
-        for i, year in enumerate(forecast['years']):
-            cumulative_delivered += forecast['handover'][i]
-            forecast['recurring'][i] = cumulative_delivered * 0.05  # 5% recurring revenue
-    
-        # Calculate total revenue
-        for i in range(len(forecast['years'])):
-            forecast['total'][i] = forecast['presales'][i] + forecast['handover'][i] + forecast['recurring'][i]
-    
-        return forecast
 
