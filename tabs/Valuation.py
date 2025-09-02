@@ -592,13 +592,43 @@ class ValuationTab:
         # Extract forecast data
         forecast = forecast_doc.get('forecast_data', {})
         
-        # Initialize metrics
-        metrics = {
-            f'{current_year} P/E': 'N/A',
-            f'{next_year} P/E': 'N/A',
-            f'{current_year} P/B': 'N/A',
-            f'{next_year} P/B': 'N/A'
+        # Initialize metrics - store numeric values for comparison
+        pe_values = {
+            'trailing': None,
+            current_year: None,
+            next_year: None
         }
+        pb_values = {
+            'trailing': None,
+            current_year: None,
+            next_year: None
+        }
+        
+        # Load historical valuation data for trailing metrics and mean calculation
+        valuation_data = self.load_valuation_data(ticker)
+        pe_mean = None
+        pb_mean = None
+        
+        if valuation_data is not None and not valuation_data.empty:
+            # Get latest trailing values
+            latest_val = valuation_data.iloc[-1]
+            
+            if 'P/E' in valuation_data.columns and pd.notna(latest_val['P/E']):
+                pe_values['trailing'] = latest_val['P/E']
+            
+            if 'P/B' in valuation_data.columns and pd.notna(latest_val['P/B']):
+                pb_values['trailing'] = latest_val['P/B']
+            
+            # Calculate historical means
+            if 'P/E' in valuation_data.columns:
+                pe_series = valuation_data['P/E'].dropna()
+                if not pe_series.empty:
+                    pe_mean = pe_series.mean()
+            
+            if 'P/B' in valuation_data.columns:
+                pb_series = valuation_data['P/B'].dropna()
+                if not pb_series.empty:
+                    pb_mean = pb_series.mean()
         
         # Calculate P/E ratios
         for year in [current_year, next_year]:
@@ -624,7 +654,7 @@ class ValuationTab:
                     # Calculate P/E ratio
                     if eps > 0:
                         pe_ratio = current_price / eps
-                        metrics[f'{year} P/E'] = f"{pe_ratio:.2f}x"
+                        pe_values[year] = pe_ratio
                 
                 # Get Total Equity - check both old format (direct) and new format (nested)
                 total_equity = 0
@@ -649,22 +679,57 @@ class ValuationTab:
                     # Calculate P/B ratio
                     if bvps > 0:
                         pb_ratio = current_price / bvps
-                        metrics[f'{year} P/B'] = f"{pb_ratio:.2f}x"
+                        pb_values[year] = pb_ratio
         
-        # Display metrics in columns
-        col1, col2, col3, col4 = st.columns(4)
+        # Helper function to format metric with vs. mean comparison
+        def format_metric_with_mean(value, mean_val):
+            if value is None:
+                return "N/A", ""
+            
+            main_text = f"{value:.2f}x"
+            
+            if mean_val is not None and mean_val > 0:
+                vs_mean_pct = ((value / mean_val) - 1) * 100
+                if vs_mean_pct >= 0:
+                    delta_text = f"vs. mean: +{vs_mean_pct:.0f}%"
+                else:
+                    delta_text = f"vs. mean: {vs_mean_pct:.0f}%"
+            else:
+                delta_text = ""
+            
+            return main_text, delta_text
+        
+        # Display P/E metrics in first row
+        st.markdown("**P/E Ratios**")
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric(f"{current_year} P/E", metrics[f'{current_year} P/E'])
+            val, delta = format_metric_with_mean(pe_values['trailing'], pe_mean)
+            st.metric("Trailing P/E", val, delta)
         
         with col2:
-            st.metric(f"{next_year} P/E", metrics[f'{next_year} P/E'])
+            val, delta = format_metric_with_mean(pe_values[current_year], pe_mean)
+            st.metric(f"{current_year}F P/E", val, delta)
         
         with col3:
-            st.metric(f"{current_year} P/B", metrics[f'{current_year} P/B'])
+            val, delta = format_metric_with_mean(pe_values[next_year], pe_mean)
+            st.metric(f"{next_year}F P/E", val, delta)
         
-        with col4:
-            st.metric(f"{next_year} P/B", metrics[f'{next_year} P/B'])
+        # Display P/B metrics in second row
+        st.markdown("**P/B Ratios**")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            val, delta = format_metric_with_mean(pb_values['trailing'], pb_mean)
+            st.metric("Trailing P/B", val, delta)
+        
+        with col2:
+            val, delta = format_metric_with_mean(pb_values[current_year], pb_mean)
+            st.metric(f"{current_year}F P/B", val, delta)
+        
+        with col3:
+            val, delta = format_metric_with_mean(pb_values[next_year], pb_mean)
+            st.metric(f"{next_year}F P/B", val, delta)
         
         # Add detailed breakdown in expander
         with st.expander("View Calculation Details"):
