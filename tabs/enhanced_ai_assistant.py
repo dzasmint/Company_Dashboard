@@ -64,7 +64,7 @@ Integrates all data sources: CSV files, MongoDB collections, and AI services
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any, Optional, Callable, Tuple
+from typing import Dict, List, Optional, Callable
 from datetime import datetime
 from pathlib import Path
 import json
@@ -259,7 +259,6 @@ class EnhancedAIToolSystem:
         self._register_real_estate_tools()
         self._register_forecast_analysis_tools()
         self._register_market_tools()
-        self._register_portfolio_tools()
         self._register_ai_tools()
         self._register_visualization_tools()
     
@@ -4017,151 +4016,6 @@ class EnhancedAIToolSystem:
                 "status": "success"
             }
     
-    def _register_portfolio_tools(self):
-        """Register portfolio and aggregation tools"""
-        
-        @self.tool(
-            name="calculate_portfolio_metrics",
-            description="Calculate aggregate metrics across companies or projects",
-            parameters={
-                "tickers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Companies to include",
-                    "required": True
-                },
-                "metric_type": {
-                    "type": "string",
-                    "enum": ["financial", "projects", "combined"],
-                    "description": "Type of metrics to calculate",
-                    "required": False
-                }
-            }
-        )
-        def calculate_portfolio_metrics(tickers: List[str], metric_type: str = "combined") -> Dict:
-            """Calculate portfolio-level metrics"""
-            
-            tickers = [t.upper() for t in tickers]
-            results = {}
-            
-            # Financial metrics
-            if metric_type in ["financial", "combined"]:
-                df = self._load_financial_statements_csv()
-                if not df.empty:
-                    df = df[df['TICKER'].isin(tickers)]
-                    latest_year = df['DATE'].max()
-                    df_latest = df[df['DATE'] == latest_year]
-                    
-                    # Calculate aggregates
-                    revenue_df = df_latest[df_latest['KEYCODE'] == 'Net_Revenue']
-                    ebitda_df = df_latest[df_latest['KEYCODE'] == 'EBITDA']
-                    npat_df = df_latest[df_latest['KEYCODE'] == 'NPATMI']
-                    
-                    results["financial_aggregates"] = {
-                        "total_revenue": revenue_df['VALUE'].sum(),
-                        "total_ebitda": ebitda_df['VALUE'].sum(),
-                        "total_npat": npat_df['VALUE'].sum(),
-                        "year": latest_year,
-                        "companies": len(tickers)
-                    }
-            
-            # Project metrics
-            if metric_type in ["projects", "combined"]:
-                projects_df = self._load_real_estate_projects()
-                if not projects_df.empty:
-                    projects_df = projects_df[projects_df['company_ticker'].isin(tickers)]
-                    
-                    results["project_aggregates"] = {
-                        "total_projects": len(projects_df),
-                        "total_units": projects_df['total_units'].sum(),
-                        "total_nsa": projects_df['net_sellable_area'].sum(),
-                        "avg_asp": projects_df['average_selling_price'].mean(),
-                        "companies": projects_df['company_ticker'].nunique()
-                    }
-            
-            return {
-                "portfolio": results,
-                "tickers": tickers,
-                "metric_type": metric_type,
-                "status": "success"
-            }
-        
-        @self.tool(
-            name="generate_financial_summary",
-            description="Generate comprehensive financial summary for companies",
-            parameters={
-                "ticker": {
-                    "type": "string",
-                    "description": "Company ticker",
-                    "required": True
-                },
-                "include_projects": {
-                    "type": "boolean",
-                    "description": "Include real estate projects",
-                    "required": False
-                }
-            }
-        )
-        def generate_financial_summary(ticker: str, include_projects: bool = True) -> Dict:
-            """Generate comprehensive financial summary"""
-            
-            ticker = ticker.upper()
-            summary = {"ticker": ticker}
-            
-            # Financial statements summary
-            fin_df = self._load_financial_statements_csv()
-            if not fin_df.empty:
-                ticker_df = fin_df[fin_df['TICKER'] == ticker]
-                if not ticker_df.empty:
-                    latest_year = ticker_df['DATE'].max()
-                    latest_df = ticker_df[ticker_df['DATE'] == latest_year]
-                    
-                    key_metrics = ['Net_Revenue', 'EBITDA', 'NPATMI', 'Gross_Margin', 
-                                 'EBITDA_Margin', 'NPAT_Margin']
-                    
-                    financials = {}
-                    for metric in key_metrics:
-                        metric_data = latest_df[latest_df['KEYCODE'] == metric]
-                        if not metric_data.empty:
-                            financials[metric] = {
-                                "value": metric_data.iloc[0]['VALUE'],
-                                "yoy": metric_data.iloc[0].get('YoY')
-                            }
-                    
-                    summary["financials"] = {
-                        "year": latest_year,
-                        "metrics": financials
-                    }
-            
-            # Valuation summary
-            val_df = self._load_valuation_csv()
-            if not val_df.empty:
-                ticker_val = val_df[val_df['TICKER'] == ticker]
-                if not ticker_val.empty:
-                    latest_val = ticker_val.iloc[-1]
-                    summary["valuation"] = {
-                        "date": latest_val.get('TRADE_DATE'),
-                        "P/E": latest_val.get('P/E'),
-                        "P/B": latest_val.get('P/B'),
-                        "EV/EBITDA": latest_val.get('EV/EBITDA')
-                    }
-            
-            # Projects summary
-            if include_projects:
-                projects_df = self._load_real_estate_projects()
-                if not projects_df.empty:
-                    ticker_projects = projects_df[projects_df['company_ticker'] == ticker]
-                    if not ticker_projects.empty:
-                        summary["projects"] = {
-                            "count": len(ticker_projects),
-                            "total_units": ticker_projects['total_units'].sum(),
-                            "total_nsa": ticker_projects['net_sellable_area'].sum(),
-                            "project_list": ticker_projects['project_name'].tolist()
-                        }
-            
-            summary["status"] = "success"
-            return summary
-    
     def _register_ai_tools(self):
         """Register AI-enhanced tools"""
         
@@ -4231,10 +4085,27 @@ class EnhancedAIToolSystem:
             
             ticker = ticker.upper()
             
-            # Gather data for analysis using the tool
-            summary = self.execute_tool('generate_financial_summary', {'ticker': ticker, 'include_projects': True})
+            # Gather financial data directly
+            summary = {"ticker": ticker}
+            include_projects = True  # Always include projects if available
             
-            if summary.get("status") != "success":
+            # Financial statements summary
+            fin_result = self.tools.get('get_historical_financials', lambda: {})(tickers=[ticker])
+            if fin_result.get('status') == 'success' and fin_result.get('data'):
+                summary['financials'] = fin_result.get('data')
+            
+            # Valuation metrics
+            val_result = self.tools.get('get_valuation_metrics', lambda: {})(ticker=ticker)
+            if val_result.get('status') == 'success' and val_result.get('valuation_metrics'):
+                summary['valuation'] = val_result.get('valuation_metrics')
+            
+            # Projects if real estate company
+            if include_projects:
+                projects_result = self.tools.get('list_real_estate_projects', lambda: {})(ticker=ticker)
+                if projects_result.get('status') == 'success' and projects_result.get('projects'):
+                    summary['projects'] = projects_result.get('projects')
+            
+            if not summary.get('financials') and not summary.get('valuation'):
                 return {"error": "Unable to gather data for analysis", "status": "failed"}
             
             # Create prompt based on analysis type
@@ -4838,148 +4709,6 @@ def get_enhanced_tool_system() -> EnhancedAIToolSystem:
     return _enhanced_tool_system
 
 
-class EnhancedAIAssistant:
-    """Enhanced AI Assistant with comprehensive data access"""
-    
-    def __init__(self):
-        """Initialize the enhanced assistant"""
-        self.tool_system = get_enhanced_tool_system()
-        self.anthropic_client = self.tool_system.anthropic_client
-    
-    def process_query(self, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Process user query using enhanced tool system"""
-        try:
-            # Classify intent
-            intent = self._classify_intent(query)
-            
-            # Extract entities
-            entities = self._extract_entities(query)
-            
-            # Map to appropriate tool
-            tool_name, arguments = self._map_to_tool(intent, entities, context)
-            
-            # Execute tool
-            result = self.tool_system.execute_tool(tool_name, arguments)
-            
-            # Format response
-            formatted_result = self._format_response(result, tool_name, query)
-            
-            return formatted_result
-            
-        except Exception as e:
-            return {
-                'type': 'error',
-                'message': f"Error processing query: {str(e)}",
-                'error': str(e)
-            }
-    
-    def _classify_intent(self, query: str) -> str:
-        """Classify query intent"""
-        query_lower = query.lower()
-        
-        # Financial analysis
-        if any(word in query_lower for word in ['financial', 'revenue', 'ebitda', 'profit', 'margin']):
-            return 'financial_analysis'
-        
-        # Project related
-        elif any(word in query_lower for word in ['project', 'real estate', 'development']):
-            return 'project_analysis'
-        
-        # Market data
-        elif any(word in query_lower for word in ['transaction', 'credit', 'inventory', 'market']):
-            return 'market_analysis'
-        
-        # Comparison
-        elif any(word in query_lower for word in ['compare', 'versus', 'vs', 'difference']):
-            return 'comparison'
-        
-        # Ranking
-        elif any(word in query_lower for word in ['rank', 'top', 'best', 'highest', 'largest']):
-            return 'ranking'
-        
-        else:
-            return 'general'
-    
-    def _extract_entities(self, query: str) -> Dict:
-        """Extract entities from query"""
-        entities = {}
-        
-        # Extract tickers
-        ticker_pattern = r'\b([A-Z]{3,4})\b'
-        tickers = re.findall(ticker_pattern, query)
-        if tickers:
-            entities['tickers'] = tickers
-        
-        # Extract years
-        year_pattern = r'\b(20\d{2})\b'
-        years = re.findall(year_pattern, query)
-        if years:
-            entities['years'] = [int(y) for y in years]
-        
-        # Extract quarters
-        quarter_pattern = r'\b(\d{4}-Q[1-4])\b'
-        quarters = re.findall(quarter_pattern, query)
-        if quarters:
-            entities['quarters'] = quarters
-        
-        return entities
-    
-    def _map_to_tool(self, intent: str, entities: Dict, context: Dict = None) -> Tuple[str, Dict]:
-        """Map intent and entities to appropriate tool"""
-        
-        # Default arguments from entities
-        arguments = entities.copy()
-        
-        # Add context if available
-        if context and context.get('selected_company'):
-            if 'tickers' not in arguments:
-                arguments['tickers'] = [context['selected_company']]
-        
-        # Map based on intent
-        if intent == 'financial_analysis':
-            if 'tickers' in entities:
-                return 'get_financial_statements', arguments
-            else:
-                return 'analyze_financial_trends', arguments
-        
-        elif intent == 'project_analysis':
-            return 'list_real_estate_projects', arguments
-        
-        elif intent == 'market_analysis':
-            return 'analyze_market_trends', arguments
-        
-        elif intent == 'comparison':
-            return 'compare_companies', arguments
-        
-        elif intent == 'ranking':
-            return 'rank_projects_by_metric', {'metric': 'revenue', **arguments}
-        
-        else:
-            # Default to financial summary
-            if 'tickers' in entities and len(entities['tickers']) == 1:
-                return 'generate_financial_summary', {'ticker': entities['tickers'][0]}
-            else:
-                return 'get_financial_statements', arguments
-    
-    def _format_response(self, result: Dict, tool_name: str, query: str) -> Dict:
-        """Format tool response for display"""
-        if result.get('status') == 'failed':
-            return {
-                'type': 'error',
-                'message': result.get('error', 'Operation failed'),
-                'tool': tool_name
-            }
-        
-        # Success response
-        return {
-            'type': 'success',
-            'data': result,
-            'tool_used': tool_name,
-            'query': query,
-            'message': f"Successfully processed using {tool_name}"
-        }
-
-
 def compress_ai_response(response: str, tool_calls_made: List[str], user_message: str) -> Dict:
     """Compress assistant response to structured data to save tokens"""
     import re
@@ -5192,7 +4921,7 @@ CRITICAL TOOL SELECTION RULES:
 
 **Other Analysis Tools:**
 - Market data: get_transaction_volumes, analyze_market_trends (MoC data)
-- Comparisons: compare_companies, generate_financial_summary
+- Comparisons: compare_companies
 
 **Data Format Requirements:**
 - Tickers must be arrays: ["VHM"] for single, ["VHM", "DXG"] for multiple
