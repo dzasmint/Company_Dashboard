@@ -430,105 +430,20 @@ def register_financial_forecast_tools(tool_system):
         }
     
     @tool_system.tool(
-        name="get_valuation_metrics",
-        description="Get valuation metrics (P/E, P/B, EV/EBITDA) for companies",
+        name="get_valuation_analysis",
+        description="Get comprehensive valuation analysis including RNAV, P/E, P/B multiples and comparisons. USAGE GUIDANCE: (1) If user asks about specific metrics (e.g., 'What is the P/E?'), display only the requested metrics. (2) If user asks about RNAV, show RNAV metrics and consider using get_rnav_breakdown for detailed project breakdown. (3) If user asks for complete valuation or comparison, display ALL metrics in a formatted table. (4) Always provide analysis based on what you display.",
         parameters={
-            "tickers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Company tickers",
+            "ticker": {
+                "type": "string",
+                "description": "Company ticker",
                 "required": True
-            },
-            "metrics": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Valuation metrics (P/E, P/B, P/S, EV/EBITDA)",
-                "required": False
-            },
-            "date_range": {
-                "type": "object",
-                "properties": {
-                    "start": {"type": "string"},
-                    "end": {"type": "string"}
-                },
-                "description": "Date range (YYYY-MM-DD format)",
-                "required": False
             }
         }
     )
-    def get_valuation_metrics(tickers: List[str], metrics: List[str] = None,
-                                date_range: Dict = None) -> Dict:
-        """Get valuation metrics"""
+    def get_valuation_analysis(ticker: str) -> Dict:
+        """Get comprehensive valuation analysis with all key metrics"""
         
-        tickers = [t.upper() for t in tickers]
-        
-        # Load valuation data
-        df = tool_system._load_valuation_csv()
-        
-        if df.empty:
-            return {"error": "Valuation data not available", "status": "failed"}
-        
-        # Filter by tickers
-        df = df[df['TICKER'].isin(tickers)]
-        
-        # Filter by date range
-        if date_range:
-            if 'start' in date_range:
-                df = df[df['TRADE_DATE'] >= date_range['start']]
-            if 'end' in date_range:
-                df = df[df['TRADE_DATE'] <= date_range['end']]
-        
-        # Filter by metrics
-        if metrics:
-            cols = ['TICKER', 'TRADE_DATE']
-            for metric in metrics:
-                if metric in df.columns:
-                    cols.append(metric)
-            df = df[cols]
-        
-        # Get latest values for each ticker
-        latest_df = df.sort_values('TRADE_DATE').groupby('TICKER').last().reset_index()
-        
-        return {
-            "latest_values": latest_df.to_dict('records'),
-            "historical_data": df.head(100).to_dict('records'),
-            "records": len(df),
-            "status": "success"
-        }
-    
-    @tool_system.tool(
-        name="get_company_valuation_metrics",
-        description="Get comprehensive valuation metrics including RNAV, P/E, P/B from saved forecast data",
-        parameters={
-            "tickers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "List of company tickers",
-                "required": True
-            },
-            "include_rnav": {
-                "type": "boolean",
-                "description": "Include RNAV analysis",
-                "required": False
-            },
-            "include_multiples": {
-                "type": "boolean",
-                "description": "Include P/E and P/B multiples",
-                "required": False
-            },
-            "include_comparison": {
-                "type": "boolean",
-                "description": "Include peer comparison",
-                "required": False
-            }
-        }
-    )
-    def get_company_valuation_metrics(tickers: List[str], include_rnav: bool = True, 
-                                        include_multiples: bool = True, include_comparison: bool = False) -> Dict:
-        """Get comprehensive valuation metrics from saved data"""
-        
-        tickers = [t.upper() for t in tickers]
-        results = {}
+        ticker = ticker.upper()
         
         if tool_system.vietnam_stocks_db is None:
             return {"error": "MongoDB not connected", "status": "failed"}
@@ -536,147 +451,87 @@ def register_financial_forecast_tools(tool_system):
         try:
             forecast_collection = tool_system.vietnam_stocks_db['CompanyForecast']
             
-            for ticker in tickers:
-                # Get saved forecast with valuation data
-                forecast_doc = forecast_collection.find_one({"ticker": ticker})
-                
-                if not forecast_doc:
-                    results[ticker] = {"error": f"No forecast data for {ticker}"}
-                    continue
-                
-                valuation_data = forecast_doc.get('valuation_data', {})
-                
-                if not valuation_data:
-                    results[ticker] = {"error": f"No valuation data saved for {ticker}"}
-                    continue
-                
-                ticker_result = {
-                    "current_price": valuation_data.get('current_price', 0),
-                    "last_updated": forecast_doc.get('last_updated', '').isoformat() if forecast_doc.get('last_updated') else None
-                }
-                
-                # Add RNAV metrics
-                if include_rnav:
-                    rnav_per_share = valuation_data.get('rnav_per_share', 0)
-                    current_price = valuation_data.get('current_price', 0)
-                    
-                    ticker_result['rnav'] = {
-                        "rnav_per_share": rnav_per_share,
-                        "upside_pct": ((rnav_per_share / current_price - 1) * 100) if current_price > 0 else 0,
-                        "has_details": len(valuation_data.get('rnav_details', [])) > 0
-                    }
-                
-                # Add multiples
-                if include_multiples and 'multiples' in valuation_data:
-                    multiples = valuation_data['multiples']
-                    current_year = datetime.now().year
-                    next_year = current_year + 1
-                    
-                    ticker_result['multiples'] = {
-                        "trailing_PE": multiples.get('trailing_PE'),
-                        "trailing_PB": multiples.get('trailing_PB'),
-                        f"{current_year}F_PE": multiples.get(f'{current_year}F_PE'),
-                        f"{current_year}F_PB": multiples.get(f'{current_year}F_PB'),
-                        f"{next_year}F_PE": multiples.get(f'{next_year}F_PE'),
-                        f"{next_year}F_PB": multiples.get(f'{next_year}F_PB'),
-                        "mean_PE": multiples.get('mean_PE'),
-                        "mean_PB": multiples.get('mean_PB')
-                    }
-                    
-                    # Calculate vs mean percentages
-                    if multiples.get(f'{current_year}F_PE') and multiples.get('mean_PE'):
-                        pe_vs_mean = ((multiples.get(f'{current_year}F_PE') / multiples.get('mean_PE') - 1) * 100)
-                        ticker_result['multiples']['PE_vs_mean_pct'] = round(pe_vs_mean, 1)
-                    
-                    if multiples.get(f'{current_year}F_PB') and multiples.get('mean_PB'):
-                        pb_vs_mean = ((multiples.get(f'{current_year}F_PB') / multiples.get('mean_PB') - 1) * 100)
-                        ticker_result['multiples']['PB_vs_mean_pct'] = round(pb_vs_mean, 1)
-                
-                results[ticker] = ticker_result
+            # Get saved forecast with valuation data
+            forecast_doc = forecast_collection.find_one({"ticker": ticker})
             
-            # Add comparison if requested
-            if include_comparison and len(tickers) > 1:
-                comparison = tool_system._compare_valuation_metrics(results)
-                results['comparison'] = comparison
+            if not forecast_doc or 'valuation_data' not in forecast_doc:
+                return {"error": f"No valuation data for {ticker}", "status": "failed"}
+            
+            valuation_data = forecast_doc.get('valuation_data', {})
+            multiples = valuation_data.get('multiples', {})
+            
+            # Get current year and next year
+            current_year = datetime.now().year
+            next_year = current_year + 1
+            
+            # Extract all required metrics
+            current_price = valuation_data.get('current_price', 0)
+            rnav_per_share = valuation_data.get('rnav_per_share', 0)
+            
+            # Calculate RNAV upside
+            rnav_upside = ((rnav_per_share / current_price - 1) * 100) if current_price > 0 else 0
+            
+            # Get all P/E and P/B multiples
+            trailing_pe = multiples.get('trailing_PE')
+            trailing_pb = multiples.get('trailing_PB')
+            current_year_pe = multiples.get(f'{current_year}F_PE')
+            current_year_pb = multiples.get(f'{current_year}F_PB')
+            next_year_pe = multiples.get(f'{next_year}F_PE')
+            next_year_pb = multiples.get(f'{next_year}F_PB')
+            mean_pe = multiples.get('mean_PE')
+            mean_pb = multiples.get('mean_PB')
+            
+            # Calculate comparisons vs historical mean
+            current_pe_vs_mean = ((current_year_pe / mean_pe - 1) * 100) if current_year_pe and mean_pe else None
+            current_pb_vs_mean = ((current_year_pb / mean_pb - 1) * 100) if current_year_pb and mean_pb else None
+            next_pe_vs_mean = ((next_year_pe / mean_pe - 1) * 100) if next_year_pe and mean_pe else None
+            next_pb_vs_mean = ((next_year_pb / mean_pb - 1) * 100) if next_year_pb and mean_pb else None
+            
+            # Format the comprehensive result
+            result = {
+                "ticker": ticker,
+                "current_price": round(current_price, 0),
+                "rnav_per_share": round(rnav_per_share, 0),
+                "rnav_upside_pct": round(rnav_upside, 1),
+                "trailing_pe": round(trailing_pe, 1) if trailing_pe else None,
+                "trailing_pb": round(trailing_pb, 1) if trailing_pb else None,
+                f"current_year_{current_year}_pe": round(current_year_pe, 1) if current_year_pe else None,
+                f"current_year_{current_year}_pb": round(current_year_pb, 1) if current_year_pb else None,
+                f"next_year_{next_year}_pe": round(next_year_pe, 1) if next_year_pe else None,
+                f"next_year_{next_year}_pb": round(next_year_pb, 1) if next_year_pb else None,
+                "historical_mean_pe": round(mean_pe, 1) if mean_pe else None,
+                "historical_mean_pb": round(mean_pb, 1) if mean_pb else None,
+                "current_year_pe_vs_mean_pct": round(current_pe_vs_mean, 1) if current_pe_vs_mean else None,
+                "current_year_pb_vs_mean_pct": round(current_pb_vs_mean, 1) if current_pb_vs_mean else None,
+                "next_year_pe_vs_mean_pct": round(next_pe_vs_mean, 1) if next_pe_vs_mean else None,
+                "next_year_pb_vs_mean_pct": round(next_pb_vs_mean, 1) if next_pb_vs_mean else None,
+                "last_updated": forecast_doc.get('last_updated', '').isoformat() if forecast_doc.get('last_updated') else None
+            }
             
             return {
-                "data": results,
-                "tickers": tickers,
-                "status": "success"
+                "data": result,
+                "status": "success",
+                "guidance": {
+                    "metrics_available": [
+                        "current_price", "rnav_per_share", "rnav_upside_pct",
+                        "trailing_pe", "trailing_pb",
+                        f"current_year_{current_year}_pe", f"current_year_{current_year}_pb",
+                        f"next_year_{next_year}_pe", f"next_year_{next_year}_pb",
+                        "historical_mean_pe", "historical_mean_pb",
+                        "current_year_pe_vs_mean_pct", "current_year_pb_vs_mean_pct",
+                        "next_year_pe_vs_mean_pct", "next_year_pb_vs_mean_pct"
+                    ],
+                    "display_instruction": "Display metrics based on user's request: specific metrics only if asked, or complete table for full valuation analysis",
+                    "rnav_note": "For detailed RNAV breakdown by project, use get_rnav_breakdown tool"
+                }
             }
             
         except Exception as e:
             return {"error": str(e), "status": "failed"}
     
-    def _compare_valuation_metrics(self, results: Dict) -> Dict:
-        """Helper to compare valuation metrics across companies"""
-        comparison = {
-            "rnav_upside_ranking": [],
-            "pe_ranking": [],
-            "pb_ranking": [],
-            "most_attractive": None
-        }
-        
-        # Rank by RNAV upside
-        rnav_data = []
-        for ticker, data in results.items():
-            if isinstance(data, dict) and 'rnav' in data:
-                rnav_data.append({
-                    "ticker": ticker,
-                    "upside_pct": data['rnav'].get('upside_pct', 0)
-                })
-        
-        if rnav_data:
-            rnav_data.sort(key=lambda x: x['upside_pct'], reverse=True)
-            comparison['rnav_upside_ranking'] = rnav_data
-        
-        # Rank by P/E (lower is better)
-        pe_data = []
-        current_year = datetime.now().year
-        for ticker, data in results.items():
-            if isinstance(data, dict) and 'multiples' in data:
-                pe_value = data['multiples'].get(f'{current_year}F_PE')
-                if pe_value:
-                    pe_data.append({
-                        "ticker": ticker,
-                        "pe": pe_value,
-                        "vs_mean_pct": data['multiples'].get('PE_vs_mean_pct', 0)
-                    })
-        
-        if pe_data:
-            pe_data.sort(key=lambda x: x['pe'])
-            comparison['pe_ranking'] = pe_data
-        
-        # Determine most attractive overall
-        if rnav_data and pe_data:
-            # Simple scoring: high RNAV upside + low P/E
-            scores = {}
-            for ticker in results.keys():
-                if isinstance(results[ticker], dict) and 'error' not in results[ticker]:
-                    score = 0
-                    # RNAV score
-                    rnav_rank = next((i for i, x in enumerate(rnav_data) if x['ticker'] == ticker), len(rnav_data))
-                    score += (len(rnav_data) - rnav_rank) * 2  # Weight RNAV more
-                    
-                    # P/E score
-                    pe_rank = next((i for i, x in enumerate(pe_data) if x['ticker'] == ticker), len(pe_data))
-                    score += (len(pe_data) - pe_rank)
-                    
-                    scores[ticker] = score
-            
-            if scores:
-                most_attractive = max(scores, key=scores.get)
-                comparison['most_attractive'] = {
-                    "ticker": most_attractive,
-                    "score": scores[most_attractive],
-                    "reason": "Highest combined score from RNAV upside and P/E valuation"
-                }
-        
-        return comparison
-    
     @tool_system.tool(
         name="get_rnav_breakdown",
-        description="Get detailed RNAV breakdown by project and balance sheet items",
+        description="Get detailed RNAV breakdown by individual real estate project and balance sheet items. Use this when user wants to see how RNAV is calculated or wants project-level detail. This complements get_valuation_analysis by providing the detailed breakdown.",
         parameters={
             "ticker": {
                 "type": "string",
@@ -768,225 +623,6 @@ def register_financial_forecast_tools(tool_system):
             return {"error": str(e), "status": "failed"}
     
     @tool_system.tool(
-        name="get_forward_multiples",
-        description="Get forward P/E and P/B multiples for current and next year",
-        parameters={
-            "ticker": {
-                "type": "string",
-                "description": "Company ticker",
-                "required": True
-            },
-            "years": {
-                "type": "array",
-                "items": {"type": "integer"},
-                "description": "Specific years to get multiples for",
-                "required": False
-            }
-        }
-    )
-    def get_forward_multiples(ticker: str, years: List[int] = None) -> Dict:
-        """Get forward valuation multiples"""
-        
-        ticker = ticker.upper()
-        
-        if tool_system.vietnam_stocks_db is None:
-            return {"error": "MongoDB not connected", "status": "failed"}
-        
-        try:
-            forecast_collection = tool_system.vietnam_stocks_db['CompanyForecast']
-            
-            # Get saved forecast with valuation data
-            forecast_doc = forecast_collection.find_one({"ticker": ticker})
-            
-            if not forecast_doc or 'valuation_data' not in forecast_doc:
-                return {"error": f"No valuation data for {ticker}", "status": "failed"}
-            
-            valuation_data = forecast_doc['valuation_data']
-            multiples = valuation_data.get('multiples', {})
-            
-            if not years:
-                current_year = datetime.now().year
-                years = [current_year, current_year + 1]
-            
-            result = {
-                "ticker": ticker,
-                "current_price": valuation_data.get('current_price', 0),
-                "multiples": {}
-            }
-            
-            # Get multiples for requested years
-            for year in years:
-                year_key = f"{year}F"
-                result['multiples'][year] = {
-                    "PE": multiples.get(f'{year_key}_PE'),
-                    "PB": multiples.get(f'{year_key}_PB')
-                }
-            
-            # Add trailing and mean for comparison
-            result['trailing'] = {
-                "PE": multiples.get('trailing_PE'),
-                "PB": multiples.get('trailing_PB')
-            }
-            
-            result['historical_mean'] = {
-                "PE": multiples.get('mean_PE'),
-                "PB": multiples.get('mean_PB')
-            }
-            
-            # Calculate vs mean
-            current_year = datetime.now().year
-            if multiples.get(f'{current_year}F_PE') and multiples.get('mean_PE'):
-                result['vs_mean'] = {
-                    "PE_pct": ((multiples.get(f'{current_year}F_PE') / multiples.get('mean_PE') - 1) * 100),
-                    "PB_pct": ((multiples.get(f'{current_year}F_PB') / multiples.get('mean_PB') - 1) * 100) if multiples.get(f'{current_year}F_PB') and multiples.get('mean_PB') else None
-                }
-            
-            return {
-                "data": result,
-                "status": "success"
-            }
-            
-        except Exception as e:
-            return {"error": str(e), "status": "failed"}
-    
-    @tool_system.tool(
-        name="compare_valuation_metrics",
-        description="Compare valuation metrics across multiple companies",
-        parameters={
-            "tickers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "List of company tickers to compare",
-                "required": True
-            },
-            "metrics": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Metrics to compare (rnav_upside, pe_current, pb_current, pe_next, pb_next)",
-                "required": False
-            },
-            "sort_by": {
-                "type": "string",
-                "description": "Metric to sort by",
-                "required": False
-            },
-            "include_ranking": {
-                "type": "boolean",
-                "description": "Include ranking analysis",
-                "required": False
-            }
-        }
-    )
-    def compare_valuation_metrics(tickers: List[str], metrics: List[str] = None,
-                                    sort_by: str = 'rnav_upside', include_ranking: bool = True) -> Dict:
-        """Compare valuation metrics across companies"""
-        
-        if not metrics:
-            metrics = ['rnav_upside', 'pe_current', 'pb_current', 'pe_next', 'pb_next']
-        
-        tickers = [t.upper() for t in tickers]
-        
-        # Get valuation metrics for all tickers
-        valuation_data = get_company_valuation_metrics(tickers, include_rnav=True, include_multiples=True, include_comparison=False)
-        
-        if valuation_data.get('status') != 'success':
-            return valuation_data
-        
-        comparison_data = []
-        current_year = datetime.now().year
-        next_year = current_year + 1
-        
-        for ticker in tickers:
-            ticker_data = valuation_data['data'].get(ticker, {})
-            
-            if 'error' in ticker_data:
-                continue
-            
-            row = {"ticker": ticker}
-            
-            # Add requested metrics
-            if 'rnav_upside' in metrics and 'rnav' in ticker_data:
-                row['rnav_upside'] = ticker_data['rnav'].get('upside_pct', 0)
-            
-            if 'multiples' in ticker_data:
-                multiples = ticker_data['multiples']
-                
-                if 'pe_current' in metrics:
-                    row['pe_current'] = multiples.get(f'{current_year}F_PE')
-                
-                if 'pb_current' in metrics:
-                    row['pb_current'] = multiples.get(f'{current_year}F_PB')
-                
-                if 'pe_next' in metrics:
-                    row['pe_next'] = multiples.get(f'{next_year}F_PE')
-                
-                if 'pb_next' in metrics:
-                    row['pb_next'] = multiples.get(f'{next_year}F_PB')
-                
-                # Add vs mean metrics
-                row['pe_vs_mean'] = multiples.get('PE_vs_mean_pct')
-                row['pb_vs_mean'] = multiples.get('PB_vs_mean_pct')
-            
-            comparison_data.append(row)
-        
-        # Sort by requested metric
-        if sort_by and comparison_data:
-            # For P/E and P/B, lower is better
-            reverse = sort_by == 'rnav_upside'
-            comparison_data.sort(key=lambda x: x.get(sort_by, float('inf') if not reverse else float('-inf')), reverse=reverse)
-        
-        result = {
-            "comparison": comparison_data,
-            "metrics": metrics,
-            "sorted_by": sort_by
-        }
-        
-        # Add ranking if requested
-        if include_ranking:
-            rankings = {}
-            
-            # Rank each metric
-            for metric in metrics:
-                if metric == 'rnav_upside':
-                    # Higher is better
-                    sorted_data = sorted(comparison_data, key=lambda x: x.get(metric, float('-inf')), reverse=True)
-                else:
-                    # Lower is better for multiples
-                    sorted_data = sorted(comparison_data, key=lambda x: x.get(metric, float('inf')))
-                
-                rankings[metric] = [d['ticker'] for d in sorted_data if metric in d]
-            
-            result['rankings'] = rankings
-            
-            # Determine most attractive overall
-            if len(comparison_data) > 1:
-                scores = {}
-                for row in comparison_data:
-                    ticker = row['ticker']
-                    score = 0
-                    
-                    # Score based on rankings
-                    for metric, ranking in rankings.items():
-                        if ticker in ranking:
-                            rank = ranking.index(ticker)
-                            weight = 2 if metric == 'rnav_upside' else 1
-                            score += (len(ranking) - rank) * weight
-                    
-                    scores[ticker] = score
-                
-                best_ticker = max(scores, key=scores.get)
-                result['most_attractive'] = {
-                    "ticker": best_ticker,
-                    "score": scores[best_ticker],
-                    "scores_detail": scores
-                }
-        
-        return {
-            "data": result,
-            "status": "success"
-        }
-    
-    @tool_system.tool(
         name="analyze_valuation_attractiveness",
         description="Analyze overall valuation attractiveness considering multiple factors",
         parameters={
@@ -1028,12 +664,17 @@ def register_financial_forecast_tools(tool_system):
         analysis = {}
         
         # Get valuation metrics
-        valuation = get_company_valuation_metrics([ticker], include_rnav=True, include_multiples=True)
+        # NOTE: This function needs refactoring - temporarily returning placeholder
+        return {
+            "error": "analyze_valuation_attractiveness is being refactored. Use get_valuation_analysis instead.",
+            "status": "pending_refactor"
+        }
         
-        if valuation.get('status') != 'success' or ticker not in valuation.get('data', {}):
-            return {"error": f"Cannot get valuation data for {ticker}", "status": "failed"}
-        
-        ticker_data = valuation['data'][ticker]
+        # Original code commented out for refactoring:
+        # valuation = get_company_valuation_metrics([ticker], include_rnav=True, include_multiples=True)
+        # if valuation.get('status') != 'success' or ticker not in valuation.get('data', {}):
+        #     return {"error": f"Cannot get valuation data for {ticker}", "status": "failed"}
+        # ticker_data = valuation['data'][ticker]
         
         # 1. RNAV Analysis (max 30 points)
         if include_rnav and 'rnav' in ticker_data:
