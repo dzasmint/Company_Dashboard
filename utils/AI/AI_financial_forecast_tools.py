@@ -738,9 +738,12 @@ def register_financial_forecast_tools(tool_system):
                 elif any(bs_item in item_name for bs_item in ['Cash', 'Investment', 'Debt']):
                     if include_balance_sheet:
                         balance_sheet_items.append(item)
-                elif item_name and item_name.strip().startswith('  '):  # Project items are indented
+                elif item_name and item_name.startswith('  '):  # Project items are indented with 2 spaces
                     if include_projects:
-                        projects.append(item)
+                        # Clean up the project name and add to projects list
+                        project_item = item.copy()
+                        project_item['project_name'] = item_name.strip()  # Add cleaned name
+                        projects.append(project_item)
             
             if include_projects and projects:
                 result['projects'] = projects
