@@ -853,6 +853,852 @@ class EnhancedAIToolSystem:
             }
         
         @self.tool(
+            name="get_company_valuation_metrics",
+            description="Get comprehensive valuation metrics including RNAV, P/E, P/B from saved forecast data",
+            parameters={
+                "tickers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of company tickers",
+                    "required": True
+                },
+                "include_rnav": {
+                    "type": "boolean",
+                    "description": "Include RNAV analysis",
+                    "required": False
+                },
+                "include_multiples": {
+                    "type": "boolean",
+                    "description": "Include P/E and P/B multiples",
+                    "required": False
+                },
+                "include_comparison": {
+                    "type": "boolean",
+                    "description": "Include peer comparison",
+                    "required": False
+                }
+            }
+        )
+        def get_company_valuation_metrics(tickers: List[str], include_rnav: bool = True, 
+                                         include_multiples: bool = True, include_comparison: bool = False) -> Dict:
+            """Get comprehensive valuation metrics from saved data"""
+            
+            tickers = [t.upper() for t in tickers]
+            results = {}
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            try:
+                forecast_collection = self.vietnam_stocks_db['CompanyForecast']
+                
+                for ticker in tickers:
+                    # Get saved forecast with valuation data
+                    forecast_doc = forecast_collection.find_one({"ticker": ticker})
+                    
+                    if not forecast_doc:
+                        results[ticker] = {"error": f"No forecast data for {ticker}"}
+                        continue
+                    
+                    valuation_data = forecast_doc.get('valuation_data', {})
+                    
+                    if not valuation_data:
+                        results[ticker] = {"error": f"No valuation data saved for {ticker}"}
+                        continue
+                    
+                    ticker_result = {
+                        "current_price": valuation_data.get('current_price', 0),
+                        "last_updated": forecast_doc.get('last_updated', '').isoformat() if forecast_doc.get('last_updated') else None
+                    }
+                    
+                    # Add RNAV metrics
+                    if include_rnav:
+                        rnav_per_share = valuation_data.get('rnav_per_share', 0)
+                        current_price = valuation_data.get('current_price', 0)
+                        
+                        ticker_result['rnav'] = {
+                            "rnav_per_share": rnav_per_share,
+                            "upside_pct": ((rnav_per_share / current_price - 1) * 100) if current_price > 0 else 0,
+                            "has_details": len(valuation_data.get('rnav_details', [])) > 0
+                        }
+                    
+                    # Add multiples
+                    if include_multiples and 'multiples' in valuation_data:
+                        multiples = valuation_data['multiples']
+                        current_year = datetime.now().year
+                        next_year = current_year + 1
+                        
+                        ticker_result['multiples'] = {
+                            "trailing_PE": multiples.get('trailing_PE'),
+                            "trailing_PB": multiples.get('trailing_PB'),
+                            f"{current_year}F_PE": multiples.get(f'{current_year}F_PE'),
+                            f"{current_year}F_PB": multiples.get(f'{current_year}F_PB'),
+                            f"{next_year}F_PE": multiples.get(f'{next_year}F_PE'),
+                            f"{next_year}F_PB": multiples.get(f'{next_year}F_PB'),
+                            "mean_PE": multiples.get('mean_PE'),
+                            "mean_PB": multiples.get('mean_PB')
+                        }
+                        
+                        # Calculate vs mean percentages
+                        if multiples.get(f'{current_year}F_PE') and multiples.get('mean_PE'):
+                            pe_vs_mean = ((multiples.get(f'{current_year}F_PE') / multiples.get('mean_PE') - 1) * 100)
+                            ticker_result['multiples']['PE_vs_mean_pct'] = round(pe_vs_mean, 1)
+                        
+                        if multiples.get(f'{current_year}F_PB') and multiples.get('mean_PB'):
+                            pb_vs_mean = ((multiples.get(f'{current_year}F_PB') / multiples.get('mean_PB') - 1) * 100)
+                            ticker_result['multiples']['PB_vs_mean_pct'] = round(pb_vs_mean, 1)
+                    
+                    results[ticker] = ticker_result
+                
+                # Add comparison if requested
+                if include_comparison and len(tickers) > 1:
+                    comparison = self._compare_valuation_metrics(results)
+                    results['comparison'] = comparison
+                
+                return {
+                    "data": results,
+                    "tickers": tickers,
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+        
+        def _compare_valuation_metrics(self, results: Dict) -> Dict:
+            """Helper to compare valuation metrics across companies"""
+            comparison = {
+                "rnav_upside_ranking": [],
+                "pe_ranking": [],
+                "pb_ranking": [],
+                "most_attractive": None
+            }
+            
+            # Rank by RNAV upside
+            rnav_data = []
+            for ticker, data in results.items():
+                if isinstance(data, dict) and 'rnav' in data:
+                    rnav_data.append({
+                        "ticker": ticker,
+                        "upside_pct": data['rnav'].get('upside_pct', 0)
+                    })
+            
+            if rnav_data:
+                rnav_data.sort(key=lambda x: x['upside_pct'], reverse=True)
+                comparison['rnav_upside_ranking'] = rnav_data
+            
+            # Rank by P/E (lower is better)
+            pe_data = []
+            current_year = datetime.now().year
+            for ticker, data in results.items():
+                if isinstance(data, dict) and 'multiples' in data:
+                    pe_value = data['multiples'].get(f'{current_year}F_PE')
+                    if pe_value:
+                        pe_data.append({
+                            "ticker": ticker,
+                            "pe": pe_value,
+                            "vs_mean_pct": data['multiples'].get('PE_vs_mean_pct', 0)
+                        })
+            
+            if pe_data:
+                pe_data.sort(key=lambda x: x['pe'])
+                comparison['pe_ranking'] = pe_data
+            
+            # Determine most attractive overall
+            if rnav_data and pe_data:
+                # Simple scoring: high RNAV upside + low P/E
+                scores = {}
+                for ticker in results.keys():
+                    if isinstance(results[ticker], dict) and 'error' not in results[ticker]:
+                        score = 0
+                        # RNAV score
+                        rnav_rank = next((i for i, x in enumerate(rnav_data) if x['ticker'] == ticker), len(rnav_data))
+                        score += (len(rnav_data) - rnav_rank) * 2  # Weight RNAV more
+                        
+                        # P/E score
+                        pe_rank = next((i for i, x in enumerate(pe_data) if x['ticker'] == ticker), len(pe_data))
+                        score += (len(pe_data) - pe_rank)
+                        
+                        scores[ticker] = score
+                
+                if scores:
+                    most_attractive = max(scores, key=scores.get)
+                    comparison['most_attractive'] = {
+                        "ticker": most_attractive,
+                        "score": scores[most_attractive],
+                        "reason": "Highest combined score from RNAV upside and P/E valuation"
+                    }
+            
+            return comparison
+        
+        @self.tool(
+            name="get_rnav_breakdown",
+            description="Get detailed RNAV breakdown by project and balance sheet items",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "include_projects": {
+                    "type": "boolean",
+                    "description": "Include project-by-project breakdown",
+                    "required": False
+                },
+                "include_balance_sheet": {
+                    "type": "boolean",
+                    "description": "Include balance sheet adjustments",
+                    "required": False
+                }
+            }
+        )
+        def get_rnav_breakdown(ticker: str, include_projects: bool = True, 
+                              include_balance_sheet: bool = True) -> Dict:
+            """Get detailed RNAV breakdown"""
+            
+            ticker = ticker.upper()
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            try:
+                forecast_collection = self.vietnam_stocks_db['CompanyForecast']
+                
+                # Get saved forecast with valuation data
+                forecast_doc = forecast_collection.find_one({"ticker": ticker})
+                
+                if not forecast_doc or 'valuation_data' not in forecast_doc:
+                    return {"error": f"No valuation data for {ticker}", "status": "failed"}
+                
+                valuation_data = forecast_doc['valuation_data']
+                rnav_details = valuation_data.get('rnav_details', [])
+                
+                if not rnav_details:
+                    return {"error": f"No RNAV breakdown available for {ticker}", "status": "failed"}
+                
+                result = {
+                    "ticker": ticker,
+                    "rnav_per_share": valuation_data.get('rnav_per_share', 0),
+                    "current_price": valuation_data.get('current_price', 0)
+                }
+                
+                # Separate projects and balance sheet items
+                projects = []
+                balance_sheet_items = []
+                summary_items = []
+                
+                for item in rnav_details:
+                    item_name = item.get('item', '')
+                    
+                    if 'TOTAL' in item_name or 'SUB-TOTAL' in item_name or 'RNAV/share' in item_name or 'Outstanding Shares' in item_name:
+                        summary_items.append(item)
+                    elif any(bs_item in item_name for bs_item in ['Cash', 'Investment', 'Debt']):
+                        if include_balance_sheet:
+                            balance_sheet_items.append(item)
+                    elif item_name and item_name.strip().startswith('  '):  # Project items are indented
+                        if include_projects:
+                            projects.append(item)
+                
+                if include_projects and projects:
+                    result['projects'] = projects
+                    result['total_project_rnav'] = sum(p.get('rnav_to_company', 0) for p in projects if p.get('rnav_to_company'))
+                
+                if include_balance_sheet and balance_sheet_items:
+                    result['balance_sheet_adjustments'] = balance_sheet_items
+                    result['net_bs_adjustment'] = sum(item.get('rnav_to_company', 0) for item in balance_sheet_items if item.get('rnav_to_company'))
+                
+                result['summary'] = summary_items
+                
+                # Calculate upside
+                if result['current_price'] > 0:
+                    result['upside_pct'] = ((result['rnav_per_share'] / result['current_price'] - 1) * 100)
+                
+                return {
+                    "data": result,
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
+            name="get_forward_multiples",
+            description="Get forward P/E and P/B multiples for current and next year",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "years": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Specific years to get multiples for",
+                    "required": False
+                }
+            }
+        )
+        def get_forward_multiples(ticker: str, years: List[int] = None) -> Dict:
+            """Get forward valuation multiples"""
+            
+            ticker = ticker.upper()
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            try:
+                forecast_collection = self.vietnam_stocks_db['CompanyForecast']
+                
+                # Get saved forecast with valuation data
+                forecast_doc = forecast_collection.find_one({"ticker": ticker})
+                
+                if not forecast_doc or 'valuation_data' not in forecast_doc:
+                    return {"error": f"No valuation data for {ticker}", "status": "failed"}
+                
+                valuation_data = forecast_doc['valuation_data']
+                multiples = valuation_data.get('multiples', {})
+                
+                if not years:
+                    current_year = datetime.now().year
+                    years = [current_year, current_year + 1]
+                
+                result = {
+                    "ticker": ticker,
+                    "current_price": valuation_data.get('current_price', 0),
+                    "multiples": {}
+                }
+                
+                # Get multiples for requested years
+                for year in years:
+                    year_key = f"{year}F"
+                    result['multiples'][year] = {
+                        "PE": multiples.get(f'{year_key}_PE'),
+                        "PB": multiples.get(f'{year_key}_PB')
+                    }
+                
+                # Add trailing and mean for comparison
+                result['trailing'] = {
+                    "PE": multiples.get('trailing_PE'),
+                    "PB": multiples.get('trailing_PB')
+                }
+                
+                result['historical_mean'] = {
+                    "PE": multiples.get('mean_PE'),
+                    "PB": multiples.get('mean_PB')
+                }
+                
+                # Calculate vs mean
+                current_year = datetime.now().year
+                if multiples.get(f'{current_year}F_PE') and multiples.get('mean_PE'):
+                    result['vs_mean'] = {
+                        "PE_pct": ((multiples.get(f'{current_year}F_PE') / multiples.get('mean_PE') - 1) * 100),
+                        "PB_pct": ((multiples.get(f'{current_year}F_PB') / multiples.get('mean_PB') - 1) * 100) if multiples.get(f'{current_year}F_PB') and multiples.get('mean_PB') else None
+                    }
+                
+                return {
+                    "data": result,
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
+            name="compare_valuation_metrics",
+            description="Compare valuation metrics across multiple companies",
+            parameters={
+                "tickers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of company tickers to compare",
+                    "required": True
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Metrics to compare (rnav_upside, pe_current, pb_current, pe_next, pb_next)",
+                    "required": False
+                },
+                "sort_by": {
+                    "type": "string",
+                    "description": "Metric to sort by",
+                    "required": False
+                },
+                "include_ranking": {
+                    "type": "boolean",
+                    "description": "Include ranking analysis",
+                    "required": False
+                }
+            }
+        )
+        def compare_valuation_metrics(tickers: List[str], metrics: List[str] = None,
+                                     sort_by: str = 'rnav_upside', include_ranking: bool = True) -> Dict:
+            """Compare valuation metrics across companies"""
+            
+            if not metrics:
+                metrics = ['rnav_upside', 'pe_current', 'pb_current', 'pe_next', 'pb_next']
+            
+            tickers = [t.upper() for t in tickers]
+            
+            # Get valuation metrics for all tickers
+            valuation_data = get_company_valuation_metrics(tickers, include_rnav=True, include_multiples=True, include_comparison=False)
+            
+            if valuation_data.get('status') != 'success':
+                return valuation_data
+            
+            comparison_data = []
+            current_year = datetime.now().year
+            next_year = current_year + 1
+            
+            for ticker in tickers:
+                ticker_data = valuation_data['data'].get(ticker, {})
+                
+                if 'error' in ticker_data:
+                    continue
+                
+                row = {"ticker": ticker}
+                
+                # Add requested metrics
+                if 'rnav_upside' in metrics and 'rnav' in ticker_data:
+                    row['rnav_upside'] = ticker_data['rnav'].get('upside_pct', 0)
+                
+                if 'multiples' in ticker_data:
+                    multiples = ticker_data['multiples']
+                    
+                    if 'pe_current' in metrics:
+                        row['pe_current'] = multiples.get(f'{current_year}F_PE')
+                    
+                    if 'pb_current' in metrics:
+                        row['pb_current'] = multiples.get(f'{current_year}F_PB')
+                    
+                    if 'pe_next' in metrics:
+                        row['pe_next'] = multiples.get(f'{next_year}F_PE')
+                    
+                    if 'pb_next' in metrics:
+                        row['pb_next'] = multiples.get(f'{next_year}F_PB')
+                    
+                    # Add vs mean metrics
+                    row['pe_vs_mean'] = multiples.get('PE_vs_mean_pct')
+                    row['pb_vs_mean'] = multiples.get('PB_vs_mean_pct')
+                
+                comparison_data.append(row)
+            
+            # Sort by requested metric
+            if sort_by and comparison_data:
+                # For P/E and P/B, lower is better
+                reverse = sort_by == 'rnav_upside'
+                comparison_data.sort(key=lambda x: x.get(sort_by, float('inf') if not reverse else float('-inf')), reverse=reverse)
+            
+            result = {
+                "comparison": comparison_data,
+                "metrics": metrics,
+                "sorted_by": sort_by
+            }
+            
+            # Add ranking if requested
+            if include_ranking:
+                rankings = {}
+                
+                # Rank each metric
+                for metric in metrics:
+                    if metric == 'rnav_upside':
+                        # Higher is better
+                        sorted_data = sorted(comparison_data, key=lambda x: x.get(metric, float('-inf')), reverse=True)
+                    else:
+                        # Lower is better for multiples
+                        sorted_data = sorted(comparison_data, key=lambda x: x.get(metric, float('inf')))
+                    
+                    rankings[metric] = [d['ticker'] for d in sorted_data if metric in d]
+                
+                result['rankings'] = rankings
+                
+                # Determine most attractive overall
+                if len(comparison_data) > 1:
+                    scores = {}
+                    for row in comparison_data:
+                        ticker = row['ticker']
+                        score = 0
+                        
+                        # Score based on rankings
+                        for metric, ranking in rankings.items():
+                            if ticker in ranking:
+                                rank = ranking.index(ticker)
+                                weight = 2 if metric == 'rnav_upside' else 1
+                                score += (len(ranking) - rank) * weight
+                        
+                        scores[ticker] = score
+                    
+                    best_ticker = max(scores, key=scores.get)
+                    result['most_attractive'] = {
+                        "ticker": best_ticker,
+                        "score": scores[best_ticker],
+                        "scores_detail": scores
+                    }
+            
+            return {
+                "data": result,
+                "status": "success"
+            }
+        
+        @self.tool(
+            name="analyze_valuation_attractiveness",
+            description="Analyze overall valuation attractiveness considering multiple factors",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "include_rnav": {
+                    "type": "boolean",
+                    "description": "Include RNAV analysis",
+                    "required": False
+                },
+                "include_growth": {
+                    "type": "boolean",
+                    "description": "Include earnings growth analysis",
+                    "required": False
+                },
+                "include_leverage": {
+                    "type": "boolean",
+                    "description": "Include leverage/gearing analysis",
+                    "required": False
+                },
+                "include_peer_comparison": {
+                    "type": "boolean",
+                    "description": "Include sector peer comparison",
+                    "required": False
+                }
+            }
+        )
+        def analyze_valuation_attractiveness(ticker: str, include_rnav: bool = True,
+                                           include_growth: bool = True, include_leverage: bool = True,
+                                           include_peer_comparison: bool = False) -> Dict:
+            """Analyze comprehensive valuation attractiveness"""
+            
+            ticker = ticker.upper()
+            attractiveness_score = 0
+            max_score = 0
+            analysis = {}
+            
+            # Get valuation metrics
+            valuation = get_company_valuation_metrics([ticker], include_rnav=True, include_multiples=True)
+            
+            if valuation.get('status') != 'success' or ticker not in valuation.get('data', {}):
+                return {"error": f"Cannot get valuation data for {ticker}", "status": "failed"}
+            
+            ticker_data = valuation['data'][ticker]
+            
+            # 1. RNAV Analysis (max 30 points)
+            if include_rnav and 'rnav' in ticker_data:
+                max_score += 30
+                rnav_upside = ticker_data['rnav'].get('upside_pct', 0)
+                analysis['rnav'] = {
+                    "upside_pct": rnav_upside,
+                    "score": min(30, max(0, rnav_upside * 0.75))  # 40% upside = 30 points
+                }
+                attractiveness_score += analysis['rnav']['score']
+            
+            # 2. Valuation Multiples (max 30 points)
+            if 'multiples' in ticker_data:
+                max_score += 30
+                multiples = ticker_data['multiples']
+                multiples_score = 0
+                
+                current_year = datetime.now().year
+                next_year = current_year + 1
+                
+                # Get the actual multiples from database
+                current_pe = multiples.get(f'{current_year}F_PE')
+                next_pe = multiples.get(f'{next_year}F_PE')
+                current_pb = multiples.get(f'{current_year}F_PB')
+                next_pb = multiples.get(f'{next_year}F_PB')
+                mean_pe = multiples.get('mean_PE')
+                mean_pb = multiples.get('mean_PB')
+                
+                # Calculate vs mean percentages
+                pe_current_vs_mean = 0
+                pe_next_vs_mean = 0
+                pb_current_vs_mean = 0
+                pb_next_vs_mean = 0
+                
+                # P/E comparisons (15 points total)
+                if current_pe and mean_pe and mean_pe > 0:
+                    pe_current_vs_mean = ((current_pe / mean_pe) - 1) * 100
+                    if pe_current_vs_mean < 0:  # Trading below mean
+                        multiples_score += min(7.5, abs(pe_current_vs_mean) * 0.25)
+                
+                if next_pe and mean_pe and mean_pe > 0:
+                    pe_next_vs_mean = ((next_pe / mean_pe) - 1) * 100
+                    if pe_next_vs_mean < 0:  # Trading below mean
+                        multiples_score += min(7.5, abs(pe_next_vs_mean) * 0.25)
+                
+                # P/B comparisons (15 points total)
+                if current_pb and mean_pb and mean_pb > 0:
+                    pb_current_vs_mean = ((current_pb / mean_pb) - 1) * 100
+                    if pb_current_vs_mean < 0:  # Trading below mean
+                        multiples_score += min(7.5, abs(pb_current_vs_mean) * 0.25)
+                
+                if next_pb and mean_pb and mean_pb > 0:
+                    pb_next_vs_mean = ((next_pb / mean_pb) - 1) * 100
+                    if pb_next_vs_mean < 0:  # Trading below mean
+                        multiples_score += min(7.5, abs(pb_next_vs_mean) * 0.25)
+                
+                analysis['multiples'] = {
+                    "current_year_PE": current_pe,
+                    "next_year_PE": next_pe,
+                    "mean_PE": mean_pe,
+                    "pe_current_vs_mean": pe_current_vs_mean,
+                    "pe_next_vs_mean": pe_next_vs_mean,
+                    "current_year_PB": current_pb,
+                    "next_year_PB": next_pb,
+                    "mean_PB": mean_pb,
+                    "pb_current_vs_mean": pb_current_vs_mean,
+                    "pb_next_vs_mean": pb_next_vs_mean,
+                    "score": multiples_score
+                }
+                attractiveness_score += multiples_score
+            
+            # 3. Earnings Growth (max 20 points) - Calculate 3-year forward CAGR
+            if include_growth:
+                max_score += 20
+                
+                # Get forecast data for growth analysis
+                forecast_doc = self.vietnam_stocks_db['CompanyForecast'].find_one({"ticker": ticker}) if self.vietnam_stocks_db is not None else None
+                
+                if forecast_doc and 'forecast_data' in forecast_doc:
+                    forecast_data = forecast_doc['forecast_data']
+                    current_year = datetime.now().year
+                    
+                    # Use current year and 3 years forward
+                    target_years = [current_year, current_year + 1, current_year + 2, current_year + 3]
+                    
+                    # Check if we have data for the required years
+                    available_years = [year for year in target_years if str(year) in forecast_data]
+                    
+                    if len(available_years) >= 2:
+                        # Use first and last available years within our target range
+                        first_year = str(available_years[0])
+                        last_year = str(available_years[-1])
+                        
+                        first_npatmi = forecast_data.get(first_year, {}).get('pnl', {}).get('npatmi', 0)
+                        last_npatmi = forecast_data.get(last_year, {}).get('pnl', {}).get('npatmi', 0)
+                        
+                        if first_npatmi > 0 and last_npatmi > 0:
+                            years_diff = available_years[-1] - available_years[0]
+                            cagr = ((last_npatmi / first_npatmi) ** (1 / years_diff) - 1) * 100 if years_diff > 0 else 0
+                            
+                            # 20% CAGR = 20 points
+                            growth_score = min(20, max(0, cagr))
+                            
+                            analysis['growth'] = {
+                                "earnings_cagr": cagr,
+                                "period": f"{available_years[0]}-{available_years[-1]}",
+                                "years_used": years_diff,
+                                "score": growth_score
+                            }
+                            attractiveness_score += growth_score
+            
+            # 4. Leverage Analysis (max 20 points)
+            if include_leverage:
+                max_score += 20
+                
+                # Get balance sheet data
+                forecast_doc = self.vietnam_stocks_db['CompanyForecast'].find_one({"ticker": ticker}) if self.vietnam_stocks_db is not None else None
+                
+                if forecast_doc and 'forecast_data' in forecast_doc:
+                    current_year = str(datetime.now().year)
+                    year_data = forecast_doc['forecast_data'].get(current_year, {})
+                    
+                    if 'balance_sheet' in year_data:
+                        bs = year_data['balance_sheet']
+                        
+                        # Calculate debt/equity ratio
+                        total_debt = bs.get('liabilities', {}).get('total_debt', 0)
+                        total_equity = bs.get('equity', {}).get('total_equity', 0)
+                        
+                        if total_equity > 0:
+                            debt_to_equity = total_debt / total_equity
+                            
+                            # Lower D/E is better: D/E < 0.5 = 20 points, D/E > 2 = 0 points
+                            if debt_to_equity <= 0.5:
+                                leverage_score = 20
+                            elif debt_to_equity >= 2:
+                                leverage_score = 0
+                            else:
+                                leverage_score = 20 * (2 - debt_to_equity) / 1.5
+                            
+                            analysis['leverage'] = {
+                                "debt_to_equity": debt_to_equity,
+                                "score": leverage_score
+                            }
+                            attractiveness_score += leverage_score
+            
+            # Calculate final score and recommendation
+            final_score = (attractiveness_score / max_score * 10) if max_score > 0 else 0
+            
+            # Determine recommendation
+            if final_score >= 7:
+                recommendation = "STRONG BUY"
+                recommendation_rationale = "Excellent valuation with high RNAV upside and attractive multiples"
+            elif final_score >= 5.5:
+                recommendation = "BUY"
+                recommendation_rationale = "Attractive valuation with good upside potential"
+            elif final_score >= 4:
+                recommendation = "HOLD"
+                recommendation_rationale = "Fair valuation, limited upside"
+            else:
+                recommendation = "SELL/AVOID"
+                recommendation_rationale = "Unattractive valuation, consider alternatives"
+            
+            return {
+                "ticker": ticker,
+                "attractiveness_score": round(final_score, 1),
+                "max_score": 10,
+                "recommendation": recommendation,
+                "recommendation_rationale": recommendation_rationale,
+                "detailed_analysis": analysis,
+                "score_breakdown": {
+                    "actual": attractiveness_score,
+                    "maximum": max_score,
+                    "percentage": round(attractiveness_score / max_score * 100, 1) if max_score > 0 else 0
+                },
+                "status": "success"
+            }
+        
+        @self.tool(
+            name="calculate_gearing_metrics",
+            description="Calculate leverage and gearing metrics (debt/equity, interest coverage, etc.)",
+            parameters={
+                "ticker": {
+                    "type": "string",
+                    "description": "Company ticker",
+                    "required": True
+                },
+                "include_net_debt": {
+                    "type": "boolean",
+                    "description": "Include net debt calculation",
+                    "required": False
+                },
+                "include_debt_to_equity": {
+                    "type": "boolean",
+                    "description": "Include debt to equity ratio",
+                    "required": False
+                },
+                "include_interest_coverage": {
+                    "type": "boolean",
+                    "description": "Include interest coverage ratio",
+                    "required": False
+                }
+            }
+        )
+        def calculate_gearing_metrics(ticker: str, include_net_debt: bool = True,
+                                     include_debt_to_equity: bool = True,
+                                     include_interest_coverage: bool = True) -> Dict:
+            """Calculate leverage and gearing metrics"""
+            
+            ticker = ticker.upper()
+            
+            if self.vietnam_stocks_db is None:
+                return {"error": "MongoDB not connected", "status": "failed"}
+            
+            try:
+                forecast_collection = self.vietnam_stocks_db['CompanyForecast']
+                
+                # Get saved forecast data
+                forecast_doc = forecast_collection.find_one({"ticker": ticker})
+                
+                if not forecast_doc or 'forecast_data' not in forecast_doc:
+                    return {"error": f"No forecast data for {ticker}", "status": "failed"}
+                
+                current_year = str(datetime.now().year)
+                year_data = forecast_doc['forecast_data'].get(current_year, {})
+                
+                if not year_data:
+                    return {"error": f"No data for {current_year}", "status": "failed"}
+                
+                result = {
+                    "ticker": ticker,
+                    "year": current_year,
+                    "metrics": {}
+                }
+                
+                bs = year_data.get('balance_sheet', {})
+                pnl = year_data.get('pnl', {})
+                
+                # Get key balance sheet items
+                cash = bs.get('assets', {}).get('cash_and_equivalents', 0)
+                st_debt = bs.get('liabilities', {}).get('short_term_debt', 0)
+                lt_debt = bs.get('liabilities', {}).get('long_term_debt', 0)
+                total_debt = bs.get('liabilities', {}).get('total_debt', st_debt + lt_debt)
+                total_equity = bs.get('equity', {}).get('total_equity', 0)
+                total_assets = bs.get('assets', {}).get('total_assets', 0)
+                
+                # 1. Net Debt
+                if include_net_debt:
+                    net_debt = total_debt - cash
+                    result['metrics']['net_debt'] = {
+                        "value": net_debt / 1e9,  # Convert to billions
+                        "cash": cash / 1e9,
+                        "total_debt": total_debt / 1e9,
+                        "net_debt_to_equity": (net_debt / total_equity) if total_equity > 0 else None
+                    }
+                
+                # 2. Debt to Equity
+                if include_debt_to_equity and total_equity > 0:
+                    debt_to_equity = total_debt / total_equity
+                    result['metrics']['debt_to_equity'] = {
+                        "value": debt_to_equity,
+                        "interpretation": "Low leverage" if debt_to_equity < 0.5 else "Moderate leverage" if debt_to_equity < 1.5 else "High leverage"
+                    }
+                    
+                    # Additional ratios
+                    result['metrics']['debt_to_assets'] = total_debt / total_assets if total_assets > 0 else None
+                    result['metrics']['equity_ratio'] = total_equity / total_assets if total_assets > 0 else None
+                
+                # 3. Interest Coverage
+                if include_interest_coverage:
+                    ebitda = pnl.get('ebitda', 0)
+                    interest_expense = pnl.get('interest_expense', 0)
+                    
+                    if interest_expense != 0:
+                        interest_coverage = abs(ebitda / interest_expense)
+                        result['metrics']['interest_coverage'] = {
+                            "value": interest_coverage,
+                            "ebitda": ebitda / 1e9,
+                            "interest_expense": abs(interest_expense) / 1e9,
+                            "interpretation": "Strong" if interest_coverage > 5 else "Adequate" if interest_coverage > 2 else "Weak"
+                        }
+                    else:
+                        result['metrics']['interest_coverage'] = {
+                            "value": "No debt/interest",
+                            "ebitda": ebitda / 1e9,
+                            "interest_expense": 0
+                        }
+                
+                # Add historical comparison if available
+                previous_year = str(int(current_year) - 1)
+                if previous_year in forecast_doc['forecast_data']:
+                    prev_bs = forecast_doc['forecast_data'][previous_year].get('balance_sheet', {})
+                    prev_total_debt = prev_bs.get('liabilities', {}).get('total_debt', 0)
+                    prev_total_equity = prev_bs.get('equity', {}).get('total_equity', 0)
+                    
+                    if prev_total_equity > 0:
+                        prev_debt_to_equity = prev_total_debt / prev_total_equity
+                        result['year_over_year'] = {
+                            "debt_to_equity_change": debt_to_equity - prev_debt_to_equity if total_equity > 0 else None,
+                            "debt_growth": ((total_debt / prev_total_debt - 1) * 100) if prev_total_debt > 0 else None,
+                            "equity_growth": ((total_equity / prev_total_equity - 1) * 100) if prev_total_equity > 0 else None
+                        }
+                
+                return {
+                    "data": result,
+                    "status": "success"
+                }
+                
+            except Exception as e:
+                return {"error": str(e), "status": "failed"}
+        
+        @self.tool(
             name="analyze_financial_trends",
             description="Analyze financial trends and calculate growth rates (annual and quarterly)",
             parameters={
@@ -2771,12 +3617,18 @@ class EnhancedAIToolSystem:
                     "type": "boolean",
                     "description": "Include all forecast assumptions",
                     "required": False
+                },
+                "include_valuation": {
+                    "type": "boolean",
+                    "description": "Include valuation metrics (RNAV, P/E, P/B)",
+                    "required": False
                 }
             }
         )
         def get_comprehensive_forecast_details(ticker: str, years: List[int] = None, 
                                               include_project_breakdown: bool = True,
-                                              include_assumptions: bool = True) -> Dict:
+                                              include_assumptions: bool = True,
+                                              include_valuation: bool = True) -> Dict:
             """Get comprehensive forecast details from MongoDB CompanyForecast collection"""
             
             if self.vietnam_stocks_db is None:
@@ -2893,6 +3745,17 @@ class EnhancedAIToolSystem:
                             }
                     
                     result['growth_rates'] = growth_rates
+                
+                # Add valuation data if requested
+                if include_valuation and 'valuation_data' in doc:
+                    valuation = doc['valuation_data']
+                    result['valuation'] = {
+                        "current_price": valuation.get('current_price', 0),
+                        "rnav_per_share": valuation.get('rnav_per_share', 0),
+                        "rnav_upside_pct": ((valuation.get('rnav_per_share', 0) / valuation.get('current_price', 1) - 1) * 100) if valuation.get('current_price', 0) > 0 else 0,
+                        "multiples": valuation.get('multiples', {}),
+                        "has_rnav_details": len(valuation.get('rnav_details', [])) > 0
+                    }
                 
                 return {
                     "data": result,
