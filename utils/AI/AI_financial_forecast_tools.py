@@ -623,232 +623,328 @@ def register_financial_forecast_tools(tool_system):
             return {"error": str(e), "status": "failed"}
     
     @tool_system.tool(
-        name="analyze_valuation_attractiveness",
-        description="Analyze overall valuation attractiveness considering multiple factors",
+        name="get_company_total_score",
+        description="Score company comprehensively (1-10 scale) based on: 1) RNAV upside (25% weight), 2) Valuation multiples - trailing and forward P/E & P/B (30% weight), 3) 3-year PATMI CAGR growth (25% weight), 4) Financial leverage - debt/equity ratios (20% weight). IMPORTANT: ALWAYS display the FULL breakdown showing: total score, recommendation, and ALL four component scores with their weighted contributions. Show the detailed data for each component so users understand how the score was calculated. Use when user asks for company scoring, rating, or comprehensive evaluation.",
         parameters={
             "ticker": {
                 "type": "string",
-                "description": "Company ticker",
+                "description": "Company ticker to score",
                 "required": True
-            },
-            "include_rnav": {
-                "type": "boolean",
-                "description": "Include RNAV analysis",
-                "required": False
-            },
-            "include_growth": {
-                "type": "boolean",
-                "description": "Include earnings growth analysis",
-                "required": False
-            },
-            "include_leverage": {
-                "type": "boolean",
-                "description": "Include leverage/gearing analysis",
-                "required": False
-            },
-            "include_peer_comparison": {
-                "type": "boolean",
-                "description": "Include sector peer comparison",
-                "required": False
             }
         }
     )
-    def analyze_valuation_attractiveness(ticker: str, include_rnav: bool = True,
-                                        include_growth: bool = True, include_leverage: bool = True,
-                                        include_peer_comparison: bool = False) -> Dict:
-        """Analyze comprehensive valuation attractiveness"""
+    def get_company_total_score(ticker: str) -> Dict:
+        """Score company based on RNAV, multiples, growth, and leverage"""
         
         ticker = ticker.upper()
-        attractiveness_score = 0
-        max_score = 0
-        analysis = {}
+        current_year = datetime.now().year
         
-        # Get valuation metrics
-        # NOTE: This function needs refactoring - temporarily returning placeholder
-        return {
-            "error": "analyze_valuation_attractiveness is being refactored. Use get_valuation_analysis instead.",
-            "status": "pending_refactor"
+        # Initialize scoring components (each out of 10, then weighted)
+        scores = {
+            "rnav_upside": {"score": 0, "weight": 0.25, "data": {}},
+            "valuation_multiples": {"score": 0, "weight": 0.30, "data": {}},
+            "growth": {"score": 0, "weight": 0.25, "data": {}},
+            "leverage": {"score": 0, "weight": 0.20, "data": {}}
         }
         
-        # Original code commented out for refactoring:
-        # valuation = get_company_valuation_metrics([ticker], include_rnav=True, include_multiples=True)
-        # if valuation.get('status') != 'success' or ticker not in valuation.get('data', {}):
-        #     return {"error": f"Cannot get valuation data for {ticker}", "status": "failed"}
-        # ticker_data = valuation['data'][ticker]
-        
-        # 1. RNAV Analysis (max 30 points)
-        if include_rnav and 'rnav' in ticker_data:
-            max_score += 30
-            rnav_upside = ticker_data['rnav'].get('upside_pct', 0)
-            analysis['rnav'] = {
-                "upside_pct": rnav_upside,
-                "score": min(30, max(0, rnav_upside * 0.75))  # 40% upside = 30 points
-            }
-            attractiveness_score += analysis['rnav']['score']
-        
-        # 2. Valuation Multiples (max 30 points)
-        if 'multiples' in ticker_data:
-            max_score += 30
-            multiples = ticker_data['multiples']
-            multiples_score = 0
-            
-            current_year = datetime.now().year
-            next_year = current_year + 1
-            
-            # Get the actual multiples from database
-            current_pe = multiples.get(f'{current_year}F_PE')
-            next_pe = multiples.get(f'{next_year}F_PE')
-            current_pb = multiples.get(f'{current_year}F_PB')
-            next_pb = multiples.get(f'{next_year}F_PB')
-            mean_pe = multiples.get('mean_PE')
-            mean_pb = multiples.get('mean_PB')
-            
-            # Calculate vs mean percentages
-            pe_current_vs_mean = 0
-            pe_next_vs_mean = 0
-            pb_current_vs_mean = 0
-            pb_next_vs_mean = 0
-            
-            # P/E comparisons (15 points total)
-            if current_pe and mean_pe and mean_pe > 0:
-                pe_current_vs_mean = ((current_pe / mean_pe) - 1) * 100
-                if pe_current_vs_mean < 0:  # Trading below mean
-                    multiples_score += min(7.5, abs(pe_current_vs_mean) * 0.25)
-            
-            if next_pe and mean_pe and mean_pe > 0:
-                pe_next_vs_mean = ((next_pe / mean_pe) - 1) * 100
-                if pe_next_vs_mean < 0:  # Trading below mean
-                    multiples_score += min(7.5, abs(pe_next_vs_mean) * 0.25)
-            
-            # P/B comparisons (15 points total)
-            if current_pb and mean_pb and mean_pb > 0:
-                pb_current_vs_mean = ((current_pb / mean_pb) - 1) * 100
-                if pb_current_vs_mean < 0:  # Trading below mean
-                    multiples_score += min(7.5, abs(pb_current_vs_mean) * 0.25)
-            
-            if next_pb and mean_pb and mean_pb > 0:
-                pb_next_vs_mean = ((next_pb / mean_pb) - 1) * 100
-                if pb_next_vs_mean < 0:  # Trading below mean
-                    multiples_score += min(7.5, abs(pb_next_vs_mean) * 0.25)
-            
-            analysis['multiples'] = {
-                "current_year_PE": current_pe,
-                "next_year_PE": next_pe,
-                "mean_PE": mean_pe,
-                "pe_current_vs_mean": pe_current_vs_mean,
-                "pe_next_vs_mean": pe_next_vs_mean,
-                "current_year_PB": current_pb,
-                "next_year_PB": next_pb,
-                "mean_PB": mean_pb,
-                "pb_current_vs_mean": pb_current_vs_mean,
-                "pb_next_vs_mean": pb_next_vs_mean,
-                "score": multiples_score
-            }
-            attractiveness_score += multiples_score
-        
-        # 3. Earnings Growth (max 20 points) - Calculate 3-year forward CAGR
-        if include_growth:
-            max_score += 20
-            
-            # Get forecast data for growth analysis
-            forecast_doc = tool_system.vietnam_stocks_db['CompanyForecast'].find_one({"ticker": ticker}) if tool_system.vietnam_stocks_db is not None else None
-            
-            if forecast_doc and 'forecast_data' in forecast_doc:
-                forecast_data = forecast_doc['forecast_data']
-                current_year = datetime.now().year
+        # 1. RNAV Upside Score (25% weight)
+        try:
+            rnav_result = get_rnav_breakdown(ticker)
+            if rnav_result.get('status') == 'success' and 'data' in rnav_result:
+                data = rnav_result['data']  # Extract the nested data
+                rnav_upside = data.get('upside_pct', 0)  # Fixed field name
                 
-                # Use current year and 3 years forward
-                target_years = [current_year, current_year + 1, current_year + 2, current_year + 3]
+                # Scoring: >50% upside = 10, 0% = 5, <-30% = 1
+                if rnav_upside >= 50:
+                    scores["rnav_upside"]["score"] = 10
+                elif rnav_upside >= 30:
+                    scores["rnav_upside"]["score"] = 8 + (rnav_upside - 30) * 0.1  # 30-50% → 8-10
+                elif rnav_upside >= 0:
+                    scores["rnav_upside"]["score"] = 5 + (rnav_upside / 30) * 3  # 0-30% → 5-8
+                elif rnav_upside >= -30:
+                    scores["rnav_upside"]["score"] = 1 + ((rnav_upside + 30) / 30) * 4  # -30-0% → 1-5
+                else:
+                    scores["rnav_upside"]["score"] = 1
                 
-                # Check if we have data for the required years
-                available_years = [year for year in target_years if str(year) in forecast_data]
+                scores["rnav_upside"]["data"] = {
+                    "rnav_per_share": data.get('rnav_per_share', 0),
+                    "current_price": data.get('current_price', 0),
+                    "upside_pct": rnav_upside
+                }
+        except:
+            scores["rnav_upside"]["data"]["error"] = "RNAV data not available"
+        
+        # 2. Valuation Multiples Score (30% weight)
+        try:
+            val_data = get_valuation_analysis(ticker)
+            if val_data.get('status') == 'success' and 'data' in val_data:
+                multiples_scores = []
+                data = val_data['data']  # Extract the nested data
                 
-                if len(available_years) >= 2:
-                    # Use first and last available years within our target range
-                    first_year = str(available_years[0])
-                    last_year = str(available_years[-1])
+                # Trailing P/E
+                trailing_pe = data.get('trailing_pe', 0) or 0
+                mean_pe = data.get('historical_mean_pe', 0) or 0  # Fixed field name
+                if trailing_pe > 0 and mean_pe > 0:
+                    pe_vs_mean = (trailing_pe / mean_pe)
+                    if pe_vs_mean <= 0.7:  # 30% below mean
+                        multiples_scores.append(10)
+                    elif pe_vs_mean <= 1.0:  # Below mean
+                        multiples_scores.append(7 + (1.0 - pe_vs_mean) * 10)  # 7-10
+                    elif pe_vs_mean <= 1.3:  # Up to 30% above mean
+                        multiples_scores.append(4 + (1.3 - pe_vs_mean) * 10)  # 4-7
+                    else:
+                        multiples_scores.append(max(1, 4 - (pe_vs_mean - 1.3) * 3))  # 1-4
+                
+                # Trailing P/B
+                trailing_pb = data.get('trailing_pb', 0) or 0
+                mean_pb = data.get('historical_mean_pb', 0) or 0  # Fixed field name
+                if trailing_pb > 0 and mean_pb > 0:
+                    pb_vs_mean = (trailing_pb / mean_pb)
+                    if pb_vs_mean <= 0.7:
+                        multiples_scores.append(10)
+                    elif pb_vs_mean <= 1.0:
+                        multiples_scores.append(7 + (1.0 - pb_vs_mean) * 10)
+                    elif pb_vs_mean <= 1.3:
+                        multiples_scores.append(4 + (1.3 - pb_vs_mean) * 10)
+                    else:
+                        multiples_scores.append(max(1, 4 - (pb_vs_mean - 1.3) * 3))
+                
+                # Current year P/E - Fixed field name
+                current_pe = data.get(f'current_year_{current_year}_pe', 0) or 0
+                if current_pe > 0:
+                    if current_pe <= 10:
+                        multiples_scores.append(10)
+                    elif current_pe <= 15:
+                        multiples_scores.append(7 + (15 - current_pe) * 0.6)
+                    elif current_pe <= 25:
+                        multiples_scores.append(4 + (25 - current_pe) * 0.3)
+                    else:
+                        multiples_scores.append(max(1, 4 - (current_pe - 25) * 0.1))
+                
+                # Next year P/E - Fixed field name
+                next_pe = data.get(f'next_year_{current_year + 1}_pe', 0) or 0
+                if next_pe > 0:
+                    if next_pe <= 8:
+                        multiples_scores.append(10)
+                    elif next_pe <= 12:
+                        multiples_scores.append(7 + (12 - next_pe) * 0.75)
+                    elif next_pe <= 20:
+                        multiples_scores.append(4 + (20 - next_pe) * 0.375)
+                    else:
+                        multiples_scores.append(max(1, 4 - (next_pe - 20) * 0.15))
+                
+                # Current year P/B - Fixed field name
+                current_pb = data.get(f'current_year_{current_year}_pb', 0) or 0
+                if current_pb > 0:
+                    if current_pb <= 1.0:
+                        multiples_scores.append(10)
+                    elif current_pb <= 1.5:
+                        multiples_scores.append(7 + (1.5 - current_pb) * 6)
+                    elif current_pb <= 2.5:
+                        multiples_scores.append(4 + (2.5 - current_pb) * 3)
+                    else:
+                        multiples_scores.append(max(1, 4 - (current_pb - 2.5) * 1))
+                
+                # Next year P/B - Fixed field name
+                next_pb = data.get(f'next_year_{current_year + 1}_pb', 0) or 0
+                if next_pb > 0:
+                    if next_pb <= 0.8:
+                        multiples_scores.append(10)
+                    elif next_pb <= 1.2:
+                        multiples_scores.append(7 + (1.2 - next_pb) * 7.5)
+                    elif next_pb <= 2.0:
+                        multiples_scores.append(4 + (2.0 - next_pb) * 3.75)
+                    else:
+                        multiples_scores.append(max(1, 4 - (next_pb - 2.0) * 1.5))
+                
+                if multiples_scores:
+                    scores["valuation_multiples"]["score"] = sum(multiples_scores) / len(multiples_scores)
+                
+                scores["valuation_multiples"]["data"] = {
+                    "trailing_pe": trailing_pe,
+                    "trailing_pb": trailing_pb,
+                    "current_year_pe": current_pe,
+                    "next_year_pe": next_pe,
+                    "current_year_pb": current_pb,
+                    "next_year_pb": next_pb,
+                    "mean_pe": mean_pe,
+                    "mean_pb": mean_pb
+                }
+        except:
+            scores["valuation_multiples"]["data"]["error"] = "Valuation data not available"
+        
+        # 3. Growth Score - 3-year PATMI CAGR (25% weight)
+        try:
+            # Get forecast data from MongoDB
+            if tool_system.vietnam_stocks_db is not None:
+                forecast_doc = tool_system.vietnam_stocks_db['CompanyForecast'].find_one({"ticker": ticker})
+                if forecast_doc and 'forecast_data' in forecast_doc:
+                    start_year = str(current_year)
+                    end_year = str(current_year + 3)
                     
-                    first_npatmi = forecast_data.get(first_year, {}).get('pnl', {}).get('npatmi', 0)
-                    last_npatmi = forecast_data.get(last_year, {}).get('pnl', {}).get('npatmi', 0)
+                    start_patmi = forecast_doc['forecast_data'].get(start_year, {}).get('pnl', {}).get('npatmi', 0)
+                    end_patmi = forecast_doc['forecast_data'].get(end_year, {}).get('pnl', {}).get('npatmi', 0)
                     
-                    if first_npatmi > 0 and last_npatmi > 0:
-                        years_diff = available_years[-1] - available_years[0]
-                        cagr = ((last_npatmi / first_npatmi) ** (1 / years_diff) - 1) * 100 if years_diff > 0 else 0
+                    if start_patmi > 0 and end_patmi > 0:
+                        cagr = ((end_patmi / start_patmi) ** (1/3) - 1) * 100
                         
-                        # 20% CAGR = 20 points
-                        growth_score = min(20, max(0, cagr))
-                        
-                        analysis['growth'] = {
-                            "earnings_cagr": cagr,
-                            "period": f"{available_years[0]}-{available_years[-1]}",
-                            "years_used": years_diff,
-                            "score": growth_score
-                        }
-                        attractiveness_score += growth_score
-        
-        # 4. Leverage Analysis (max 20 points)
-        if include_leverage:
-            max_score += 20
-            
-            # Get balance sheet data
-            forecast_doc = tool_system.vietnam_stocks_db['CompanyForecast'].find_one({"ticker": ticker}) if tool_system.vietnam_stocks_db is not None else None
-            
-            if forecast_doc and 'forecast_data' in forecast_doc:
-                current_year = str(datetime.now().year)
-                year_data = forecast_doc['forecast_data'].get(current_year, {})
-                
-                if 'balance_sheet' in year_data:
-                    bs = year_data['balance_sheet']
-                    
-                    # Calculate debt/equity ratio
-                    total_debt = bs.get('liabilities', {}).get('total_debt', 0)
-                    total_equity = bs.get('equity', {}).get('total_equity', 0)
-                    
-                    if total_equity > 0:
-                        debt_to_equity = total_debt / total_equity
-                        
-                        # Lower D/E is better: D/E < 0.5 = 20 points, D/E > 2 = 0 points
-                        if debt_to_equity <= 0.5:
-                            leverage_score = 20
-                        elif debt_to_equity >= 2:
-                            leverage_score = 0
+                        # Scoring: >25% = 10, 15% = 7, 5% = 4, <0% = 1
+                        if cagr >= 25:
+                            scores["growth"]["score"] = 10
+                        elif cagr >= 15:
+                            scores["growth"]["score"] = 7 + (cagr - 15) * 0.3
+                        elif cagr >= 5:
+                            scores["growth"]["score"] = 4 + (cagr - 5) * 0.3
+                        elif cagr >= 0:
+                            scores["growth"]["score"] = 1 + (cagr / 5) * 3
                         else:
-                            leverage_score = 20 * (2 - debt_to_equity) / 1.5
+                            scores["growth"]["score"] = max(1, 1 + cagr * 0.05)
                         
-                        analysis['leverage'] = {
-                            "debt_to_equity": debt_to_equity,
-                            "score": leverage_score
+                        scores["growth"]["data"] = {
+                            "patmi_cagr_3y": round(cagr, 1),
+                            "period": f"{current_year}-{current_year + 3}",
+                            "start_patmi": round(start_patmi / 1e9, 2),  # Convert to billions
+                            "end_patmi": round(end_patmi / 1e9, 2)
                         }
-                        attractiveness_score += leverage_score
+                    else:
+                        scores["growth"]["data"]["error"] = "Invalid PATMI values for growth calculation"
+                else:
+                    scores["growth"]["data"]["error"] = "No forecast data available in MongoDB"
+            else:
+                scores["growth"]["data"]["error"] = "MongoDB not connected"
+        except Exception as e:
+            scores["growth"]["data"]["error"] = f"Growth calculation error: {str(e)}"
         
-        # Calculate final score and recommendation
-        final_score = (attractiveness_score / max_score * 10) if max_score > 0 else 0
+        # 4. Leverage Score (20% weight)
+        try:
+            # Get balance sheet ratios
+            leverage_data = calculate_balance_sheet_ratios(
+                ticker=ticker,
+                year_start=current_year,
+                year_end=current_year,
+                ratios=["debt_to_equity", "net_debt_to_equity"]
+            )
+            
+            if leverage_data.get('status') == 'success' and 'data' in leverage_data:
+                # Handle nested structure: result['data']['data'][year]
+                nested_data = leverage_data['data'].get('data', {})
+                year_data = nested_data.get(current_year, {})  # Use int year, not string
+                ratios = year_data.get('ratios', {})
+                
+                debt_to_equity = ratios.get('debt_to_equity', 999)
+                net_debt_to_equity = ratios.get('net_debt_to_equity', 999)
+                
+                leverage_scores = []
+                
+                # Total Debt to Equity scoring
+                if debt_to_equity < 999:
+                    if debt_to_equity <= 0.3:
+                        leverage_scores.append(10)
+                    elif debt_to_equity <= 0.6:
+                        leverage_scores.append(8 + (0.6 - debt_to_equity) * 6.67)
+                    elif debt_to_equity <= 1.0:
+                        leverage_scores.append(5 + (1.0 - debt_to_equity) * 7.5)
+                    elif debt_to_equity <= 2.0:
+                        leverage_scores.append(2 + (2.0 - debt_to_equity) * 3)
+                    else:
+                        leverage_scores.append(1)
+                
+                # Net Debt to Equity scoring
+                if net_debt_to_equity < 999:
+                    if net_debt_to_equity <= 0:  # Net cash position
+                        leverage_scores.append(10)
+                    elif net_debt_to_equity <= 0.3:
+                        leverage_scores.append(8 + (0.3 - net_debt_to_equity) * 6.67)
+                    elif net_debt_to_equity <= 0.8:
+                        leverage_scores.append(5 + (0.8 - net_debt_to_equity) * 6)
+                    elif net_debt_to_equity <= 1.5:
+                        leverage_scores.append(2 + (1.5 - net_debt_to_equity) * 4.29)
+                    else:
+                        leverage_scores.append(1)
+                
+                if leverage_scores:
+                    scores["leverage"]["score"] = sum(leverage_scores) / len(leverage_scores)
+                
+                scores["leverage"]["data"] = {
+                    "debt_to_equity": round(debt_to_equity, 2),
+                    "net_debt_to_equity": round(net_debt_to_equity, 2)
+                }
+        except:
+            scores["leverage"]["data"]["error"] = "Leverage data not available"
         
-        # Determine recommendation
-        if final_score >= 7:
+        # Calculate weighted total score
+        total_score = 0
+        total_weight = 0
+        
+        for component, data in scores.items():
+            weighted_score = data["score"] * data["weight"]
+            total_score += weighted_score
+            total_weight += data["weight"] if data["score"] > 0 else 0
+        
+        # Normalize if not all components available
+        if total_weight > 0 and total_weight < 1.0:
+            total_score = total_score / total_weight
+        
+        # Ensure score is between 1 and 10
+        total_score = max(1, min(10, total_score))
+        
+        # Investment recommendation based on score
+        if total_score >= 8:
             recommendation = "STRONG BUY"
-            recommendation_rationale = "Excellent valuation with high RNAV upside and attractive multiples"
-        elif final_score >= 5.5:
+            recommendation_rationale = "Excellent across all metrics - compelling investment opportunity"
+        elif total_score >= 6.5:
             recommendation = "BUY"
-            recommendation_rationale = "Attractive valuation with good upside potential"
-        elif final_score >= 4:
+            recommendation_rationale = "Attractive valuation with good fundamentals"
+        elif total_score >= 5:
             recommendation = "HOLD"
-            recommendation_rationale = "Fair valuation, limited upside"
+            recommendation_rationale = "Fair valuation, mixed signals"
+        elif total_score >= 3.5:
+            recommendation = "REDUCE"
+            recommendation_rationale = "Below average metrics, consider reducing position"
         else:
-            recommendation = "SELL/AVOID"
-            recommendation_rationale = "Unattractive valuation, consider alternatives"
+            recommendation = "SELL"
+            recommendation_rationale = "Poor metrics across multiple factors"
         
         return {
             "ticker": ticker,
-            "attractiveness_score": round(final_score, 1),
-            "max_score": 10,
+            "total_score": round(total_score, 1),
             "recommendation": recommendation,
             "recommendation_rationale": recommendation_rationale,
-            "detailed_analysis": analysis,
+            "display_instruction": "IMPORTANT: Display ALL components below in a clear table or formatted list",
             "score_breakdown": {
-                "actual": attractiveness_score,
-                "maximum": max_score,
-                "percentage": round(attractiveness_score / max_score * 100, 1) if max_score > 0 else 0
+                "rnav_upside": {
+                    "score": round(scores["rnav_upside"]["score"], 1),
+                    "weight": scores["rnav_upside"]["weight"],
+                    "weighted_contribution": round(scores["rnav_upside"]["score"] * scores["rnav_upside"]["weight"], 2),
+                    "data": scores["rnav_upside"]["data"]
+                },
+                "valuation_multiples": {
+                    "score": round(scores["valuation_multiples"]["score"], 1),
+                    "weight": scores["valuation_multiples"]["weight"],
+                    "weighted_contribution": round(scores["valuation_multiples"]["score"] * scores["valuation_multiples"]["weight"], 2),
+                    "data": scores["valuation_multiples"]["data"]
+                },
+                "growth": {
+                    "score": round(scores["growth"]["score"], 1),
+                    "weight": scores["growth"]["weight"],
+                    "weighted_contribution": round(scores["growth"]["score"] * scores["growth"]["weight"], 2),
+                    "data": scores["growth"]["data"]
+                },
+                "leverage": {
+                    "score": round(scores["leverage"]["score"], 1),
+                    "weight": scores["leverage"]["weight"],
+                    "weighted_contribution": round(scores["leverage"]["score"] * scores["leverage"]["weight"], 2),
+                    "data": scores["leverage"]["data"]
+                }
+            },
+            "scoring_methodology": {
+                "scale": "1-10 (1=worst, 10=best)",
+                "components": {
+                    "rnav_upside": "25% weight - Based on RNAV per share vs current price",
+                    "valuation_multiples": "30% weight - Trailing & forward P/E and P/B ratios",
+                    "growth": "25% weight - 3-year PATMI CAGR forecast",
+                    "leverage": "20% weight - Debt/Equity and Net Debt/Equity ratios"
+                }
             },
             "status": "success"
         }
