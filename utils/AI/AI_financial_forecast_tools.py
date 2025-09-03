@@ -854,137 +854,499 @@ def register_financial_forecast_tools(tool_system):
         }
     
     @tool_system.tool(
-        name="calculate_gearing_metrics",
-        description="Calculate leverage and gearing metrics (debt/equity, interest coverage, etc.)",
+        name="calculate_balance_sheet_ratios",
+        description="ALWAYS USE THIS TOOL for ANY balance sheet ratios, leverage metrics, debt analysis, liquidity ratios, or solvency questions. Calculates ALL balance sheet and leverage ratios including: current ratio (liquidity), quick ratio, debt/equity, net debt/equity, debt/assets, debt/EBITDA, EBITDA/interest (coverage), assets/equity (leverage multiplier), liabilities/assets. Can analyze trends over time (historical 2016-2024 + forecast 2025+). USE THIS for questions about: leverage, gearing, debt levels, liquidity, solvency, balance sheet strength, financial stability, debt capacity, interest coverage. Supports both annual and quarterly data. For quarterly: use year_start and year_end with period_type='quarterly' to get all quarters in range (e.g., 2023-2024 gives Q1'23 through Q4'24), OR use quarters parameter for specific quarters.",
         parameters={
             "ticker": {
                 "type": "string",
                 "description": "Company ticker",
                 "required": True
             },
-            "include_net_debt": {
-                "type": "boolean",
-                "description": "Include net debt calculation",
+            "year_start": {
+                "type": "integer",
+                "description": "Start year. For quarterly: 2023 means Q1'23 onwards. For annual: 2023 means full year 2023. Required unless using specific quarters parameter",
                 "required": False
             },
-            "include_debt_to_equity": {
-                "type": "boolean",
-                "description": "Include debt to equity ratio",
+            "year_end": {
+                "type": "integer",
+                "description": "End year. For quarterly: 2024 means through Q4'24. For annual: 2024 means full year 2024. If not provided, returns single year",
                 "required": False
             },
-            "include_interest_coverage": {
-                "type": "boolean",
-                "description": "Include interest coverage ratio",
+            "period_type": {
+                "type": "string",
+                "enum": ["annual", "quarterly"],
+                "description": "Period type: 'annual' for yearly data, 'quarterly' for quarterly data. When using quarterly with year_start=2023 and year_end=2024, returns all 8 quarters (Q1'23 through Q4'24)",
+                "required": False
+            },
+            "quarters": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional: specific quarters to retrieve (e.g., ['2023Q1', '2023Q2']). Use this OR year_start/year_end, not both. Format: YYYYQn",
+                "required": False
+            },
+            "ratios": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific ratios to calculate. Options: 'current_ratio' (liquidity), 'ebitda_interest_coverage' (debt service ability), 'liabilities_to_assets' (leverage %), 'assets_to_equity' (leverage multiplier), 'debt_to_equity' (gearing), 'net_debt_to_equity' (net gearing), 'total_debt' (absolute debt in billions), 'debt_to_ebitda' (debt payback years). LEAVE EMPTY to calculate ALL ratios - recommended for comprehensive analysis.",
                 "required": False
             }
         }
     )
-    def calculate_gearing_metrics(ticker: str, include_net_debt: bool = True,
-                                    include_debt_to_equity: bool = True,
-                                    include_interest_coverage: bool = True) -> Dict:
-        """Calculate leverage and gearing metrics"""
+    def calculate_balance_sheet_ratios(ticker: str, year_start: int = None, year_end: int = None, 
+                                      period_type: str = "annual", quarters: List[str] = None,
+                                      ratios: List[str] = None) -> Dict:
+        """Calculate balance sheet ratios from both historical and forecast data"""
         
         ticker = ticker.upper()
         
+        # Validate inputs
+        if quarters is None and year_start is None:
+            return {"error": "Either year_start or quarters must be provided", "status": "failed"}
+        
+        # Define year range only if not using specific quarters
+        if quarters is None:
+            if year_start is None:
+                return {"error": "year_start is required when not using specific quarters", "status": "failed"}
+            if year_end is None:
+                year_end = year_start
+            if year_end < year_start:
+                return {"error": "End year must be >= start year", "status": "failed"}
+        
+        # Define all available ratios if not specified
+        if not ratios:
+            ratios = ['current_ratio', 'ebitda_interest_coverage', 'liabilities_to_assets', 
+                     'assets_to_equity', 'debt_to_equity', 'net_debt_to_equity', 
+                     'total_debt', 'debt_to_ebitda']
+        
+        # Dynamically determine historical cutoff based on available data
+        if period_type == "quarterly":
+            df_historical = tool_system._load_quarterly_financial_statements()
+        else:
+            df_historical = tool_system._load_financial_statements_csv()
+            
+        historical_cutoff = 2024  # Default fallback
+        if not df_historical.empty:
+            # Get the maximum year available in historical data for this ticker
+            df_ticker = df_historical[df_historical['TICKER'] == ticker]
+            if not df_ticker.empty:
+                if period_type == "quarterly":
+                    # For quarterly data, use YEAR column which has integer years
+                    # or extract year from DATE column if it contains quarter strings
+                    if 'YEAR' in df_ticker.columns:
+                        historical_cutoff = int(df_ticker['YEAR'].max())
+                    elif 'DATE' in df_ticker.columns:
+                        # Extract year from quarter strings like "2024Q1"
+                        max_date = df_ticker['DATE'].max()
+                        if isinstance(max_date, str) and 'Q' in max_date:
+                            historical_cutoff = int(max_date[:4])
+                        else:
+                            historical_cutoff = int(max_date)
+                else:
+                    # For annual data, check if we have complete year data
+                    # If we only have partial year (e.g., Q2 2025), the last complete year is 2024
+                    year_col = 'DATE' if 'DATE' in df_ticker.columns else 'YEAR'
+                    max_year = int(df_ticker[year_col].max())
+                    
+                    # Check if we have quarterly data to determine if current year is complete
+                    df_quarterly = tool_system._load_quarterly_financial_statements()
+                    if not df_quarterly.empty:
+                        df_ticker_q = df_quarterly[df_quarterly['TICKER'] == ticker]
+                        if not df_ticker_q.empty and 'DATE' in df_ticker_q.columns:
+                            # Check if we have Q4 data for the max year
+                            q4_check = f"{max_year}Q4"
+                            if q4_check in df_ticker_q['DATE'].values:
+                                historical_cutoff = max_year  # Complete year data available
+                            else:
+                                historical_cutoff = max_year - 1  # Only partial year data
+                        else:
+                            historical_cutoff = max_year
+                    else:
+                        historical_cutoff = max_year
+        
+        current_year = datetime.now().year
+        
+        # Build the years_requested string based on what was provided
+        if quarters:
+            years_requested = f"Quarters: {', '.join(quarters)}"
+        elif year_start is not None and year_end is not None and year_end != year_start:
+            years_requested = f"{year_start}-{year_end}"
+        elif year_start is not None:
+            years_requested = str(year_start)
+        else:
+            years_requested = "Not specified"
+        
+        results = {
+            "ticker": ticker,
+            "period_type": period_type,
+            "years_requested": years_requested,
+            "historical_data_cutoff": historical_cutoff,
+            "data_sources": {
+                "historical": f"CSV data (up to {historical_cutoff})" + (" - quarterly available" if period_type == "quarterly" else ""),
+                "forecast": f"MongoDB data ({historical_cutoff + 1} onwards) - annual only"
+            },
+            "data": {}
+        }
+        
+        # If quarterly periods are specified, process them
+        if quarters and period_type == "quarterly":
+            for quarter in quarters:
+                # Parse quarter like "2023Q1"
+                try:
+                    year = int(quarter[:4])
+                    q_num = quarter[4:]
+                    
+                    if year <= historical_cutoff:
+                        # Get quarterly historical data
+                        # The DATE column contains the full quarter string like "2024Q1"
+                        df_quarter = df_historical[(df_historical['TICKER'] == ticker) & 
+                                                  (df_historical['DATE'] == quarter)]
+                        
+                        if not df_quarter.empty:
+                            bs_data = {}
+                            for _, row in df_quarter.iterrows():
+                                keycode = row.get('KEYCODE', '')
+                                value = row.get('VALUE', 0)  # Column name is uppercase
+                                _map_historical_keycode(keycode, value, bs_data)
+                            
+                            results["data"][quarter] = {
+                                "period": quarter,
+                                "source": "historical_quarterly",
+                                "ratios": _calculate_ratios(bs_data, ratios)
+                            }
+                        else:
+                            results["data"][quarter] = {
+                                "period": quarter,
+                                "error": f"No quarterly data for {quarter}"
+                            }
+                    else:
+                        results["data"][quarter] = {
+                            "period": quarter,
+                            "error": f"Quarterly data not available for forecast years (>{historical_cutoff})"
+                        }
+                except (ValueError, IndexError):
+                    results["data"][quarter] = {
+                        "period": quarter,
+                        "error": f"Invalid quarter format: {quarter}"
+                    }
+        
+        # Process annual data or quarterly for year ranges
+        elif period_type == "quarterly" and not quarters:
+            # Generate all quarters for the year range
+            if year_start is None:
+                return {"error": "year_start is required when not using specific quarters", "status": "failed"}
+            for year in range(year_start, year_end + 1):
+                # First, try to get historical quarterly data
+                quarters_found = []
+                for q in ['Q1', 'Q2', 'Q3', 'Q4']:
+                    quarter = f"{year}{q}"
+                    # The DATE column contains the full quarter string like "2024Q1"
+                    df_quarter = df_historical[(df_historical['TICKER'] == ticker) & 
+                                              (df_historical['DATE'] == quarter)]
+                    
+                    if not df_quarter.empty:
+                        bs_data = {}
+                        for _, row in df_quarter.iterrows():
+                            keycode = row.get('KEYCODE', '')
+                            value = row.get('VALUE', 0)  # Column name is uppercase
+                            _map_historical_keycode(keycode, value, bs_data)
+                        
+                        results["data"][quarter] = {
+                            "period": quarter,
+                            "source": "historical_quarterly",
+                            "ratios": _calculate_ratios(bs_data, ratios)
+                        }
+                        quarters_found.append(q)
+                    else:
+                        # Mark as no historical data (might have forecast annual)
+                        results["data"][quarter] = {
+                            "period": quarter,
+                            "error": f"No quarterly data for {quarter}"
+                        }
+                
+                # For years > historical_cutoff or years with partial quarters, also try to get annual forecast
+                # This ensures we show annual forecast even when some historical quarters exist
+                if year > historical_cutoff or (year == historical_cutoff and len(quarters_found) < 4):
+                    annual_data = _process_forecast_year(ticker, year, ratios, tool_system)
+                    if "error" not in annual_data:
+                        annual_data["note"] = f"Annual forecast for {year} (historical quarters: {', '.join(quarters_found) if quarters_found else 'none'})"
+                        results["data"][str(year)] = annual_data
+                    elif year > historical_cutoff:
+                        # Only add annual forecast error if beyond historical cutoff
+                        results["data"][str(year)] = annual_data
+        
+        # Process annual data
+        else:
+            # Load historical data once (outside the loop for efficiency)
+            df = df_historical if not df_historical.empty else pd.DataFrame()
+            
+            if year_start is None:
+                return {"error": "year_start is required for annual data", "status": "failed"}
+            
+            for year in range(year_start, year_end + 1):
+                year_str = str(year)
+                year_data = {"year": year, "source": None, "ratios": {}}
+                
+                # Determine data source
+                if year <= historical_cutoff:
+                    # Get historical data from CSV
+                    year_data["source"] = "historical"
+                    
+                    if not df.empty:
+                        # Filter for ticker and year (column is DATE for annual data)
+                        year_col = 'DATE' if 'DATE' in df.columns else 'YEAR'
+                        df_year = df[(df['TICKER'] == ticker) & (df[year_col] == year)]
+                        
+                        if not df_year.empty:
+                            # Extract balance sheet items from historical data
+                            bs_data = {}
+                            for _, row in df_year.iterrows():
+                                keycode = row.get('KEYCODE', '')
+                                value = row.get('VALUE', 0)  # Column name is uppercase
+                                
+                                # Map historical KEYCODEs to our structure
+                                _map_historical_keycode(keycode, value, bs_data)
+                            
+                            # Calculate ratios for historical data
+                            year_data["ratios"] = _calculate_ratios(bs_data, ratios)
+                        else:
+                            year_data["error"] = f"No historical data for {year}"
+                
+                else:
+                    # Get forecast data from MongoDB
+                    year_data["source"] = "forecast"
+                    
+                    if tool_system.vietnam_stocks_db is None:
+                        year_data["error"] = "MongoDB not connected for forecast data"
+                    else:
+                        try:
+                            forecast_collection = tool_system.vietnam_stocks_db['CompanyForecast']
+                            forecast_doc = forecast_collection.find_one({"ticker": ticker})
+                            
+                            if forecast_doc and 'forecast_data' in forecast_doc:
+                                if year_str in forecast_doc['forecast_data']:
+                                    forecast_year = forecast_doc['forecast_data'][year_str]
+                                    bs = forecast_year.get('balance_sheet', {})
+                                    pnl = forecast_year.get('pnl', {})
+                                    
+                                    # Extract forecast balance sheet items
+                                    bs_data = {
+                                        'current_assets': bs.get('assets', {}).get('current_assets', 0),
+                                        'current_liabilities': bs.get('liabilities', {}).get('current_liabilities', 0),
+                                        'total_liabilities': bs.get('liabilities', {}).get('total_liabilities', 0),
+                                        'total_assets': bs.get('assets', {}).get('total_assets', 0),
+                                        'total_equity': bs.get('equity', {}).get('total_equity', 0),
+                                        'short_term_debt': bs.get('liabilities', {}).get('short_term_debt', 0),
+                                        'long_term_debt': bs.get('liabilities', {}).get('long_term_debt', 0),
+                                        'cash': bs.get('assets', {}).get('cash_and_equivalents', 0),
+                                        'st_investment': bs.get('assets', {}).get('short_term_investment', 0),
+                                        'ebitda': pnl.get('ebitda', 0),
+                                        'interest_expense': pnl.get('interest_expense', 0)
+                                    }
+                                    
+                                    # Calculate ratios for forecast data
+                                    year_data["ratios"] = _calculate_ratios(bs_data, ratios)
+                                else:
+                                    year_data["error"] = f"No forecast data for {year}"
+                            else:
+                                year_data["error"] = f"No forecast document for {ticker}"
+                        except Exception as e:
+                            year_data["error"] = str(e)
+                
+                results["data"][year] = year_data
+        
+        # Add summary statistics if multiple years
+        if year_end > year_start:
+            results["summary"] = _calculate_ratio_trends(results["data"], ratios)
+        
+        return {
+            "data": results,
+            "status": "success"
+        }
+    
+    def _map_historical_keycode(keycode: str, value: float, bs_data: Dict):
+        """Helper to map historical KEYCODEs to standardized structure"""
+        if keycode == 'Current_Assets':
+            bs_data['current_assets'] = value
+        elif keycode == 'Current_Liabilities':
+            bs_data['current_liabilities'] = value
+        elif keycode == 'Total_Liabilities':
+            bs_data['total_liabilities'] = value
+        elif keycode in ['Total_Assets', 'Total_Asset']:  # Handle both variations
+            bs_data['total_assets'] = value
+        elif keycode in ['Total_Equity', 'TOTAL_Equity']:  # Handle both variations
+            bs_data['total_equity'] = value
+        elif keycode in ['Short_term_Debt', 'ST_Debt']:  # Handle both variations
+            bs_data['short_term_debt'] = value
+        elif keycode in ['Long_term_Debt', 'LT_Debt']:  # Handle both variations
+            bs_data['long_term_debt'] = value
+        elif keycode in ['Cash_and_Cash_Equivalents', 'Cash']:  # Handle both variations
+            if 'cash' not in bs_data:
+                bs_data['cash'] = 0
+            bs_data['cash'] += value  # Accumulate cash values
+        elif keycode == 'Cash_Equivalent':  # Additional cash component
+            if 'cash' not in bs_data:
+                bs_data['cash'] = 0
+            bs_data['cash'] += value  # Add to cash total
+        elif keycode in ['Short_term_Investment', 'Short_Investment']:  # Handle both variations
+            bs_data['st_investment'] = value
+        elif keycode == 'EBITDA':
+            bs_data['ebitda'] = value
+        elif keycode == 'Interest_Expense':
+            bs_data['interest_expense'] = value
+    
+    def _process_forecast_year(ticker: str, year: int, ratios: List[str], tool_system) -> Dict:
+        """Helper to process forecast year data from MongoDB"""
+        year_data = {"year": year, "source": "forecast", "ratios": {}}
+        
         if tool_system.vietnam_stocks_db is None:
-            return {"error": "MongoDB not connected", "status": "failed"}
+            year_data["error"] = "MongoDB not connected for forecast data"
+            return year_data
         
         try:
             forecast_collection = tool_system.vietnam_stocks_db['CompanyForecast']
+            forecast_doc = forecast_collection.find_one({"ticker": ticker.upper()})
             
-            # Get saved forecast data
-            forecast_doc = forecast_collection.find_one({"ticker": ticker})
-            
-            if not forecast_doc or 'forecast_data' not in forecast_doc:
-                return {"error": f"No forecast data for {ticker}", "status": "failed"}
-            
-            current_year = str(datetime.now().year)
-            year_data = forecast_doc['forecast_data'].get(current_year, {})
-            
-            if not year_data:
-                return {"error": f"No data for {current_year}", "status": "failed"}
-            
-            result = {
-                "ticker": ticker,
-                "year": current_year,
-                "metrics": {}
-            }
-            
-            bs = year_data.get('balance_sheet', {})
-            pnl = year_data.get('pnl', {})
-            
-            # Get key balance sheet items
-            cash = bs.get('assets', {}).get('cash_and_equivalents', 0)
-            st_debt = bs.get('liabilities', {}).get('short_term_debt', 0)
-            lt_debt = bs.get('liabilities', {}).get('long_term_debt', 0)
-            total_debt = bs.get('liabilities', {}).get('total_debt', st_debt + lt_debt)
-            total_equity = bs.get('equity', {}).get('total_equity', 0)
-            total_assets = bs.get('assets', {}).get('total_assets', 0)
-            
-            # 1. Net Debt
-            if include_net_debt:
-                net_debt = total_debt - cash
-                result['metrics']['net_debt'] = {
-                    "value": net_debt / 1e9,  # Convert to billions
-                    "cash": cash / 1e9,
-                    "total_debt": total_debt / 1e9,
-                    "net_debt_to_equity": (net_debt / total_equity) if total_equity > 0 else None
-                }
-            
-            # 2. Debt to Equity
-            if include_debt_to_equity and total_equity > 0:
-                debt_to_equity = total_debt / total_equity
-                result['metrics']['debt_to_equity'] = {
-                    "value": debt_to_equity,
-                    "interpretation": "Low leverage" if debt_to_equity < 0.5 else "Moderate leverage" if debt_to_equity < 1.5 else "High leverage"
-                }
-                
-                # Additional ratios
-                result['metrics']['debt_to_assets'] = total_debt / total_assets if total_assets > 0 else None
-                result['metrics']['equity_ratio'] = total_equity / total_assets if total_assets > 0 else None
-            
-            # 3. Interest Coverage
-            if include_interest_coverage:
-                ebitda = pnl.get('ebitda', 0)
-                interest_expense = pnl.get('interest_expense', 0)
-                
-                if interest_expense != 0:
-                    interest_coverage = abs(ebitda / interest_expense)
-                    result['metrics']['interest_coverage'] = {
-                        "value": interest_coverage,
-                        "ebitda": ebitda / 1e9,
-                        "interest_expense": abs(interest_expense) / 1e9,
-                        "interpretation": "Strong" if interest_coverage > 5 else "Adequate" if interest_coverage > 2 else "Weak"
+            if forecast_doc and 'forecast_data' in forecast_doc:
+                year_str = str(year)
+                if year_str in forecast_doc['forecast_data']:
+                    forecast_year = forecast_doc['forecast_data'][year_str]
+                    bs = forecast_year.get('balance_sheet', {})
+                    pnl = forecast_year.get('pnl', {})
+                    
+                    # Extract forecast balance sheet items
+                    bs_data = {
+                        'current_assets': bs.get('assets', {}).get('current_assets', 0),
+                        'current_liabilities': bs.get('liabilities', {}).get('current_liabilities', 0),
+                        'total_liabilities': bs.get('liabilities', {}).get('total_liabilities', 0),
+                        'total_assets': bs.get('assets', {}).get('total_assets', 0),
+                        'total_equity': bs.get('equity', {}).get('total_equity', 0),
+                        'short_term_debt': bs.get('liabilities', {}).get('short_term_debt', 0),
+                        'long_term_debt': bs.get('liabilities', {}).get('long_term_debt', 0),
+                        'cash': bs.get('assets', {}).get('cash_and_equivalents', 0),
+                        'st_investment': bs.get('assets', {}).get('short_term_investment', 0),
+                        'ebitda': pnl.get('ebitda', 0),
+                        'interest_expense': pnl.get('interest_expense', 0)
                     }
+                    
+                    # Calculate ratios for forecast data
+                    year_data["ratios"] = _calculate_ratios(bs_data, ratios)
                 else:
-                    result['metrics']['interest_coverage'] = {
-                        "value": "No debt/interest",
-                        "ebitda": ebitda / 1e9,
-                        "interest_expense": 0
-                    }
-            
-            # Add historical comparison if available
-            previous_year = str(int(current_year) - 1)
-            if previous_year in forecast_doc['forecast_data']:
-                prev_bs = forecast_doc['forecast_data'][previous_year].get('balance_sheet', {})
-                prev_total_debt = prev_bs.get('liabilities', {}).get('total_debt', 0)
-                prev_total_equity = prev_bs.get('equity', {}).get('total_equity', 0)
-                
-                if prev_total_equity > 0:
-                    prev_debt_to_equity = prev_total_debt / prev_total_equity
-                    result['year_over_year'] = {
-                        "debt_to_equity_change": debt_to_equity - prev_debt_to_equity if total_equity > 0 else None,
-                        "debt_growth": ((total_debt / prev_total_debt - 1) * 100) if prev_total_debt > 0 else None,
-                        "equity_growth": ((total_equity / prev_total_equity - 1) * 100) if prev_total_equity > 0 else None
-                    }
-            
-            return {
-                "data": result,
-                "status": "success"
-            }
-            
+                    year_data["error"] = f"No forecast data for {year}"
+            else:
+                year_data["error"] = f"No forecast document for {ticker}"
         except Exception as e:
-            return {"error": str(e), "status": "failed"}
+            year_data["error"] = str(e)
+        
+        return year_data
+    
+    def _calculate_ratios(bs_data: Dict, ratios: List[str]) -> Dict:
+        """Helper function to calculate requested ratios"""
+        calculated = {}
+        
+        # 1. Current Ratio
+        if 'current_ratio' in ratios:
+            current_assets = bs_data.get('current_assets', 0)
+            current_liabilities = bs_data.get('current_liabilities', 0)
+            if current_liabilities > 0:
+                calculated['current_ratio'] = round(current_assets / current_liabilities, 2)
+            else:
+                calculated['current_ratio'] = None
+        
+        # 2. EBITDA/Interest Expense
+        if 'ebitda_interest_coverage' in ratios:
+            ebitda = bs_data.get('ebitda', 0)
+            interest_expense = abs(bs_data.get('interest_expense', 0))
+            if interest_expense > 0:
+                calculated['ebitda_interest_coverage'] = round(ebitda / interest_expense, 2)
+            else:
+                calculated['ebitda_interest_coverage'] = "No interest expense"
+        
+        # 3. Total Liabilities / Total Assets
+        if 'liabilities_to_assets' in ratios:
+            total_liabilities = bs_data.get('total_liabilities', 0)
+            total_assets = bs_data.get('total_assets', 0)
+            if total_assets > 0:
+                calculated['liabilities_to_assets'] = round(total_liabilities / total_assets, 3)
+            else:
+                calculated['liabilities_to_assets'] = None
+        
+        # 4. Total Assets / Total Equity (Equity Multiplier)
+        if 'assets_to_equity' in ratios:
+            total_assets = bs_data.get('total_assets', 0)
+            total_equity = bs_data.get('total_equity', 0)
+            if total_equity > 0:
+                calculated['assets_to_equity'] = round(total_assets / total_equity, 2)
+            else:
+                calculated['assets_to_equity'] = None
+        
+        # 5. Total Debt / Total Equity
+        if 'debt_to_equity' in ratios:
+            st_debt = bs_data.get('short_term_debt', 0)
+            lt_debt = bs_data.get('long_term_debt', 0)
+            total_debt = st_debt + lt_debt
+            total_equity = bs_data.get('total_equity', 0)
+            if total_equity > 0:
+                calculated['debt_to_equity'] = round(total_debt / total_equity, 3)
+            else:
+                calculated['debt_to_equity'] = None
+        
+        # 6. Net Debt / Total Equity
+        if 'net_debt_to_equity' in ratios:
+            st_debt = bs_data.get('short_term_debt', 0)
+            lt_debt = bs_data.get('long_term_debt', 0)
+            cash = bs_data.get('cash', 0)
+            st_investment = bs_data.get('st_investment', 0)
+            net_debt = st_debt + lt_debt - cash - st_investment
+            total_equity = bs_data.get('total_equity', 0)
+            if total_equity > 0:
+                calculated['net_debt_to_equity'] = round(net_debt / total_equity, 3)
+            else:
+                calculated['net_debt_to_equity'] = None
+        
+        # 7. Total Debt (absolute value in billions)
+        if 'total_debt' in ratios:
+            st_debt = bs_data.get('short_term_debt', 0)
+            lt_debt = bs_data.get('long_term_debt', 0)
+            total_debt = st_debt + lt_debt
+            calculated['total_debt_bn'] = round(total_debt / 1e9, 2)
+        
+        # 8. Total Debt / EBITDA
+        if 'debt_to_ebitda' in ratios:
+            st_debt = bs_data.get('short_term_debt', 0)
+            lt_debt = bs_data.get('long_term_debt', 0)
+            total_debt = st_debt + lt_debt
+            ebitda = bs_data.get('ebitda', 0)
+            if ebitda > 0:
+                calculated['debt_to_ebitda'] = round(total_debt / ebitda, 2)
+            else:
+                calculated['debt_to_ebitda'] = None
+        
+        return calculated
+    
+    def _calculate_ratio_trends(year_data: Dict, ratios: List[str]) -> Dict:
+        """Calculate trends and averages for multi-year data"""
+        trends = {}
+        
+        for ratio in ratios:
+            values = []
+            years = []
+            
+            for year, data in sorted(year_data.items()):
+                if 'ratios' in data and ratio in data['ratios']:
+                    value = data['ratios'][ratio]
+                    if value is not None and value != "No interest expense":
+                        values.append(value)
+                        years.append(year)
+            
+            if values:
+                trends[ratio] = {
+                    "average": round(sum(values) / len(values), 3),
+                    "min": min(values),
+                    "max": max(values),
+                    "trend": "improving" if len(values) > 1 and values[-1] < values[0] else "deteriorating" if len(values) > 1 and values[-1] > values[0] else "stable"
+                }
+        
+        return trends
     
     @tool_system.tool(
         name="analyze_financial_trends",

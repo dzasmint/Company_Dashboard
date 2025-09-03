@@ -232,10 +232,10 @@ class RealEstateFinancialModel:
                 "Project Pipeline",
                 "Model Forecast",
                 "Valuation",
-                "Research Insights",
-                "Export Model",
+                # "Research Insights",  # Hidden
+                # "Export Model",  # Hidden
                 "BDS-GPT",
-                "Generate Report"
+                # "Generate Report"  # Hidden
             ]
             
             # Initialize selected tab if not exists
@@ -309,19 +309,19 @@ class RealEstateFinancialModel:
         ):
             self.fetch_analyst_reports()
         
-        # Generate Report button
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("Report Generation")
-        
-        if st.sidebar.button(
-            "📄 Generate Report",
-            key="generate_report_btn",
-            use_container_width=True,
-            type="primary",
-            help="Generate quarterly or comprehensive reports"
-        ):
-            st.session_state.selected_re_tab = "Generate Report"
-            st.rerun()
+        # Generate Report button - Hidden
+        # st.sidebar.markdown("---")
+        # st.sidebar.subheader("Report Generation")
+        # 
+        # if st.sidebar.button(
+        #     "📄 Generate Report",
+        #     key="generate_report_btn",
+        #     use_container_width=True,
+        #     type="primary",
+        #     help="Generate quarterly or comprehensive reports"
+        # ):
+        #     st.session_state.selected_re_tab = "Generate Report"
+        #     st.rerun()
             
     def load_project_data_from_mongodb(self, ticker):
         """Load project data from MongoDB for the selected ticker"""
@@ -531,14 +531,15 @@ class RealEstateFinancialModel:
         elif selected_tab == tab_names[5]:  # Valuation
             valuation_tab = ValuationTab()
             valuation_tab.render()
-        elif selected_tab == tab_names[6]:  # Research Insights
-            self.render_research_insights()
-        elif selected_tab == tab_names[7]:  # Export Model
-            self.render_export_interface()
-        elif selected_tab == tab_names[8]:  # Enhanced AI
+        # Hidden tabs - commenting out but keeping for future reference
+        # elif selected_tab == "Research Insights":  # Hidden
+        #     self.render_research_insights()
+        # elif selected_tab == "Export Model":  # Hidden
+        #     self.render_export_interface()
+        elif selected_tab == tab_names[6]:  # BDS-GPT (Enhanced AI)
             self.render_enhanced_ai()
-        elif selected_tab == tab_names[9]:  # Generate Report
-            self.render_generate_report()
+        # elif selected_tab == "Generate Report":  # Hidden
+        #     self.render_generate_report()
         
     
     def render_historical_analysis(self):

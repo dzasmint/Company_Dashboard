@@ -509,10 +509,10 @@ Return a JSON response with:
 
         try:
             response = openai_client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="gpt-5-mini",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=0.3,
+                temperature=1,
                 max_tokens=500
             )
             
@@ -643,10 +643,10 @@ Include a "confidence" field (high/medium/low) based on data quality."""
 
         try:
             response = openai_client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="gpt-5-mini",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=0.2,
+                temperature=1,
                 max_tokens=1000
             )
             
@@ -976,11 +976,11 @@ CRITICAL TOOL SELECTION RULES:
             # Call OpenAI
             try:
                 response = st.session_state.openai_client.chat.completions.create(
-                    model=os.getenv("OPENAI_MODEL", "gpt-4.1"),
+                    model=os.getenv("OPENAI_MODEL", "gpt-5"),
                     messages=messages,
                     tools=tools,
                     tool_choice="auto",
-                    temperature=0.5
+                    temperature=1
                 )
             except Exception as e:
                 return f"❌ Error calling OpenAI: {str(e)}"
@@ -1120,7 +1120,7 @@ def render_enhanced_ai_interface():
         # Model selection
         model = st.selectbox(
             "Model",
-            ["gpt-4-turbo-preview", "gpt-3.5-turbo"],
+            ["gpt-5", "gpt-5-mini"],
             index=0
         )
         os.environ["OPENAI_MODEL"] = model
