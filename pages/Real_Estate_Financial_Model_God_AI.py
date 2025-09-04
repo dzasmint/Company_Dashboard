@@ -54,7 +54,7 @@ from utils.claude_project_extractor import ClaudeProjectExtractor
 
 # Import tabs
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tabs.Valuation import ValuationTab
+# from tabs.Valuation import ValuationTab  # Hidden - integrated into Model Forecast
 from tabs.model_forecast import ModelForecastTab
 # ComprehensiveRevenueAnalyzer removed - financial modeling simplified
 # from core.data_loader import data_loader
@@ -231,7 +231,7 @@ class RealEstateFinancialModel:
                 "Assumptions",
                 "Project Pipeline",
                 "Model Forecast",
-                "Valuation",
+                # "Valuation",  # Hidden - integrated into Model Forecast
                 # "Research Insights",  # Hidden
                 # "Export Model",  # Hidden
                 "BDS-GPT",
@@ -528,16 +528,16 @@ class RealEstateFinancialModel:
         elif selected_tab == tab_names[4]:  # Model Forecast
             model_forecast_tab = ModelForecastTab(parent_model=self)
             model_forecast_tab.render()
-        elif selected_tab == tab_names[5]:  # Valuation
-            valuation_tab = ValuationTab()
-            valuation_tab.render()
+        elif selected_tab == tab_names[5]:  # BDS-GPT (Enhanced AI)
+            self.render_enhanced_ai()
         # Hidden tabs - commenting out but keeping for future reference
+        # elif selected_tab == "Valuation":  # Hidden - integrated into Model Forecast
+        #     valuation_tab = ValuationTab()
+        #     valuation_tab.render()
         # elif selected_tab == "Research Insights":  # Hidden
         #     self.render_research_insights()
         # elif selected_tab == "Export Model":  # Hidden
         #     self.render_export_interface()
-        elif selected_tab == tab_names[6]:  # BDS-GPT (Enhanced AI)
-            self.render_enhanced_ai()
         # elif selected_tab == "Generate Report":  # Hidden
         #     self.render_generate_report()
         
