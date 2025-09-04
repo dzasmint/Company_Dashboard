@@ -688,79 +688,9 @@ Include a "confidence" field (high/medium/low) based on data quality."""
         from utils.AI.AI_visualisation_tool import register_visualization_tools
         register_visualization_tools(self)
     
-    def get_openai_tools(self, query: str = None) -> List[Dict]:
-        """Get tool schemas for OpenAI, optionally filtered by query relevance"""
-        # If no query provided, return all tools
-        if not query:
-            return self.tool_schemas
-        
-        # Smart tool filtering based on query keywords
-        query_lower = query.lower()
-        filtered_tools = []
-        
-        for schema in self.tool_schemas:
-            tool_name = schema['function']['name']
-            tool_desc = schema['function']['description'].lower()
-            
-            # Always include essential tools
-            essential_tools = ['get_financial_forecasts', 'get_valuation_analysis', 
-                             'list_real_estate_projects', 'get_project_details',
-                             'get_forecast_summary']
-            if tool_name in essential_tools:
-                filtered_tools.append(schema)
-                continue
-            
-            # Include based on query keywords
-            include = False
-            
-            # Financial tools
-            if any(word in query_lower for word in ['financial', 'revenue', 'profit', 'income', 
-                                                     'balance', 'cash', 'forecast', 'growth', 'npat']):
-                if 'financial' in tool_desc or 'forecast' in tool_desc or 'balance' in tool_desc:
-                    include = True
-            
-            # Real estate tools  
-            if any(word in query_lower for word in ['project', 'real estate', 'rnav', 'land', 
-                                                     'construction', 'presale', 'unit', 'property']):
-                if 'project' in tool_desc or 'real estate' in tool_desc or 'rnav' in tool_desc:
-                    include = True
-            
-            # Market tools
-            if any(word in query_lower for word in ['market', 'moc', 'ministry', 'commerce', 
-                                                     'gdp', 'inflation', 'macro', 'economy']):
-                if 'market' in tool_desc or 'moc' in tool_desc or 'macro' in tool_desc:
-                    include = True
-            
-            # Valuation tools
-            if any(word in query_lower for word in ['valuation', 'pe', 'pb', 'ev/ebitda', 
-                                                     'multiple', 'ratio', 'metric', 'value']):
-                if 'valuation' in tool_desc or 'ratio' in tool_desc or 'metric' in tool_desc:
-                    include = True
-            
-            # Chart/visualization tools
-            if any(word in query_lower for word in ['chart', 'plot', 'graph', 'visualize', 
-                                                     'show', 'display', 'draw']):
-                if 'chart' in tool_desc or 'render' in tool_desc or 'visual' in tool_desc:
-                    include = True
-            
-            # AI/enrichment tools
-            if any(word in query_lower for word in ['enrich', 'ai', 'estimate', 'search', 'find']):
-                if 'enrich' in tool_desc or 'ai' in tool_desc or 'search' in tool_desc:
-                    include = True
-            
-            if include:
-                filtered_tools.append(schema)
-        
-        # Ensure minimum tools available (at least essential tools)
-        if len(filtered_tools) < 5:
-            # Add more relevant tools up to 10
-            for schema in self.tool_schemas:
-                if schema not in filtered_tools:
-                    filtered_tools.append(schema)
-                if len(filtered_tools) >= 10:
-                    break
-        
-        return filtered_tools
+    def get_openai_tools(self) -> List[Dict]:
+        """Get tool schemas for OpenAI"""
+        return self.tool_schemas
     
     def get_tool_list(self) -> List[str]:
         """Get list of available tool names"""
@@ -1029,8 +959,8 @@ CRITICAL TOOL SELECTION RULES:
     # Add user message
     messages.append({"role": "user", "content": user_message})
     
-    # Get tool schemas (filtered by query for better performance)
-    tools = tool_system.get_openai_tools(query=user_message)
+    # Get tool schemas (all tools available)
+    tools = tool_system.get_openai_tools()
     
     # Initialize progress tracking and token counting
     max_rounds = 20
