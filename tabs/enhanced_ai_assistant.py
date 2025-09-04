@@ -1193,9 +1193,9 @@ CRITICAL TOOL SELECTION RULES:
                 
                 # Calculate total tokens and cost
                 total_tokens = total_input_tokens + total_output_tokens + total_tool_tokens
-                # Estimate cost (GPT-4 pricing: $0.01 per 1K input, $0.03 per 1K output)
-                estimated_cost = (total_input_tokens * 0.01 + (total_output_tokens + total_tool_tokens) * 0.03) / 1000
-                
+                # Estimate cost (GPT-5 pricing: $1.25 per 1000000 input, $10 per 1000000 output)
+                estimated_cost = (total_input_tokens * (1.25/1000000) + (total_output_tokens + total_tool_tokens) * (10/1000000))
+
                 # Add usage summary
                 usage_summary = []
                 if tool_call_count > 0:
@@ -1242,7 +1242,7 @@ CRITICAL TOOL SELECTION RULES:
             # Add token usage even for edge cases
             total_tokens = total_input_tokens + total_output_tokens + total_tool_tokens
             if total_tokens > 0:
-                estimated_cost = (total_input_tokens * 0.01 + (total_output_tokens + total_tool_tokens) * 0.03) / 1000
+                estimated_cost = (total_input_tokens * (1.25/1000000) + (total_output_tokens + total_tool_tokens) * (10/1000000))
                 final_response += f"\n\n---\n**Token Usage:** ~{total_tokens:,} tokens (≈${estimated_cost:.3f})"
         
         # Update conversation history with compressed data
