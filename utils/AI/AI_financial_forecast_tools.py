@@ -461,7 +461,7 @@ def register_financial_forecast_tools(tool_system):
             multiples = valuation_data.get('multiples', {})
             
             # Get current year and next year
-            current_year = datetime.now().year
+            current_year = datetime.datetime.now().year
             next_year = current_year + 1
             
             # Extract all required metrics
@@ -637,7 +637,7 @@ def register_financial_forecast_tools(tool_system):
         """Score company based on RNAV, multiples, growth, and leverage"""
         
         ticker = ticker.upper()
-        current_year = datetime.now().year
+        current_year = datetime.datetime.now().year
         
         # Initialize scoring components (each out of 10, then weighted)
         scores = {
@@ -1062,7 +1062,7 @@ def register_financial_forecast_tools(tool_system):
                     else:
                         historical_cutoff = max_year
         
-        current_year = datetime.now().year
+        current_year = datetime.datetime.now().year
         
         # Build the years_requested string based on what was provided
         if quarters:
