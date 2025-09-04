@@ -343,6 +343,10 @@ def register_real_estate_tools(tool_system):
                             for field_name, field_value in financial_data.items():
                                 if field_name in fields:
                                     project_data[field_name] = field_value
+                            # Debug: Check if revenue_info was requested but not added
+                            if 'revenue_info' in fields and 'revenue_info' not in project_data:
+                                # Force add revenue_info if it was specifically requested
+                                project_data['revenue_info'] = financial_data.get('revenue_info', {})
                         else:
                             # Add all financial fields if no specific fields requested
                             project_data.update(financial_data)
@@ -415,21 +419,171 @@ def register_real_estate_tools(tool_system):
         if df.empty:
             return {"error": f"Projects not found", "status": "failed"}
         
+        # Define calculated fields and their dependencies
+        calculated_fields_map = {
+            'revenue_info': ['revenue_distribution', 'total_revenue'],
+            'presales_info': ['presales_distribution', 'total_units'],
+            'cash_collection_info': ['cash_collection_schedules', 'presales_distribution', 'total_revenue'],
+            'presales_distribution_percentages': ['presales_distribution'],
+            'revenue_distribution_percentages': ['revenue_distribution'],
+            'presales_distribution_note': [],  # Text only field
+            'revenue_distribution_note': [],  # Text only field
+            'construction_schedule': ['construction_schedule'],
+            'cash_collection_schedules_raw': ['cash_collection_schedules']
+        }
+        
+        # Financial fields that are calculated from multiple sources
+        financial_calculated_fields = set(calculated_fields_map.keys())
+        
         # Select columns based on request
         if fields:
             # Always include project_name and company_ticker
             cols = ['project_name', 'company_ticker']
-            # Add requested fields that exist in the dataframe
-            cols.extend([f for f in fields if f in df.columns and f not in cols])
+            # Track which calculated fields are requested
+            requested_calculated_fields = []
+            
+            # Add requested fields
+            for f in fields:
+                if f in df.columns and f not in cols:
+                    # Direct column exists in DataFrame
+                    cols.append(f)
+                elif f in calculated_fields_map:
+                    # This is a calculated field - add its dependencies
+                    requested_calculated_fields.append(f)
+                    for dep_col in calculated_fields_map[f]:
+                        if dep_col in df.columns and dep_col not in cols:
+                            cols.append(dep_col)
         elif include_financials:
             cols = df.columns.tolist()
+            requested_calculated_fields = list(calculated_fields_map.keys())
         else:
             cols = ['project_name', 'company_ticker', 'location', 'total_units',
                    'net_sellable_area', 'average_selling_price', 'rnav_value',
                    'construction_start_year', 'project_completion_year']
             cols = [c for c in cols if c in df.columns]
+            requested_calculated_fields = []
         
         projects_data = df[cols].to_dict('records')
+        
+        # Process calculated fields if any were requested
+        if fields and requested_calculated_fields:
+            for project in projects_data:
+                current_year = datetime.now().year
+                
+                # Calculate each requested field
+                for field_name in requested_calculated_fields:
+                    if field_name == 'revenue_info':
+                        if 'revenue_distribution' in project and 'total_revenue' in project:
+                            revenue_dist = project.get('revenue_distribution', {})
+                            total_revenue = project.get('total_revenue', 0)
+                            
+                            revenue_by_year = {}
+                            cumulative_revenue = 0
+                            for year_str, percentage in revenue_dist.items():
+                                revenue_this_year = (total_revenue * percentage / 100) if total_revenue else 0
+                                revenue_by_year[year_str] = {
+                                    "percentage": percentage,
+                                    "revenue_vnd": revenue_this_year,
+                                    "revenue_billion_vnd": revenue_this_year / 1e9 if revenue_this_year else 0,
+                                    "description": f"{percentage}% of total revenue ({revenue_this_year/1e9:.1f}B VND)"
+                                }
+                                if int(year_str) <= current_year:
+                                    cumulative_revenue += revenue_this_year
+                            
+                            project['revenue_info'] = {
+                                "total_revenue_vnd": total_revenue,
+                                "total_revenue_billion_vnd": total_revenue / 1e9 if total_revenue else 0,
+                                "revenue_by_year": revenue_by_year,
+                                "cumulative_revenue_to_date_vnd": cumulative_revenue,
+                                "cumulative_revenue_to_date_billion_vnd": cumulative_revenue / 1e9 if cumulative_revenue else 0
+                            }
+                    
+                    elif field_name == 'presales_info':
+                        if 'presales_distribution' in project and 'total_units' in project:
+                            presales_dist = project.get('presales_distribution', {})
+                            total_units = project.get('total_units', 0)
+                            
+                            presales_units_by_year = {}
+                            cumulative_presold = 0
+                            for year_str, percentage in presales_dist.items():
+                                units_this_year = (total_units * percentage / 100) if total_units else 0
+                                presales_units_by_year[year_str] = {
+                                    "percentage": percentage,
+                                    "units": int(units_this_year),
+                                    "description": f"{percentage}% of total units ({int(units_this_year)} units)"
+                                }
+                                if int(year_str) <= current_year:
+                                    cumulative_presold += units_this_year
+                            
+                            project['presales_info'] = {
+                                "total_units_in_project": total_units,
+                                "presales_by_year": presales_units_by_year,
+                                "total_presold_units_to_date": int(cumulative_presold),
+                                "percentage_presold_to_date": (cumulative_presold / total_units * 100) if total_units else 0,
+                                "remaining_units_to_sell": int(total_units - cumulative_presold) if total_units else 0
+                            }
+                    
+                    elif field_name == 'cash_collection_info':
+                        if 'cash_collection_schedules' in project and 'presales_distribution' in project and 'total_revenue' in project:
+                            cash_schedules = project.get('cash_collection_schedules', {})
+                            presales_dist = project.get('presales_distribution', {})
+                            total_revenue = project.get('total_revenue', 0)
+                            
+                            # Calculate cash collection by year
+                            cash_by_year = {}
+                            cumulative_cash = 0
+                            
+                            # First calculate presales amounts by year
+                            for presale_year_str, presale_pct in presales_dist.items():
+                                presale_amount = (total_revenue * presale_pct / 100) if total_revenue else 0
+                                presale_year = int(presale_year_str)
+                                
+                                # Get collection schedule for this presale year
+                                schedule = cash_schedules.get(presale_year, {presale_year: 100})
+                                
+                                for collection_year_str, collection_pct in schedule.items():
+                                    collection_year = int(collection_year_str)
+                                    cash_amount = presale_amount * (collection_pct / 100)
+                                    
+                                    if collection_year not in cash_by_year:
+                                        cash_by_year[collection_year] = 0
+                                    cash_by_year[collection_year] += cash_amount
+                                    
+                                    if collection_year <= current_year:
+                                        cumulative_cash += cash_amount
+                            
+                            # Format output
+                            cash_formatted = {}
+                            for year, amount in sorted(cash_by_year.items()):
+                                cash_formatted[str(year)] = {
+                                    "cash_collected_vnd": amount,
+                                    "cash_collected_billion_vnd": amount / 1e9 if amount else 0,
+                                    "description": f"{amount/1e9:.1f}B VND collected"
+                                }
+                            
+                            project['cash_collection_info'] = {
+                                "cash_collection_by_year": cash_formatted,
+                                "total_cash_to_collect_vnd": total_revenue,
+                                "total_cash_to_collect_billion_vnd": total_revenue / 1e9 if total_revenue else 0,
+                                "cumulative_cash_collected_vnd": cumulative_cash,
+                                "cumulative_cash_collected_billion_vnd": cumulative_cash / 1e9 if cumulative_cash else 0,
+                                "percentage_cash_collected_to_date": (cumulative_cash / total_revenue * 100) if total_revenue else 0
+                            }
+                    
+                    # Add simple mapping fields
+                    elif field_name == 'presales_distribution_percentages':
+                        if 'presales_distribution' in project:
+                            project['presales_distribution_percentages'] = project['presales_distribution']
+                    elif field_name == 'revenue_distribution_percentages':
+                        if 'revenue_distribution' in project:
+                            project['revenue_distribution_percentages'] = project['revenue_distribution']
+                    elif field_name == 'cash_collection_schedules_raw':
+                        if 'cash_collection_schedules' in project:
+                            project['cash_collection_schedules_raw'] = project['cash_collection_schedules']
+                    elif field_name == 'presales_distribution_note':
+                        project['presales_distribution_note'] = "IMPORTANT: presales_distribution contains PERCENTAGES, not unit counts"
+                    elif field_name == 'revenue_distribution_note':
+                        project['revenue_distribution_note'] = "Revenue distribution also contains PERCENTAGES of total revenue recognized each year"
         
         return {
             "projects": projects_data,
