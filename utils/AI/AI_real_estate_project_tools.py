@@ -1,907 +1,706 @@
 """
 AI Real Estate Project Tools
-Extracted from enhanced_ai_assistant.py
-Contains real estate project analysis tools for the Enhanced AI Tool System
+Simplified and optimized version
 """
 
 from typing import Dict, List
-from datetime import datetime
 
 
 def register_real_estate_tools(tool_system):
-    """Register real estate project tools with the tool system
-    
-    Args:
-        tool_system: The EnhancedAIToolSystem instance to register tools with
-    """
+    """Register real estate project tools with the tool system"""
     
     @tool_system.tool(
-        name="list_real_estate_projects",
-        description="List real estate projects with filtering options",
+        name="search_projects",
+        description="Search real estate projects by company tickers. Returns project list for discovery and screening.",
         parameters={
             "tickers": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Company tickers",
-                "required": False
-            },
-            "location": {
-                "type": "string",
-                "description": "Project location filter",
-                "required": False
-            },
-            "min_units": {
-                "type": "integer",
-                "description": "Minimum number of units",
-                "required": False
-            }
-        }
-    )
-    def list_real_estate_projects(tickers: List[str] = None, location: str = None,
-                                 min_units: int = None) -> Dict:
-        """List real estate projects"""
-        
-        df = tool_system._load_real_estate_projects()
-        
-        if df.empty:
-            return {"error": "No projects data available", "status": "failed"}
-        
-        # Apply filters
-        if tickers:
-            tickers = [t.upper() for t in tickers]
-            df = df[df['company_ticker'].isin(tickers)]
-        
-        if location:
-            df = df[df['location'].str.contains(location, case=False, na=False)]
-        
-        if min_units:
-            df = df[df['total_units'] >= min_units]
-        
-        # Group by company
-        summary = {}
-        for ticker in df['company_ticker'].unique():
-            company_projects = df[df['company_ticker'] == ticker]
-            # Include RNAV if available
-            project_cols = ['project_name', 'location', 'total_units']
-            if 'rnav_value' in company_projects.columns:
-                project_cols.append('rnav_value')
-            
-            summary[ticker] = {
-                "count": len(company_projects),
-                "total_units": company_projects['total_units'].sum(),
-                "total_nsa": company_projects['net_sellable_area'].sum(),
-                "total_rnav": company_projects['rnav_value'].sum() if 'rnav_value' in company_projects.columns else None,
-                "projects": company_projects[project_cols].to_dict('records')
-            }
-        
-        return {
-            "summary": summary,
-            "total_projects": len(df),
-            "filters_applied": {
-                "tickers": tickers,
-                "location": location,
-                "min_units": min_units
-            },
-            "status": "success"
-        }
-    
-    @tool_system.tool(
-        name="get_project_details",
-        description="Get detailed information about specific projects. USE fields PARAMETER to dramatically reduce token usage! Common fields: project_name, location, total_units, net_sellable_area, average_selling_price, rnav_value, presales_info, revenue_info, cash_collection_info. IMPORTANT: presales_distribution and revenue_distribution contain PERCENTAGES (not actual units/amounts).",
-        parameters={
-            "project_names": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Project names to retrieve",
-                "required": False
-            },
-            "ticker": {
-                "type": "string",
-                "description": "Company ticker to filter projects",
-                "required": False
-            },
-            "fields": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Specific fields to return (e.g., ['total_units', 'location', 'rnav_value']). DRAMATICALLY reduces tokens! Common: project_name, location, total_units, net_sellable_area, average_selling_price, construction_start_year, project_completion_year, project_type, ownership_percentage, rnav_value, presales_info, revenue_info",
-                "required": False
-            },
-            "include_financials": {
-                "type": "boolean",
-                "description": "Include detailed financial projections and schedules (presales_info, revenue_info, cash_collection_info)",
-                "required": False
-            },
-            "include_assumptions": {
-                "type": "boolean",
-                "description": "Include AI-generated assumptions",
-                "required": False
-            }
-        }
-    )
-    def get_project_details(project_names: List[str] = None, ticker: str = None,
-                          fields: List[str] = None,
-                          include_financials: bool = True, 
-                          include_assumptions: bool = False) -> Dict:
-        """Get detailed project information from MongoDB RealEstateProjects collection"""
-        
-        # Try MongoDB first
-        if tool_system.vietnam_stocks_db is not None:
-            try:
-                collection = tool_system.vietnam_stocks_db['RealEstateProjects']
-                
-                # Build query
-                query = {}
-                if project_names:
-                    # Case-insensitive search
-                    query['project_name'] = {
-                        "$in": [{"$regex": f"^{name}$", "$options": "i"} for name in project_names]
-                    }
-                if ticker:
-                    query['company_ticker'] = ticker.upper()
-                
-                # Retrieve projects
-                projects = list(collection.find(query, {'_id': 0}))
-                
-                if not projects:
-                    # Fallback to MongoDB via _load_real_estate_projects
-                    df = tool_system._load_real_estate_projects()
-                    if not df.empty:
-                        if project_names:
-                            mask = df['project_name'].str.lower().isin([p.lower() for p in project_names])
-                            df = df[mask]
-                        if ticker:
-                            df = df[df['company_ticker'] == ticker.upper()]
-                        
-                        if not df.empty:
-                            return {
-                                "projects": df.to_dict('records'),
-                                "count": len(df),
-                                "source": "mongodb_fallback",
-                                "status": "success"
-                            }
-                    
-                    return {"error": f"No projects found", "status": "failed"}
-                
-                # Process retrieved projects
-                result_projects = []
-                for project in projects:
-                    # Start with minimal data - always include project_name and ticker
-                    project_data = {
-                        "project_name": project.get('project_name'),
-                        "company_ticker": project.get('company_ticker')
-                    }
-                    
-                    # Define all available basic fields
-                    basic_fields_map = {
-                        "location": project.get('location'),
-                        "total_units": project.get('total_units'),
-                        "net_sellable_area": project.get('net_sellable_area'),
-                        "average_selling_price": project.get('average_selling_price'),
-                        "construction_start_year": project.get('construction_start_year'),
-                        "project_completion_year": project.get('project_completion_year'),
-                        "project_type": project.get('project_type'),
-                        "ownership_percentage": project.get('ownership_percentage', 100),
-                        "land_cost_per_sqm": project.get('land_cost_per_sqm'),
-                        "construction_cost_per_sqm": project.get('construction_cost_per_sqm'),
-                        "last_updated": project.get('last_updated'),
-                        "total_revenue": project.get('total_revenue'),
-                        "rnav_value": project.get('rnav_value'),
-                        "npv": project.get('npv')
-                    }
-                    
-                    # Add requested fields or all fields if not specified
-                    if fields:
-                        # Only add specifically requested fields
-                        for field_name, field_value in basic_fields_map.items():
-                            if field_name in fields:
-                                project_data[field_name] = field_value
-                    else:
-                        # Add all basic fields when no specific fields requested
-                        project_data.update(basic_fields_map)
-                    
-                    # Add financial details if requested or specific financial fields are requested
-                    financial_fields = ['presales_info', 'revenue_info', 'cash_collection_info', 
-                                      'presales_distribution_percentages', 'revenue_distribution_percentages',
-                                      'cash_collection_schedules_raw', 'construction_schedule']
-                    
-                    # Check if any financial field is requested or include_financials is True
-                    should_process_financials = include_financials or (fields and any(f in fields for f in financial_fields))
-                    
-                    if should_process_financials:
-                        # Get presales distribution (these are PERCENTAGES, not units)
-                        presales_dist_pct = project.get('presales_distribution', {})
-                        total_units = project.get('total_units', 0)
-                        
-                        # Calculate actual presold units from percentages
-                        presales_units_by_year = {}
-                        cumulative_presold = 0
-                        current_year = datetime.now().year
-                        
-                        for year_str, percentage in presales_dist_pct.items():
-                            year = int(year_str)
-                            units_this_year = (total_units * percentage / 100) if total_units else 0
-                            presales_units_by_year[year_str] = {
-                                "percentage": percentage,
-                                "units": int(units_this_year),
-                                "description": f"{percentage}% of total units ({int(units_this_year)} units)"
-                            }
-                            if year <= current_year:
-                                cumulative_presold += units_this_year
-                        
-                        # Get revenue distribution (also PERCENTAGES)
-                        revenue_dist_pct = project.get('revenue_distribution', {})
-                        total_revenue = project.get('total_revenue', 0)
-                        
-                        # Calculate actual revenue amounts from percentages
-                        revenue_by_year = {}
-                        cumulative_revenue = 0
-                        
-                        for year_str, percentage in revenue_dist_pct.items():
-                            year = int(year_str)
-                            revenue_this_year = (total_revenue * percentage / 100) if total_revenue else 0
-                            revenue_by_year[year_str] = {
-                                "percentage": percentage,
-                                "revenue_vnd": revenue_this_year,
-                                "revenue_billion_vnd": revenue_this_year / 1e9 if revenue_this_year else 0,
-                                "description": f"{percentage}% of total revenue ({revenue_this_year/1e9:.1f}B VND)"
-                            }
-                            if year <= current_year:
-                                cumulative_revenue += revenue_this_year
-                        
-                        # Get cash collection schedules (complex structure based on presale year)
-                        cash_collection_schedules = project.get('cash_collection_schedules', {})
-                        
-                        # Calculate actual cash collection amounts
-                        # Logic from project_pipeline_real_estate.py:
-                        # Each presale year has its own collection schedule
-                        # Actual cash = presale_amount * (collection_percentage / 100)
-                        
-                        cash_collection_by_year = {}
-                        cumulative_cash_collected = 0
-                        
-                        # First, calculate presales amounts by year (in VND)
-                        presales_amounts_by_year = {}
-                        for year_str, percentage in presales_dist_pct.items():
-                            presale_amount = (total_revenue * percentage / 100) if total_revenue else 0
-                            presales_amounts_by_year[int(year_str)] = presale_amount
-                        
-                        # Now calculate cash collection based on collection schedules
-                        for presale_year, presale_amount in presales_amounts_by_year.items():
-                            # Get the collection schedule for this presale year
-                            schedule = cash_collection_schedules.get(presale_year, {})
-                            if not schedule:
-                                # If no schedule, assume 100% collection in presale year
-                                schedule = {presale_year: 100}
-                            
-                            for collection_year_str, collection_pct in schedule.items():
-                                collection_year = int(collection_year_str)
-                                cash_amount = presale_amount * (collection_pct / 100)
-                                
-                                if collection_year not in cash_collection_by_year:
-                                    cash_collection_by_year[collection_year] = 0
-                                cash_collection_by_year[collection_year] += cash_amount
-                        
-                        # Format cash collection data for output
-                        cash_collection_formatted = {}
-                        for year, amount in sorted(cash_collection_by_year.items()):
-                            cash_collection_formatted[str(year)] = {
-                                "cash_collected_vnd": amount,
-                                "cash_collected_billion_vnd": amount / 1e9 if amount else 0,
-                                "description": f"{amount/1e9:.1f}B VND collected"
-                            }
-                            if year <= current_year:
-                                cumulative_cash_collected += amount
-                        
-                        # Create financial data dictionary
-                        financial_data = {
-                            # Original percentage data with clear labeling
-                            "presales_distribution_percentages": presales_dist_pct,
-                            "presales_distribution_note": "IMPORTANT: presales_distribution contains PERCENTAGES, not unit counts",
-                            
-                            # Calculated actual units
-                            "presales_info": {
-                                "total_units_in_project": total_units,
-                                "presales_by_year": presales_units_by_year,
-                                "total_presold_units_to_date": int(cumulative_presold),
-                                "percentage_presold_to_date": (cumulative_presold / total_units * 100) if total_units else 0,
-                                "remaining_units_to_sell": int(total_units - cumulative_presold) if total_units else 0
-                            },
-                            
-                            # Revenue distribution (also PERCENTAGES)
-                            "revenue_distribution_percentages": revenue_dist_pct,
-                            "revenue_distribution_note": "Revenue distribution also contains PERCENTAGES of total revenue recognized each year",
-                            
-                            # Calculated actual revenue amounts
-                            "revenue_info": {
-                                "total_revenue_vnd": total_revenue,
-                                "total_revenue_billion_vnd": total_revenue / 1e9 if total_revenue else 0,
-                                "revenue_by_year": revenue_by_year,
-                                "cumulative_revenue_to_date_vnd": cumulative_revenue,
-                                "cumulative_revenue_to_date_billion_vnd": cumulative_revenue / 1e9 if cumulative_revenue else 0,
-                                "percentage_revenue_recognized_to_date": (cumulative_revenue / total_revenue * 100) if total_revenue else 0
-                            },
-                            
-                            # Cash collection schedule with calculations
-                            "cash_collection_schedules_raw": cash_collection_schedules,
-                            "cash_collection_note": "Cash collection is calculated from presales amounts using collection schedules per presale year",
-                            "cash_collection_info": {
-                                "cash_collection_by_year": cash_collection_formatted,
-                                "total_cash_to_collect": total_revenue,
-                                "total_cash_to_collect_billion_vnd": total_revenue / 1e9 if total_revenue else 0,
-                                "cumulative_cash_collected_vnd": cumulative_cash_collected,
-                                "cumulative_cash_collected_billion_vnd": cumulative_cash_collected / 1e9 if cumulative_cash_collected else 0,
-                                "percentage_cash_collected_to_date": (cumulative_cash_collected / total_revenue * 100) if total_revenue else 0,
-                                "remaining_cash_to_collect_vnd": total_revenue - cumulative_cash_collected if total_revenue else 0,
-                                "remaining_cash_to_collect_billion_vnd": (total_revenue - cumulative_cash_collected) / 1e9 if total_revenue else 0
-                            },
-                            "construction_schedule": project.get('construction_schedule', {})
-                        }
-                        
-                        # Add financial fields based on field selection
-                        if fields:
-                            # Only add requested financial fields
-                            for field_name, field_value in financial_data.items():
-                                if field_name in fields:
-                                    project_data[field_name] = field_value
-                            # Debug: Check if revenue_info was requested but not added
-                            if 'revenue_info' in fields and 'revenue_info' not in project_data:
-                                # Force add revenue_info if it was specifically requested
-                                project_data['revenue_info'] = financial_data.get('revenue_info', {})
-                        else:
-                            # Add all financial fields if no specific fields requested
-                            project_data.update(financial_data)
-                        
-                        # Calculate and add advanced financial metrics
-                        # Use saved IRR if available, otherwise calculate it
-                        project_irr = project.get('project_irr')  # Try to get saved IRR first
-                        if project_irr is None:
-                            project_irr = tool_system._calculate_project_irr(project) if hasattr(tool_system, '_calculate_project_irr') else None
-                        
-                        cumulative_interest = tool_system._calculate_cumulative_interest(project) if hasattr(tool_system, '_calculate_cumulative_interest') else 0
-                        total_debt = project.get('total_debt', 0) or 0
-                        cash_burden = total_debt + cumulative_interest
-                        
-                        # Add advanced financial metrics
-                        advanced_metrics = {
-                            "total_revenue": project.get('total_revenue'),
-                            "total_cogs": project.get('total_cogs'),
-                            "gross_margin": project.get('gross_margin'),
-                            "rnav_value": project.get('rnav_value'),
-                            "npv": project.get('npv'),
-                            "irr": project_irr,
-                            "irr_percentage": f"{project_irr:.2%}" if project_irr else "N/A",
-                            "total_debt": total_debt,
-                            "cumulative_interest": cumulative_interest,
-                            "cash_burden": cash_burden,
-                            "debt_to_revenue_ratio": (total_debt / project.get('total_revenue', 1)) if project.get('total_revenue') else None
-                        }
-                        
-                        # Add advanced metrics based on field selection
-                        if fields:
-                            for field_name, field_value in advanced_metrics.items():
-                                if field_name in fields:
-                                    project_data[field_name] = field_value
-                        else:
-                            project_data.update(advanced_metrics)
-                    
-                    # Add AI assumptions if requested or in fields
-                    if include_assumptions or (fields and "ai_assumptions" in fields):
-                        project_data["ai_assumptions"] = project.get('ai_assumptions', {})
-                    
-                    result_projects.append(project_data)
-                
-                return {
-                    "projects": result_projects,
-                    "count": len(result_projects),
-                    "source": "RealEstateProjects",
-                    "include_financials": include_financials,
-                    "include_assumptions": include_assumptions,
-                    "status": "success"
-                }
-                
-            except Exception as e:
-                # Fallback to MongoDB via _load_real_estate_projects on error
-                pass
-        
-        # Fallback to MongoDB via _load_real_estate_projects
-        df = tool_system._load_real_estate_projects()
-        
-        if df.empty:
-            return {"error": "No projects data available", "status": "failed"}
-        
-        # Filter projects
-        if project_names:
-            mask = df['project_name'].str.lower().isin([p.lower() for p in project_names])
-            df = df[mask]
-        if ticker:
-            df = df[df['company_ticker'] == ticker.upper()]
-        
-        if df.empty:
-            return {"error": f"Projects not found", "status": "failed"}
-        
-        # Define calculated fields and their dependencies
-        calculated_fields_map = {
-            'revenue_info': ['revenue_distribution', 'total_revenue'],
-            'presales_info': ['presales_distribution', 'total_units'],
-            'cash_collection_info': ['cash_collection_schedules', 'presales_distribution', 'total_revenue'],
-            'presales_distribution_percentages': ['presales_distribution'],
-            'revenue_distribution_percentages': ['revenue_distribution'],
-            'presales_distribution_note': [],  # Text only field
-            'revenue_distribution_note': [],  # Text only field
-            'construction_schedule': ['construction_schedule'],
-            'cash_collection_schedules_raw': ['cash_collection_schedules']
-        }
-        
-        # Financial fields that are calculated from multiple sources
-        financial_calculated_fields = set(calculated_fields_map.keys())
-        
-        # Select columns based on request
-        if fields:
-            # Always include project_name and company_ticker
-            cols = ['project_name', 'company_ticker']
-            # Track which calculated fields are requested
-            requested_calculated_fields = []
-            
-            # Add requested fields
-            for f in fields:
-                if f in df.columns and f not in cols:
-                    # Direct column exists in DataFrame
-                    cols.append(f)
-                elif f in calculated_fields_map:
-                    # This is a calculated field - add its dependencies
-                    requested_calculated_fields.append(f)
-                    for dep_col in calculated_fields_map[f]:
-                        if dep_col in df.columns and dep_col not in cols:
-                            cols.append(dep_col)
-        elif include_financials:
-            cols = df.columns.tolist()
-            requested_calculated_fields = list(calculated_fields_map.keys())
-        else:
-            cols = ['project_name', 'company_ticker', 'location', 'total_units',
-                   'net_sellable_area', 'average_selling_price', 'rnav_value',
-                   'construction_start_year', 'project_completion_year']
-            cols = [c for c in cols if c in df.columns]
-            requested_calculated_fields = []
-        
-        projects_data = df[cols].to_dict('records')
-        
-        # Process calculated fields if any were requested
-        if fields and requested_calculated_fields:
-            for project in projects_data:
-                current_year = datetime.now().year
-                
-                # Calculate each requested field
-                for field_name in requested_calculated_fields:
-                    if field_name == 'revenue_info':
-                        if 'revenue_distribution' in project and 'total_revenue' in project:
-                            revenue_dist = project.get('revenue_distribution', {})
-                            total_revenue = project.get('total_revenue', 0)
-                            
-                            revenue_by_year = {}
-                            cumulative_revenue = 0
-                            for year_str, percentage in revenue_dist.items():
-                                revenue_this_year = (total_revenue * percentage / 100) if total_revenue else 0
-                                revenue_by_year[year_str] = {
-                                    "percentage": percentage,
-                                    "revenue_vnd": revenue_this_year,
-                                    "revenue_billion_vnd": revenue_this_year / 1e9 if revenue_this_year else 0,
-                                    "description": f"{percentage}% of total revenue ({revenue_this_year/1e9:.1f}B VND)"
-                                }
-                                if int(year_str) <= current_year:
-                                    cumulative_revenue += revenue_this_year
-                            
-                            project['revenue_info'] = {
-                                "total_revenue_vnd": total_revenue,
-                                "total_revenue_billion_vnd": total_revenue / 1e9 if total_revenue else 0,
-                                "revenue_by_year": revenue_by_year,
-                                "cumulative_revenue_to_date_vnd": cumulative_revenue,
-                                "cumulative_revenue_to_date_billion_vnd": cumulative_revenue / 1e9 if cumulative_revenue else 0
-                            }
-                    
-                    elif field_name == 'presales_info':
-                        if 'presales_distribution' in project and 'total_units' in project:
-                            presales_dist = project.get('presales_distribution', {})
-                            total_units = project.get('total_units', 0)
-                            
-                            presales_units_by_year = {}
-                            cumulative_presold = 0
-                            for year_str, percentage in presales_dist.items():
-                                units_this_year = (total_units * percentage / 100) if total_units else 0
-                                presales_units_by_year[year_str] = {
-                                    "percentage": percentage,
-                                    "units": int(units_this_year),
-                                    "description": f"{percentage}% of total units ({int(units_this_year)} units)"
-                                }
-                                if int(year_str) <= current_year:
-                                    cumulative_presold += units_this_year
-                            
-                            project['presales_info'] = {
-                                "total_units_in_project": total_units,
-                                "presales_by_year": presales_units_by_year,
-                                "total_presold_units_to_date": int(cumulative_presold),
-                                "percentage_presold_to_date": (cumulative_presold / total_units * 100) if total_units else 0,
-                                "remaining_units_to_sell": int(total_units - cumulative_presold) if total_units else 0
-                            }
-                    
-                    elif field_name == 'cash_collection_info':
-                        if 'cash_collection_schedules' in project and 'presales_distribution' in project and 'total_revenue' in project:
-                            cash_schedules = project.get('cash_collection_schedules', {})
-                            presales_dist = project.get('presales_distribution', {})
-                            total_revenue = project.get('total_revenue', 0)
-                            
-                            # Calculate cash collection by year
-                            cash_by_year = {}
-                            cumulative_cash = 0
-                            
-                            # First calculate presales amounts by year
-                            for presale_year_str, presale_pct in presales_dist.items():
-                                presale_amount = (total_revenue * presale_pct / 100) if total_revenue else 0
-                                presale_year = int(presale_year_str)
-                                
-                                # Get collection schedule for this presale year
-                                schedule = cash_schedules.get(presale_year, {presale_year: 100})
-                                
-                                for collection_year_str, collection_pct in schedule.items():
-                                    collection_year = int(collection_year_str)
-                                    cash_amount = presale_amount * (collection_pct / 100)
-                                    
-                                    if collection_year not in cash_by_year:
-                                        cash_by_year[collection_year] = 0
-                                    cash_by_year[collection_year] += cash_amount
-                                    
-                                    if collection_year <= current_year:
-                                        cumulative_cash += cash_amount
-                            
-                            # Format output
-                            cash_formatted = {}
-                            for year, amount in sorted(cash_by_year.items()):
-                                cash_formatted[str(year)] = {
-                                    "cash_collected_vnd": amount,
-                                    "cash_collected_billion_vnd": amount / 1e9 if amount else 0,
-                                    "description": f"{amount/1e9:.1f}B VND collected"
-                                }
-                            
-                            project['cash_collection_info'] = {
-                                "cash_collection_by_year": cash_formatted,
-                                "total_cash_to_collect_vnd": total_revenue,
-                                "total_cash_to_collect_billion_vnd": total_revenue / 1e9 if total_revenue else 0,
-                                "cumulative_cash_collected_vnd": cumulative_cash,
-                                "cumulative_cash_collected_billion_vnd": cumulative_cash / 1e9 if cumulative_cash else 0,
-                                "percentage_cash_collected_to_date": (cumulative_cash / total_revenue * 100) if total_revenue else 0
-                            }
-                    
-                    # Add simple mapping fields
-                    elif field_name == 'presales_distribution_percentages':
-                        if 'presales_distribution' in project:
-                            project['presales_distribution_percentages'] = project['presales_distribution']
-                    elif field_name == 'revenue_distribution_percentages':
-                        if 'revenue_distribution' in project:
-                            project['revenue_distribution_percentages'] = project['revenue_distribution']
-                    elif field_name == 'cash_collection_schedules_raw':
-                        if 'cash_collection_schedules' in project:
-                            project['cash_collection_schedules_raw'] = project['cash_collection_schedules']
-                    elif field_name == 'presales_distribution_note':
-                        project['presales_distribution_note'] = "IMPORTANT: presales_distribution contains PERCENTAGES, not unit counts"
-                    elif field_name == 'revenue_distribution_note':
-                        project['revenue_distribution_note'] = "Revenue distribution also contains PERCENTAGES of total revenue recognized each year"
-        
-        return {
-            "projects": projects_data,
-            "count": len(projects_data),
-            "source": "csv",
-            "include_financials": include_financials,
-            "status": "success"
-        }
-    
-    @tool_system.tool(
-        name="rank_projects_by_metric",
-        description="Rank real estate projects by specified metric",
-        parameters={
-            "metric": {
-                "type": "string",
-                "description": "Metric to rank by (rnav, revenue, units, nsa, margin, asp)",
+                "description": "List of company tickers (e.g., ['VHM', 'DXG', 'KDH'])",
                 "required": True
-            },
-            "top_n": {
-                "type": "integer",
-                "description": "Number of top projects to return",
-                "required": False
-            },
-            "tickers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Filter by companies",
-                "required": False
             }
         }
     )
-    def rank_projects_by_metric(metric: str, top_n: int = 10, 
-                               tickers: List[str] = None) -> Dict:
-        """Rank projects by metric"""
+    def search_projects(tickers: List[str]) -> Dict:
+        """
+        Search projects by company tickers - lean discovery tool
         
-        df = tool_system._load_real_estate_projects()
+        Returns:
+            Project Name, Company Ticker, Location, Total Units, RNAV Value, Project Completion Year
+        """
+        # Normalize tickers
+        tickers = [ticker.upper() for ticker in tickers]
         
-        if df.empty:
-            return {"error": "No projects data available", "status": "failed"}
+        if tool_system.vietnam_stocks_db is None:
+            return {"error": "MongoDB connection not available", "status": "failed"}
+            
+        collection = tool_system.vietnam_stocks_db['RealEstateProjects']
         
-        # Filter by tickers if specified
-        if tickers:
-            tickers = [t.upper() for t in tickers]
-            df = df[df['company_ticker'].isin(tickers)]
+        # Query projects with only essential fields for discovery
+        projects = list(collection.find(
+            {"company_ticker": {"$in": tickers}},
+            {
+                "project_name": 1,
+                "company_ticker": 1,
+                "location": 1,
+                "total_units": 1,
+                "rnav_value": 1,
+                "project_completion_year": 1,
+                "_id": 0
+            }
+        ))
         
-        # Map metric names to columns
-        metric_mapping = {
-            'rnav': 'rnav_value',
-            'revenue': 'total_revenue_potential',
-            'units': 'total_units',
-            'nsa': 'net_sellable_area',
-            'margin': 'gross_margin',
-            'asp': 'average_selling_price',
-            'construction_cost': 'construction_cost_per_sqm',
-            'land_cost': 'land_cost_per_sqm'
-        }
+        if not projects:
+            return {
+                "error": f"No projects found for tickers: {tickers}",
+                "status": "failed"
+            }
         
-        column = metric_mapping.get(metric.lower())
-        if not column or column not in df.columns:
-            # Try to find revenue columns
-            revenue_cols = [col for col in df.columns if 'revenue' in col.lower()]
-            if revenue_cols:
-                column = revenue_cols[0]
-            else:
-                return {
-                    "error": f"Metric '{metric}' not found",
-                    "available_metrics": list(metric_mapping.keys()),
-                    "status": "failed"
+        # Format projects with lean fields
+        formatted_projects = []
+        for project in projects:
+            formatted_projects.append({
+                "project_name": project.get("project_name"),
+                "company_ticker": project.get("company_ticker"),
+                "location": project.get("location"),
+                "total_units": project.get("total_units"),
+                "rnav_value": project.get("rnav_value"),
+                "project_completion_year": project.get("project_completion_year")
+            })
+        
+        # Group by ticker for better organization
+        results_by_ticker = {}
+        for ticker in tickers:
+            ticker_projects = [p for p in formatted_projects if p["company_ticker"] == ticker]
+            if ticker_projects:
+                results_by_ticker[ticker] = {
+                    "count": len(ticker_projects),
+                    "total_rnav": sum(p["rnav_value"] for p in ticker_projects if p["rnav_value"]),
+                    "total_units": sum(p["total_units"] for p in ticker_projects if p["total_units"]),
+                    "projects": ticker_projects
                 }
         
-        # Remove rows with null values and sort
-        df_clean = df.dropna(subset=[column])
-        # For debt metrics, show lowest first (best); for others, highest first
-        ascending = True if metric.lower() in ['total_debt', 'cumulative_interest', 'cash_burden'] else False
-        df_sorted = df_clean.sort_values(column, ascending=ascending).head(top_n)
-        
-        # Prepare ranking data
-        ranking = df_sorted[['project_name', 'company_ticker', column]].copy()
-        ranking['rank'] = range(1, len(ranking) + 1)
-        
         return {
-            "ranking": ranking.to_dict('records'),
-            "metric": metric,
-            "column_used": column,
-            "top_n": top_n,
+            "summary": {
+                "total_projects": len(formatted_projects),
+                "companies_found": len(results_by_ticker),
+                "total_rnav": sum(p["rnav_value"] for p in formatted_projects if p["rnav_value"]),
+                "total_units": sum(p["total_units"] for p in formatted_projects if p["total_units"])
+            },
+            "by_company": results_by_ticker,
+            "all_projects": formatted_projects,
             "status": "success"
         }
     
     @tool_system.tool(
-        name="calculate_rnav_sensitivity",
-        description="Calculate RNAV sensitivity to parameter changes (ASP, costs, WACC, etc.) by regenerating full financial statements",
+        name="get_project_overview",
+        description="Get comprehensive overview of a specific real estate project including land, construction, product mix, timelines and financial parameters.",
         parameters={
             "project_name": {
                 "type": "string",
-                "description": "Project name for sensitivity analysis",
+                "description": "Name of the project (e.g., 'Prive', 'Gem Skyworld Long Thanh')",
                 "required": True
-            },
-            "adjustments": {
-                "type": "object",
-                "description": "Parameter adjustments",
-                "properties": {
-                    "asp_change_pct": {"type": "number", "description": "ASP change % for both segments"},
-                    "low_rise_asp_change_pct": {"type": "number", "description": "Low-rise ASP change %"},
-                    "high_rise_asp_change_pct": {"type": "number", "description": "High-rise ASP change %"},
-                    "construction_cost_change_pct": {"type": "number", "description": "Construction cost change %"},
-                    "land_cost_change_pct": {"type": "number", "description": "Land cost change %"},
-                    "sga_pct_change": {"type": "number", "description": "SG&A percentage point change"},
-                    "wacc_change_bps": {"type": "number", "description": "WACC change in basis points"},
-                    "cost_of_debt_change_bps": {"type": "number", "description": "Cost of debt change in basis points"}
-                },
-                "required": True
-            },
-            "output_format": {
-                "type": "string",
-                "description": "Output format (detailed, summary, comparison)",
-                "required": False
             }
         }
     )
-    def calculate_rnav_sensitivity(project_name: str, adjustments: Dict, output_format: str = "summary") -> Dict:
-        """Calculate RNAV sensitivity by regenerating full financial statements"""
+    def get_project_overview(project_name: str) -> Dict:
+        """
+        Get detailed overview of a specific project
+        
+        Returns comprehensive project information including:
+        - Project info (name, ticker, location, RNAV value, ownership percentage)
+        - Land details (area, cost per sqm, total cost)
+        - Construction details (GFA, cost per sqm, total cost)
+        - Product mix (low-rise/high-rise breakdown with pricing)
+        - Complete project timeline
+        - Financial parameters (WACC, debt, SG&A)
+        """
         
         if tool_system.vietnam_stocks_db is None:
-            return {"error": "MongoDB not connected", "status": "failed"}
+            return {"error": "MongoDB connection not available", "status": "failed"}
+            
+        collection = tool_system.vietnam_stocks_db['RealEstateProjects']
         
-        try:
-            collection = tool_system.vietnam_stocks_db['RealEstateProjects']
-            
-            # Find project
-            project = collection.find_one({"project_name": {"$regex": f"^{project_name}$", "$options": "i"}})
-            
-            if not project:
-                return {"error": f"Project {project_name} not found", "status": "failed"}
-            
-            # Store original RNAV
-            base_rnav = project.get('rnav_value', 0)
-            
-            # Apply adjustments to project parameters
-            adjusted_project = project.copy()
-            
-            # Apply ASP changes
-            if 'asp_change_pct' in adjustments:
-                # Apply to both segments
-                adjusted_project['low_rise_asp'] = project.get('low_rise_asp', 0) * (1 + adjustments['asp_change_pct'] / 100)
-                adjusted_project['high_rise_asp'] = project.get('high_rise_asp', 0) * (1 + adjustments['asp_change_pct'] / 100)
-            
-            if 'low_rise_asp_change_pct' in adjustments:
-                adjusted_project['low_rise_asp'] = project.get('low_rise_asp', 0) * (1 + adjustments['low_rise_asp_change_pct'] / 100)
-            
-            if 'high_rise_asp_change_pct' in adjustments:
-                adjusted_project['high_rise_asp'] = project.get('high_rise_asp', 0) * (1 + adjustments['high_rise_asp_change_pct'] / 100)
-            
-            # Apply cost changes
-            if 'construction_cost_change_pct' in adjustments:
-                adjusted_project['construction_cost_per_sqm'] = project.get('construction_cost_per_sqm', 0) * (1 + adjustments['construction_cost_change_pct'] / 100)
-            
-            if 'land_cost_change_pct' in adjustments:
-                adjusted_project['land_cost_per_sqm'] = project.get('land_cost_per_sqm', 0) * (1 + adjustments['land_cost_change_pct'] / 100)
-            
-            # Apply financial parameter changes
-            if 'sga_pct_change' in adjustments:
-                adjusted_project['sga_percentage'] = project.get('sga_percentage', 8.0) + adjustments['sga_pct_change']
-            
-            if 'wacc_change_bps' in adjustments:
-                adjusted_project['wacc_rate'] = project.get('wacc_rate', 0.12) + adjustments['wacc_change_bps'] / 10000
-            
-            if 'cost_of_debt_change_bps' in adjustments:
-                adjusted_project['cost_of_debt'] = project.get('cost_of_debt', 0.08) + adjustments['cost_of_debt_change_bps'] / 10000
-            
-            # Recalculate presales schedule with adjusted ASP
-            presales_start = int(adjusted_project.get('sale_start_year', 2024))
-            sales_years = int(adjusted_project.get('sales_years', 3))
-            presales_end = presales_start + sales_years - 1
-            price_increment = float(adjusted_project.get('price_increment_factor', 0))
-            
-            presales_schedule = {}
-            for i, year in enumerate(range(presales_start, presales_end + 1)):
-                # Low-rise presales
-                low_dist = adjusted_project.get('low_rise_presales_distribution', {})
-                low_pct = low_dist.get(str(year), 0) / 100 if low_dist else 0
-                low_nsa = float(adjusted_project.get('low_rise_nsa', 0)) * low_pct
-                low_asp = float(adjusted_project.get('low_rise_asp', 0)) * (1 + price_increment) ** i
-                low_presale = low_nsa * low_asp
-                
-                # High-rise presales
-                high_dist = adjusted_project.get('high_rise_presales_distribution', {})
-                high_pct = high_dist.get(str(year), 0) / 100 if high_dist else 0
-                high_nsa = float(adjusted_project.get('high_rise_nsa', 0)) * high_pct
-                high_asp = float(adjusted_project.get('high_rise_asp', 0)) * (1 + price_increment) ** i
-                high_presale = high_nsa * high_asp
-                
-                presales_schedule[year] = low_presale + high_presale
-            
-            # Import balance sheet manager
-            import sys
-            import os
-            sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-            from balance_sheet_manager import generate_balance_sheet_schedules
-            from utils.RNAV_utils import RNAV_Calculation
-            
-            # Calculate total costs with adjustments
-            total_construction = float(adjusted_project.get('gross_floor_area', 0)) * float(adjusted_project.get('construction_cost_per_sqm', 0))
-            total_land = float(adjusted_project.get('land_area', 0)) * float(adjusted_project.get('land_cost_per_sqm', 0))
-            
-            # Get timeline parameters
-            const_start = int(adjusted_project.get('construction_start_year', 2025))
-            const_years = int(adjusted_project.get('construction_years', 3))
-            const_end = const_start + const_years - 1
-            
-            land_payment_start = int(adjusted_project.get('land_payment_start_year', const_start))
-            land_payment_years = int(adjusted_project.get('land_payment_years', 1))
-            
-            revenue_booking_start = int(adjusted_project.get('revenue_booking_start_year', const_end))
-            revenue_booking_end = int(adjusted_project.get('project_completion_year', const_end + 1))
-            
-            # Generate balance sheet with adjusted parameters
-            bs_df = generate_balance_sheet_schedules(
-                total_debt=float(adjusted_project.get('total_debt', 0)),
-                total_construction_cost=total_construction,
-                total_land_cost=total_land,
-                land_payment_start_year=land_payment_start,
-                land_payment_years=land_payment_years,
-                presales_schedule=presales_schedule,
-                interest_rate=float(adjusted_project.get('cost_of_debt', 0.08)),
-                sga_percentage=float(adjusted_project.get('sga_percentage', 0.08)),
-                debt_disbursement_start_year=const_start,
-                debt_disbursement_end_year=const_end,
-                debt_repayment_start_year=revenue_booking_end,
-                debt_repayment_end_year=revenue_booking_end,
-                revenue_booking_start_year=revenue_booking_start,
-                revenue_booking_end_year=revenue_booking_end,
-                cash_collection_schedules=adjusted_project.get('cash_collection_schedules')
-            )
-            
-            # Extract cash flows from balance sheet (matching actual RNAV calculation)
-            project_start = min([y for y in bs_df['Year'] if isinstance(y, int)])
-            project_end = max([y for y in bs_df['Year'] if isinstance(y, int)])
-            current_year = 2024  # Use current year
-            
-            selling_progress = []
-            construction_payment = []
-            land_payment = []
-            sga_payment = []
-            tax_expense = []
-            
-            for year in range(project_start, project_end + 1):
-                year_data = bs_df[bs_df["Year"] == year]
-                if not year_data.empty:
-                    selling_progress.append(float(year_data["Cash_Inflow_Presales"].iloc[0]) / 1e9)
-                    construction_payment.append(float(year_data["Cash_Outflow_Construction"].iloc[0]) / 1e9)
-                    land_payment.append(float(year_data["Cash_Outflow_Land"].iloc[0]) / 1e9)
-                    sga_payment.append(float(year_data["Cash_Outflow_SGA"].iloc[0]) / 1e9)
-                    tax_expense.append(float(year_data["Cash_Outflow_Tax"].iloc[0]) / 1e9)
-                else:
-                    selling_progress.append(0.0)
-                    construction_payment.append(0.0)
-                    land_payment.append(0.0)
-                    sga_payment.append(0.0)
-                    tax_expense.append(0.0)
-            
-            # Calculate new RNAV
-            df_rnav = RNAV_Calculation(
-                selling_progress,
-                construction_payment,
-                sga_payment,
-                tax_expense,
-                land_payment,
-                float(adjusted_project.get('wacc_rate', 0.12)),
-                int(project_start),
-                int(current_year)
-            )
-            
-            # Extract RNAV value
-            total_row = df_rnav[df_rnav["Year"] == "Total RNAV"]
-            if not total_row.empty:
-                new_rnav = float(total_row["Discounted Cash Flow"].iloc[0]) * 1e9
-            else:
-                # Fallback to sum of discounted cash flows
-                numeric_rows = df_rnav[df_rnav["Year"] != "Total RNAV"]
-                new_rnav = float(numeric_rows["Discounted Cash Flow"].sum()) * 1e9
-            
-            # Prepare result based on output format
-            result = {
-                "project_name": project_name,
-                "base_rnav": base_rnav,
-                "adjusted_rnav": new_rnav,
-                "change_amount": new_rnav - base_rnav,
-                "change_percentage": ((new_rnav - base_rnav) / base_rnav * 100) if base_rnav != 0 else 0,
-                "adjustments_applied": adjustments,
-                "status": "success"
-            }
-            
-            if output_format == "detailed":
-                # Add detailed cash flow comparison
-                result["cash_flows"] = {
-                    "total_inflow": sum(selling_progress) * 1e9,
-                    "total_construction": sum(construction_payment) * 1e9,
-                    "total_land": sum(land_payment) * 1e9,
-                    "total_sga": sum(sga_payment) * 1e9,
-                    "total_tax": sum(tax_expense) * 1e9
-                }
-                result["rnav_details"] = df_rnav.to_dict('records')
-            
-            elif output_format == "comparison":
-                # Add year-by-year comparison
-                result["yearly_comparison"] = []
-                for i, year in enumerate(range(project_start, project_end + 1)):
-                    result["yearly_comparison"].append({
-                        "year": year,
-                        "cash_inflow": selling_progress[i] * 1e9 if i < len(selling_progress) else 0,
-                        "net_cash_flow": (selling_progress[i] + construction_payment[i] + land_payment[i] + 
-                                         sga_payment[i] + tax_expense[i]) * 1e9 if i < len(selling_progress) else 0
-                    })
-            
-            return result
-            
-        except Exception as e:
+        # Query for the specific project
+        project = collection.find_one(
+            {"project_name": project_name},
+            {"_id": 0}
+        )
+        
+        if not project:
             return {
-                "error": f"Error calculating sensitivity: {str(e)}",
+                "error": f"Project '{project_name}' not found",
                 "status": "failed"
             }
+        
+        # Build the comprehensive overview
+        overview = {
+            "project_info": {
+                "project_name": project.get("project_name"),
+                "company_ticker": project.get("company_ticker"),
+                "location": project.get("location"),
+                "rnav_value": project.get("rnav_value"),
+                "project_ownership": project.get("project_ownership") 
+            },
+            
+            "land": {
+                "land_area": project.get("land_area"),
+                "land_cost_per_sqm": project.get("land_cost_per_sqm"),
+                "total_land_cost": project.get("total_land_cost")
+            },
+            
+            "construction": {
+                "gross_floor_area": project.get("gross_floor_area"),
+                "construction_cost_per_sqm": project.get("construction_cost_per_sqm"),
+                "total_construction_cost": project.get("total_construction_cost")
+            },
+            
+            "product_mix": {
+                "low_rise": {
+                    "total_units": project.get("low_rise_units", 0),
+                    "unit_size": project.get("low_rise_avg_unit_size", 0),
+                    "net_sellable_area": project.get("low_rise_nsa", 0),
+                    "average_selling_price": project.get("low_rise_asp", 0)
+                },
+                "high_rise": {
+                    "total_units": project.get("high_rise_units", 0),
+                    "unit_size": project.get("high_rise_avg_unit_size", 0),
+                    "net_sellable_area": project.get("high_rise_nsa", 0),
+                    "average_selling_price": project.get("high_rise_asp", 0)
+                },
+                "annual_price_increment": project.get("price_increment_factor", 0)
+            },
+            
+            "timelines": {
+                "land_payment_start_year": project.get("land_payment_start_year") or project.get("land_payment_year"),
+                "land_payment_end_year": (
+                    project.get("land_payment_start_year", project.get("land_payment_year", 0)) + 
+                    project.get("land_payment_years", 1) - 1
+                ) if project.get("land_payment_start_year") or project.get("land_payment_year") else None,
+                "construction_start_year": project.get("construction_start_year"),
+                "construction_end_year": (
+                    project.get("construction_start_year", 0) + 
+                    project.get("construction_years", 1) - 1
+                ) if project.get("construction_start_year") else None,
+                "sale_start_year": project.get("sale_start_year"),
+                "sale_end_year": (
+                    project.get("sale_start_year", 0) + 
+                    project.get("sales_years", 1) - 1
+                ) if project.get("sale_start_year") else None,
+                "revenue_booking_start_year": project.get("revenue_booking_start_year"),
+                "revenue_booking_end_year": project.get("revenue_booking_end_year") or project.get("project_completion_year")
+            },
+            
+            "financial_parameters": {
+                "wacc": project.get("wacc_rate"),
+                "cost_of_debt": project.get("cost_of_debt"),
+                "sga_as_pct_of_revenue": project.get("sga_percentage"),
+                "debt_financing_pct": project.get("debt_financing_pct")
+            },
+            
+            "status": "success"
+        }
+        
+        return overview
+    
+    @tool_system.tool(
+        name="get_project_metrics",
+        description="Get time series data for specific metrics of a real estate project over a year range.",
+        parameters={
+            "project_name": {
+                "type": "string",
+                "description": "Name of the project (e.g., 'Prive', 'Gem Skyworld Long Thanh')",
+                "required": True
+            },
+            "metrics": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of metrics to retrieve (e.g., ['revenue', 'cash_flow', 'debt', 'npv'])",
+                "required": True
+            },
+            "year_range": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "Year range as [start_year, end_year] (e.g., [2024, 2030])",
+                "required": True,
+                "minItems": 2,
+                "maxItems": 2
+            },
+            "total": {
+                "type": "boolean",
+                "description": "If True, return only the total sum of each metric across all years instead of time series",
+                "required": False,
+                "default": False
+            }
+        }
+    )
+    def get_project_metrics(project_name: str, metrics: List[str], year_range: List[int], total: bool = False) -> Dict:
+        """
+        Get time series metrics for a specific project
+        
+        Returns structured time series data:
+        - project_name: Name of the project
+        - series: Array of metric time series with points
+        - as_of: Current date timestamp
+        """
+        from datetime import datetime
+        
+        if tool_system.vietnam_stocks_db is None:
+            return {"error": "MongoDB connection not available", "status": "failed"}
+        
+        if len(year_range) != 2:
+            return {"error": "year_range must contain exactly 2 elements: [start_year, end_year]", "status": "failed"}
+        
+        start_year, end_year = year_range
+        if start_year > end_year:
+            return {"error": f"Invalid year range: start_year ({start_year}) > end_year ({end_year})", "status": "failed"}
+            
+        collection = tool_system.vietnam_stocks_db['RealEstateProjects']
+        
+        # Query for the specific project
+        project = collection.find_one(
+            {"project_name": project_name},
+            {"_id": 0}
+        )
+        
+        if not project:
+            return {
+                "error": f"Project '{project_name}' not found",
+                "status": "failed"
+            }
+        
+        # Define available metrics - all from comprehensive_financial_statements
+        metric_definitions = {
+            # Revenue & Sales metrics (in VND)
+            "presales": {"unit": "VND"},
+            "presales_low_rise": {"unit": "VND"},
+            "presales_high_rise": {"unit": "VND"},
+            "revenue_recognition": {"unit": "VND"},
+            "revenue_recognition_low_rise": {"unit": "VND"},
+            "revenue_recognition_high_rise": {"unit": "VND"},
+            
+            # Cash metrics (in VND)
+            "cash_balance": {"unit": "VND"},
+            "cash_balance_change": {"unit": "VND"},
+            "cash_inflow_presales": {"unit": "VND"},  # This was already here, metric name is correct
+            "cash_outflow_land": {"unit": "VND"},
+            "cash_outflow_construction": {"unit": "VND"},
+            "cash_outflow_interest": {"unit": "VND"},
+            "cash_outflow_sga": {"unit": "VND"},
+            "cash_outflow_tax": {"unit": "VND"},
+            
+            # Debt metrics (in VND)
+            "debt_balance": {"unit": "VND"},
+            "debt_disbursement": {"unit": "VND"},
+            "debt_repayment": {"unit": "VND"},
+            
+            # Cost metrics (in VND)
+            "land_cost": {"unit": "VND"},
+            "construction_cost": {"unit": "VND"},
+            "cogs": {"unit": "VND"},
+            "sga_expense": {"unit": "VND"},
+            "interest_expense_cash": {"unit": "VND"},
+            "interest_capitalized": {"unit": "VND"},
+            
+            # Inventory metrics (in VND)
+            "inventory_addition": {"unit": "VND"},
+            "inventory_balance": {"unit": "VND"},
+            
+            # Customer prepayment (in VND)
+            "customer_prepayment_balance": {"unit": "VND"},
+            
+            # Profit metrics (in VND)
+            "pbt": {"unit": "VND"},
+            "pat": {"unit": "VND"},
+            "tax": {"unit": "VND"}
+        }
+        
+        # Validate requested metrics
+        invalid_metrics = [m for m in metrics if m not in metric_definitions]
+        if invalid_metrics:
+            return {
+                "error": f"Invalid metrics requested: {invalid_metrics}",
+                "available_metrics": list(metric_definitions.keys()),
+                "status": "failed"
+            }
+        
+        # Get comprehensive financial statements
+        cfs = project.get("comprehensive_financial_statements", {})
+        
+        if not cfs:
+            return {
+                "error": f"No financial statements data available for project '{project_name}'",
+                "status": "failed"
+            }
+        
+        # Get distribution fields for calculated metrics
+        low_rise_presales_dist = project.get("low_rise_presales_distribution", {})
+        high_rise_presales_dist = project.get("high_rise_presales_distribution", {})
+        low_rise_revenue_dist = project.get("low_rise_revenue_distribution", {})
+        high_rise_revenue_dist = project.get("high_rise_revenue_distribution", {})
+        
+        # Build series array
+        series = []
+        
+        for metric in metrics:
+            metric_def = metric_definitions[metric]
+            unit = metric_def["unit"]
+            points = []
+            
+            # Handle each metric type
+            for year in range(start_year, end_year + 1):
+                year_str = str(year)
+                
+                if metric == "presales_low_rise":
+                    # Calculate low-rise presales from total presales * low-rise distribution
+                    if year_str in cfs and isinstance(cfs[year_str], dict):
+                        total_presales = cfs[year_str].get("presales", 0)
+                        if total_presales and year_str in low_rise_presales_dist:
+                            distribution_pct = low_rise_presales_dist[year_str] / 100.0
+                            value = total_presales * distribution_pct
+                            if value != 0:
+                                points.append({"year": year, "value": value})
+                            
+                elif metric == "presales_high_rise":
+                    # Calculate high-rise presales from total presales * high-rise distribution
+                    if year_str in cfs and isinstance(cfs[year_str], dict):
+                        total_presales = cfs[year_str].get("presales", 0)
+                        if total_presales and year_str in high_rise_presales_dist:
+                            distribution_pct = high_rise_presales_dist[year_str] / 100.0
+                            value = total_presales * distribution_pct
+                            if value != 0:
+                                points.append({"year": year, "value": value})
+                            
+                elif metric == "revenue_recognition_low_rise":
+                    # Calculate low-rise revenue from total revenue * low-rise distribution
+                    if year_str in cfs and isinstance(cfs[year_str], dict):
+                        total_revenue = cfs[year_str].get("revenue_recognition", 0)
+                        if total_revenue and year_str in low_rise_revenue_dist:
+                            distribution_pct = low_rise_revenue_dist[year_str] / 100.0
+                            value = total_revenue * distribution_pct
+                            if value != 0:
+                                points.append({"year": year, "value": value})
+                            
+                elif metric == "revenue_recognition_high_rise":
+                    # Calculate high-rise revenue from total revenue * high-rise distribution
+                    if year_str in cfs and isinstance(cfs[year_str], dict):
+                        total_revenue = cfs[year_str].get("revenue_recognition", 0)
+                        if total_revenue and year_str in high_rise_revenue_dist:
+                            distribution_pct = high_rise_revenue_dist[year_str] / 100.0
+                            value = total_revenue * distribution_pct
+                            if value != 0:
+                                points.append({"year": year, "value": value})
+                            
+                else:
+                    # Extract directly from comprehensive_financial_statements
+                    if year_str in cfs and isinstance(cfs[year_str], dict):
+                        year_data = cfs[year_str]
+                        if metric in year_data:
+                            value = year_data[metric]
+                            if value is not None and value != 0:  # Only include non-zero values
+                                points.append({"year": year, "value": value})
+            
+            # Add series even if empty to show what was requested
+            series.append({
+                "metric": metric,
+                "unit": unit,
+                "points": points
+            })
+        
+        # Build response based on total flag
+        if total:
+            # Return totals instead of time series
+            totals = {}
+            for series_item in series:
+                metric = series_item["metric"]
+                points = series_item["points"]
+                # Sum all values for this metric
+                total_value = sum(point["value"] for point in points)
+                totals[metric] = total_value
+            
+            result = {
+                "project_name": project_name,
+                "totals": totals,
+                "year_range": [start_year, end_year],
+                "as_of": datetime.now().strftime("%Y-%m-%d")
+            }
+        else:
+            # Return time series format
+            result = {
+                "project_name": project_name,
+                "series": series,
+                "as_of": datetime.now().strftime("%Y-%m-%d")
+            }
+        
+        # Add optional metadata
+        result["metadata"] = {
+            "company_ticker": project.get("company_ticker"),
+            "location": project.get("location"),
+            "project_completion_year": project.get("project_completion_year")
+        }
+        
+        # Add success status
+        result["status"] = "success"
+        
+        return result
+    
+    @tool_system.tool(
+        name="rank_projects_by_metric",
+        description="Rank specified real estate projects by a metric value (supports both static fields like 'rnav_value' and time-series metrics like 'presales').",
+        parameters={
+            "projects": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of project names to rank (e.g., ['Prive', 'Gem Skyworld', 'Duy Tien'])",
+                "required": True
+            },
+            "metric": {
+                "type": "string",
+                "description": "The metric to rank by. Static fields: 'rnav_value', 'total_units', 'land_area', 'project_irr', etc. Time-series: 'presales', 'revenue_recognition', 'cash_balance', etc.",
+                "required": True
+            },
+            "order": {
+                "type": "string",
+                "description": "Ranking order: 'descending' (highest first) or 'ascending' (lowest first)",
+                "enum": ["descending", "ascending"],
+                "required": True
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Number of top projects to return",
+                "required": False,
+                "default": 5
+            },
+            "included_fields": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Additional fields to include in output (e.g., ['project_name', 'company_ticker', 'location', 'rnav_value'])",
+                "required": False,
+                "default": ["project_name", "company_ticker", "location"]
+            },
+            "year_range": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "Year range for metric calculation [start_year, end_year]. If not specified, uses [2024, 2035]",
+                "required": False,
+                "default": [2024, 2035]
+            }
+        }
+    )
+    def rank_projects_by_metric(
+        projects: List[str],
+        metric: str,
+        order: str,
+        top_k: int = 5,
+        included_fields: List[str] = None,
+        year_range: List[int] = None
+    ) -> Dict:
+        """
+        Rank projects by a specific metric (static field or time-series)
+        
+        Returns ranked list of projects with metric values and requested fields
+        """
+        
+        if tool_system.vietnam_stocks_db is None:
+            return {"error": "MongoDB connection not available", "status": "failed"}
+        
+        if not projects:
+            return {"error": "No projects provided", "status": "failed"}
+        
+        if included_fields is None:
+            included_fields = ["project_name", "company_ticker", "location"]
+        
+        if year_range is None:
+            year_range = [2024, 2035]
+            
+        collection = tool_system.vietnam_stocks_db['RealEstateProjects']
+        
+        # Define static fields (actual fields from MongoDB, not in comprehensive_financial_statements)
+        static_fields = {
+            "average_selling_price",
+            "average_unit_size",
+            "company_name",
+            "company_ticker",
+            "construction_cost_per_sqm",
+            "construction_start_year",
+            "construction_years",
+            "cost_of_debt",
+            "created_date",
+            "debt_financing_pct",
+            "equity_investment",
+            "google_maps_location",
+            "gross_floor_area",
+            "high_rise_asp",
+            "high_rise_avg_unit_size",
+            "high_rise_nsa",
+            "high_rise_units",
+            "land_area",
+            "land_cost_per_sqm",
+            "land_payment_start_year",
+            "land_payment_year",
+            "land_payment_years",
+            "last_updated",
+            "latitude",
+            "location",
+            "longitude",
+            "low_rise_asp",
+            "low_rise_avg_unit_size",
+            "low_rise_nsa",
+            "low_rise_units",
+            "net_sellable_area",
+            "price_increment_factor",
+            "project_completion_year",
+            "project_irr",
+            "project_name",
+            "project_ownership",
+            "revenue_booking_end_year",
+            "revenue_booking_start_year",
+            "rnav_calculation_details",
+            "rnav_value",
+            "sale_start_year",
+            "sales_years",
+            "sector",
+            "sga_percentage",
+            "total_construction_cost",
+            "total_debt",
+            "total_land_cost",
+            "total_pat",
+            "total_pbt",
+            "total_revenue",
+            "total_sga_cost",
+            "total_units",
+            "wacc_rate",
+        }
+        
+        # Check if metric is static or time-series
+        is_static = metric in static_fields
+        
+        # Calculate metric value for each specified project
+        project_metrics = []
+        projects_not_found = []
+        projects_without_data = []
+        
+        for project_name in projects:
+            # Get project details from MongoDB
+            project_doc = collection.find_one({"project_name": project_name}, {"_id": 0})
+            
+            if not project_doc:
+                projects_not_found.append(project_name)
+                continue
+            
+            try:
+                metric_value = None
+                
+                if is_static:
+                    # For static fields, get value directly from project document
+                    if metric in project_doc:
+                        metric_value = project_doc[metric]
+                        # Skip if value is None, NaN, or 0 (for numeric fields)
+                        if metric_value is None:
+                            projects_without_data.append(project_name)
+                            continue
+                        if isinstance(metric_value, (int, float)):
+                            import math
+                            if math.isnan(metric_value) or metric_value == 0:
+                                projects_without_data.append(project_name)
+                                continue
+                    else:
+                        projects_without_data.append(project_name)
+                        continue
+                else:
+                    # For time-series metrics, use get_project_metrics
+                    result = get_project_metrics(
+                        project_name=project_name,
+                        metrics=[metric],
+                        year_range=year_range,
+                        total=True
+                    )
+                    
+                    # Check if successful and has the metric
+                    if result.get("status") != "failed" and "totals" in result:
+                        metric_value = result["totals"].get(metric, 0)
+                        if metric_value == 0:
+                            projects_without_data.append(project_name)
+                            continue
+                    else:
+                        projects_without_data.append(project_name)
+                        continue
+                
+                # Build project info with requested fields
+                if metric_value is not None:
+                    project_info = {}
+                    for field in included_fields:
+                        if field in project_doc:
+                            project_info[field] = project_doc[field]
+                    
+                    project_metrics.append({
+                        "metric_value": metric_value,
+                        **project_info
+                    })
+                    
+            except Exception:
+                projects_without_data.append(project_name)
+                continue
+        
+        if not project_metrics:
+            return {
+                "error": f"No projects have data for metric '{metric}'",
+                "projects_provided": len(projects),
+                "projects_not_found": projects_not_found,
+                "projects_without_data": projects_without_data,
+                "status": "failed"
+            }
+        
+        # Sort by metric value
+        reverse = (order == "descending")
+        sorted_projects = sorted(
+            project_metrics,
+            key=lambda x: x["metric_value"],
+            reverse=reverse
+        )
+        
+        # Get top k (limited to available projects)
+        top_projects = sorted_projects[:min(top_k, len(sorted_projects))]
+        
+        # Format output
+        result = {
+            "metric": metric,
+            "order": order,
+            "year_range": year_range,
+            "top_k": top_k,
+            "projects_provided": len(projects),
+            "projects_analyzed": len(project_metrics),
+            "rankings": []
+        }
+        
+        for i, project in enumerate(top_projects, 1):
+            ranking_entry = {
+                "rank": i,
+                "metric_value": project["metric_value"]
+            }
+            # Add all requested fields
+            for field in included_fields:
+                if field in project:
+                    ranking_entry[field] = project[field]
+            
+            result["rankings"].append(ranking_entry)
+        
+        # Add summary statistics if we have data
+        if project_metrics:
+            all_values = [p["metric_value"] for p in project_metrics]
+            result["summary"] = {
+                "min": min(all_values),
+                "max": max(all_values),
+                "average": sum(all_values) / len(all_values),
+                "projects_with_data": len(project_metrics)
+            }
+        
+        # Add information about missing projects
+        if projects_not_found:
+            result["projects_not_found"] = projects_not_found
+        if projects_without_data:
+            result["projects_without_metric_data"] = projects_without_data
+        
+        result["status"] = "success"
+        
+        return result

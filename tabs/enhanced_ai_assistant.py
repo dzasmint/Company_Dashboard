@@ -902,29 +902,38 @@ CRITICAL TOOL SELECTION RULES:
 
 **Real Estate Project Tools:**
 
-11. **list_real_estate_projects** - Project inventory
-    - Filter by ticker, status, location
-    - Summary statistics
+7. **search_projects** - Search real estate projects by company
+   - Input: List of tickers (e.g., ['DXG', 'KDH', 'NLG'])
+   - Output: Project name, location, total units, RNAV value, completion year
+   - Organized by company with aggregated summaries
+   - Use for discovery and screening of projects
 
-12. **get_project_details** - Detailed project financials
-    - IRR, NPV, margins, timeline
-    - Construction progress, sales status
+8. **get_project_overview** - Comprehensive project details
+   - Input: Project name (e.g., 'Prive', 'Gem Skyworld Long Thanh')
+   - Returns: Land details, construction info, product mix, timelines, financial parameters
+   - Includes WACC, debt financing, SG&A percentages
+   - Use when user needs detailed project information
 
-13. **rank_projects_by_metric** - Project ranking
-    - Sort by IRR, NPV, margin, size
-    - Investment prioritization
+9. **get_project_metrics** - Time series financial data for projects
+   - Input: project_name, metrics array, year_range, total flag
+   - Metrics: presales, revenue_recognition, cash_balance, debt_balance, npv, etc.
+   - Breakdown by low-rise/high-rise: presales_low_rise, revenue_recognition_high_rise
+   - Set total=True to get sum across years instead of time series
+   - Use for project-level financial analysis over time
 
-14. **calculate_rnav_sensitivity** - RNAV sensitivity analysis
-    - Test different ASP, cost, discount rate assumptions
-    - Scenario planning
+10. **rank_projects_by_metric** - Rank and compare projects
+    - Input: List of project names, metric to rank by, order (ascending/descending)
+    - Supports static fields: rnav_value, land_area, total_units, project_irr, wacc_rate
+    - Supports time-series: presales, revenue_recognition, cash_balance, debt_balance
+    - Use for finding top projects by any metric (e.g., "top 3 TCH projects by RNAV")
 
 **Advanced Forecast Tools:**
 
-15. **analyze_project_contribution_to_forecast** - Project impact analysis
+11. **analyze_project_contribution_to_forecast** - Project impact analysis
     - How individual projects affect company forecasts
     - Revenue/profit contribution by project
 
-16. **get_comprehensive_forecast_details** - Deep forecast dive
+12. **get_comprehensive_forecast_details** - Deep forecast dive
     - Segment breakdown, project details
     - Assumptions and drivers
 
