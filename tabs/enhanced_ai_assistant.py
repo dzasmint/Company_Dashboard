@@ -1060,7 +1060,7 @@ CRITICAL TOOL SELECTION RULES:
                 should_stream = (rounds > 0 or not tools) and stream_container is not None
                 
                 response = st.session_state.openai_client.chat.completions.create(
-                    model=os.getenv("OPENAI_MODEL", "gpt-5"),
+                    model=os.getenv("OPENAI_MODEL", "gpt-4o"),
                     messages=messages,
                     tools=tools,
                     tool_choice="auto",
@@ -1324,8 +1324,8 @@ def render_enhanced_ai_interface():
         # Model selection
         model = st.selectbox(
             "Model",
-            ["gpt-5", "gpt-5-mini"],
-            index=0
+            ["gpt-4o", "gpt-4.1", "gpt-5", "gpt-5-mini"],
+            index=0  # Default to gpt-4o
         )
         os.environ["OPENAI_MODEL"] = model
         
