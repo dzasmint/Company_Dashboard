@@ -708,123 +708,8 @@ def get_enhanced_tool_system() -> EnhancedAIToolSystem:
     return _enhanced_tool_system
 
 
-def compress_ai_response(response: str, tool_calls_made: List[str], user_message: str) -> Dict:
-    """Compress assistant response to structured data to save tokens"""
-    import re
-    
-    compressed = {
-        "tickers": [],
-        "projects": [],
-        "periods": [],
-        "metrics": {},
-        "analysis_type": "",
-        "tools": tool_calls_made[:5],  # Keep first 5 tools
-        "summary": ""
-    }
-    
-    # Extract company tickers (3-4 letter uppercase)
-    tickers = re.findall(r'\b[A-Z]{3,4}\b', response + " " + user_message)
-    # Filter common real estate/financial tickers
-    valid_tickers = ['VHM', 'DXG', 'NVL', 'NLG', 'KDH', 'TCH', 'TAL', 'NTL', 'BCM', 'PDR', 'VIC', 'VRE']
-    compressed["tickers"] = list(set([t for t in tickers if t in valid_tickers]))[:10]
-    
-    # Extract project names (capitalized phrases)
-    project_patterns = [
-        r'(?:project|Project)\s+([A-Z][a-zA-Z\s]+)',
-        r'([A-Z][a-zA-Z]+\s+(?:Park|Tower|City|Plaza|Residence|Garden))',
-    ]
-    for pattern in project_patterns:
-        projects = re.findall(pattern, response)
-        compressed["projects"].extend(projects)
-    compressed["projects"] = list(set(compressed["projects"]))[:5]
-    
-    # Extract time periods (years, quarters, date ranges)
-    years = re.findall(r'\b(20\d{2})\b', response)
-    quarters = re.findall(r'\b(\d{4}-Q\d)\b|\b(Q\d\s*\d{4})\b', response)
-    date_ranges = re.findall(r'\b(20\d{2})-?(20\d{2})\b', response)
-    
-    compressed["periods"] = list(set(years))[:5]
-    if quarters:
-        compressed["periods"].extend([q[0] if q[0] else q[1] for q in quarters[:3]])
-    if date_ranges:
-        compressed["periods"].append(f"{date_ranges[0][0]}-{date_ranges[0][1]}")
-    
-    # Extract key metrics mentioned
-    metric_patterns = {
-        "revenue": r'revenue[:\s]+([0-9,\.]+\s*(?:billion|trillion|B|T)?\s*VND)',
-        "ebitda": r'EBITDA[:\s]+([0-9,\.]+)',
-        "rnav": r'RNAV[:\s]+([0-9,\.]+)',
-        "npv": r'NPV[:\s]+([0-9,\.]+)',
-        "roe": r'ROE[:\s]+([0-9\.]+%)',
-        "growth": r'growth[:\s]+([0-9\.]+%)'
-    }
-    
-    for metric, pattern in metric_patterns.items():
-        match = re.search(pattern, response, re.IGNORECASE)
-        if match:
-            compressed["metrics"][metric] = match.group(1)
-    
-    # Determine analysis type based on tools and content
-    if any('forecast' in tool.lower() for tool in tool_calls_made):
-        compressed["analysis_type"] = "forecast"
-    elif any('project' in tool.lower() for tool in tool_calls_made):
-        compressed["analysis_type"] = "project"
-    elif any('market' in tool.lower() for tool in tool_calls_made):
-        compressed["analysis_type"] = "market"
-    elif any('financial' in tool.lower() for tool in tool_calls_made):
-        compressed["analysis_type"] = "financial"
-    else:
-        compressed["analysis_type"] = "general"
-    
-    # Create summary
-    if compressed["tickers"] and compressed["periods"]:
-        compressed["summary"] = f"{', '.join(compressed['tickers'][:2])} {compressed['periods'][0]} {compressed['analysis_type']}"
-    elif compressed["projects"]:
-        compressed["summary"] = f"Projects: {', '.join(compressed['projects'][:2])}"
-    elif compressed["tickers"]:
-        compressed["summary"] = f"Analyzed {', '.join(compressed['tickers'][:3])}"
-    else:
-        compressed["summary"] = f"{compressed['analysis_type'].capitalize()} analysis"
-    
-    return compressed
 
 
-def reconstruct_context(compressed_history: List[Dict]) -> str:
-    """Reconstruct concise context from compressed history"""
-    if not compressed_history:
-        return ""
-    
-    context_parts = []
-    
-    # Only use last 3-5 exchanges
-    recent_history = compressed_history[-6:] if len(compressed_history) > 6 else compressed_history
-    
-    for item in recent_history:
-        if item.get("role") == "user":
-            content = item.get("content", "")
-            if len(content) > 100:
-                context_parts.append(f"User asked: {content[:100]}...")
-            else:
-                context_parts.append(f"User asked: {content}")
-                
-        elif item.get("role") == "assistant_compressed":
-            data = item.get("data", {})
-            parts = []
-            
-            # Build context from compressed data
-            if data.get("tickers"):
-                parts.append(f"Discussed {', '.join(data['tickers'][:3])}")
-            if data.get("projects"):
-                parts.append(f"projects: {', '.join(data['projects'][:2])}")
-            if data.get("periods"):
-                parts.append(f"for {', '.join(data['periods'][:2])}")
-            if data.get("analysis_type"):
-                parts.append(f"({data['analysis_type']} analysis)")
-            
-            if parts:
-                context_parts.append(" ".join(parts))
-    
-    return " | ".join(context_parts) if context_parts else ""
 
 
 def execute_tool_call(tool_system: EnhancedAIToolSystem, tool_name: str, arguments: Dict) -> Dict:
@@ -897,13 +782,9 @@ def get_historical_data_cutoff():
 
 def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
     """
-    Send message to OpenAI and handle tool calls with compressed memory
+    Send message to OpenAI and handle tool calls
     Similar to Bank_Sample/7_DucGPT_Chatbot.py implementation
     """
-    # Initialize session state for memory
-    if 'compressed_conversation_history' not in st.session_state:
-        st.session_state.compressed_conversation_history = []
-    
     # Initialize session token tracking
     if 'session_total_tokens' not in st.session_state:
         st.session_state.session_total_tokens = 0
@@ -927,8 +808,6 @@ def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
     if not st.session_state.openai_client:
         return "❌ OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file."
     
-    # Reconstruct context from compressed history
-    context_str = reconstruct_context(st.session_state.compressed_conversation_history)
     
     # Get the dynamic historical data cutoff
     historical_cutoff = get_historical_data_cutoff()
@@ -1245,26 +1124,6 @@ CRITICAL TOOL SELECTION RULES:
                 estimated_cost = (total_input_tokens * (1.25/1000000) + (total_output_tokens + total_tool_tokens) * (10/1000000))
                 final_response += f"\n\n---\n**Token Usage:** ~{total_tokens:,} tokens (≈${estimated_cost:.3f})"
         
-        # Update conversation history with compressed data
-        if final_response:
-            # Add user message
-            st.session_state.compressed_conversation_history.append({
-                "role": "user",
-                "content": user_message,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            # Compress and add assistant response
-            compressed_response = compress_ai_response(final_response, tool_calls_made, user_message)
-            st.session_state.compressed_conversation_history.append({
-                "role": "assistant_compressed",
-                "data": compressed_response,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            # Keep only last 10 messages (5 exchanges)
-            if len(st.session_state.compressed_conversation_history) > 10:
-                st.session_state.compressed_conversation_history = st.session_state.compressed_conversation_history[-10:]
         
         # Render any pending charts after the response
         if st.session_state.pending_charts and create_plotly_chart:
@@ -1343,24 +1202,11 @@ def render_enhanced_ai_interface():
                 st.session_state.session_total_cost = 0.0
                 st.rerun()
         
-        # Memory indicator
-        st.divider()
-        if 'compressed_conversation_history' in st.session_state:
-            memory_count = len(st.session_state.compressed_conversation_history)
-            st.metric("Memory", f"{memory_count}/10 messages")
-            
-            # Show compressed memory details
-            with st.expander("💾 Memory Details", expanded=False):
-                for item in st.session_state.compressed_conversation_history[-4:]:
-                    if item.get("role") == "assistant_compressed":
-                        data = item.get("data", {})
-                        st.caption(data.get("summary", ""))
-        
         # Clear history
+        st.divider()
         if st.button("🗑️ Clear History"):
             st.session_state.tool_executions = []
             st.session_state.enhanced_chat_history = []
-            st.session_state.compressed_conversation_history = []
             st.rerun()
     
     # Main chat interface
@@ -1382,10 +1228,6 @@ def render_enhanced_ai_interface():
         - Execute multiple tools if needed
         - Provide comprehensive analysis with data
         """)
-    
-    # Initialize compressed conversation history
-    if 'compressed_conversation_history' not in st.session_state:
-        st.session_state.compressed_conversation_history = []
     
     # Chat messages container for display
     if 'enhanced_chat_history' not in st.session_state:
