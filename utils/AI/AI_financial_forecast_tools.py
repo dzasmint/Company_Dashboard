@@ -461,7 +461,7 @@ def register_financial_forecast_tools(tool_system):
             multiples = valuation_data.get('multiples', {})
             
             # Get current year and next year
-            current_year = datetime.datetime.now().year
+            current_year = datetime.now().year
             next_year = current_year + 1
             
             # Extract all required metrics
@@ -637,7 +637,7 @@ def register_financial_forecast_tools(tool_system):
         """Score company based on RNAV, multiples, growth, and leverage"""
         
         ticker = ticker.upper()
-        current_year = datetime.datetime.now().year
+        current_year = datetime.now().year
         
         # Initialize scoring components (each out of 10, then weighted)
         scores = {
@@ -1021,8 +1021,7 @@ def register_financial_forecast_tools(tool_system):
             df_historical = tool_system._load_financial_statements_csv()
             
         # Dynamic fallback based on current year
-        import datetime
-        current_year = datetime.datetime.now().year
+        current_year = datetime.now().year
         historical_cutoff = current_year - 1  # Assume data up to last year by default
         if not df_historical.empty:
             # Get the maximum year available in historical data for this ticker
@@ -1062,7 +1061,7 @@ def register_financial_forecast_tools(tool_system):
                     else:
                         historical_cutoff = max_year
         
-        current_year = datetime.datetime.now().year
+        current_year = datetime.now().year
         
         # Build the years_requested string based on what was provided
         if quarters:
@@ -1803,7 +1802,7 @@ BEST PRACTICES:
             # Smart default: If no years specified, use current and next year only
             if years is None:
                 import datetime
-                current_year = datetime.datetime.now().year
+                current_year = datetime.now().year
                 
                 # Get historical cutoff dynamically (same logic as in calculate_balance_sheet_ratios)
                 historical_cutoff = current_year - 1  # Default: assume data up to last year
@@ -2013,7 +2012,7 @@ BEST PRACTICES:
                 
                 # Determine historical cutoff dynamically
                 import datetime
-                current_year = datetime.datetime.now().year
+                current_year = datetime.now().year
                 historical_cutoff = current_year - 1  # Assume data up to last year by default
                 try:
                     if available_years:
