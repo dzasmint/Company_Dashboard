@@ -87,7 +87,7 @@ def register_real_estate_tools(tool_system):
     
     @tool_system.tool(
         name="get_project_details",
-        description="Get detailed information about specific projects. IMPORTANT: presales_distribution and revenue_distribution contain PERCENTAGES (not actual units/amounts). cash_collection_schedule may be percentages or absolute amounts. The tool returns calculated actual values in presales_info, revenue_info, and cash_collection_info fields with both percentages and absolute amounts.",
+        description="Get detailed information about specific projects. USE fields PARAMETER to dramatically reduce token usage! Common fields: project_name, location, total_units, net_sellable_area, average_selling_price, rnav_value, presales_info, revenue_info, cash_collection_info. IMPORTANT: presales_distribution and revenue_distribution contain PERCENTAGES (not actual units/amounts).",
         parameters={
             "project_names": {
                 "type": "array",
@@ -100,9 +100,15 @@ def register_real_estate_tools(tool_system):
                 "description": "Company ticker to filter projects",
                 "required": False
             },
+            "fields": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific fields to return (e.g., ['total_units', 'location', 'rnav_value']). DRAMATICALLY reduces tokens! Common: project_name, location, total_units, net_sellable_area, average_selling_price, construction_start_year, project_completion_year, project_type, ownership_percentage, rnav_value, presales_info, revenue_info",
+                "required": False
+            },
             "include_financials": {
                 "type": "boolean",
-                "description": "Include detailed financial projections and schedules",
+                "description": "Include detailed financial projections and schedules (presales_info, revenue_info, cash_collection_info)",
                 "required": False
             },
             "include_assumptions": {
@@ -113,6 +119,7 @@ def register_real_estate_tools(tool_system):
         }
     )
     def get_project_details(project_names: List[str] = None, ticker: str = None,
+                          fields: List[str] = None,
                           include_financials: bool = True, 
                           include_assumptions: bool = False) -> Dict:
         """Get detailed project information from MongoDB RealEstateProjects collection"""
@@ -136,7 +143,7 @@ def register_real_estate_tools(tool_system):
                 projects = list(collection.find(query, {'_id': 0}))
                 
                 if not projects:
-                    # Fallback to CSV
+                    # Fallback to MongoDB via _load_real_estate_projects
                     df = tool_system._load_real_estate_projects()
                     if not df.empty:
                         if project_names:
@@ -149,7 +156,7 @@ def register_real_estate_tools(tool_system):
                             return {
                                 "projects": df.to_dict('records'),
                                 "count": len(df),
-                                "source": "csv_fallback",
+                                "source": "mongodb_fallback",
                                 "status": "success"
                             }
                     
@@ -158,9 +165,14 @@ def register_real_estate_tools(tool_system):
                 # Process retrieved projects
                 result_projects = []
                 for project in projects:
+                    # Start with minimal data - always include project_name and ticker
                     project_data = {
                         "project_name": project.get('project_name'),
-                        "company_ticker": project.get('company_ticker'),
+                        "company_ticker": project.get('company_ticker')
+                    }
+                    
+                    # Define all available basic fields
+                    basic_fields_map = {
                         "location": project.get('location'),
                         "total_units": project.get('total_units'),
                         "net_sellable_area": project.get('net_sellable_area'),
@@ -171,11 +183,31 @@ def register_real_estate_tools(tool_system):
                         "ownership_percentage": project.get('ownership_percentage', 100),
                         "land_cost_per_sqm": project.get('land_cost_per_sqm'),
                         "construction_cost_per_sqm": project.get('construction_cost_per_sqm'),
-                        "last_updated": project.get('last_updated')
+                        "last_updated": project.get('last_updated'),
+                        "total_revenue": project.get('total_revenue'),
+                        "rnav_value": project.get('rnav_value'),
+                        "npv": project.get('npv')
                     }
                     
-                    # Add financial details if requested
-                    if include_financials:
+                    # Add requested fields or all fields if not specified
+                    if fields:
+                        # Only add specifically requested fields
+                        for field_name, field_value in basic_fields_map.items():
+                            if field_name in fields:
+                                project_data[field_name] = field_value
+                    else:
+                        # Add all basic fields when no specific fields requested
+                        project_data.update(basic_fields_map)
+                    
+                    # Add financial details if requested or specific financial fields are requested
+                    financial_fields = ['presales_info', 'revenue_info', 'cash_collection_info', 
+                                      'presales_distribution_percentages', 'revenue_distribution_percentages',
+                                      'cash_collection_schedules_raw', 'construction_schedule']
+                    
+                    # Check if any financial field is requested or include_financials is True
+                    should_process_financials = include_financials or (fields and any(f in fields for f in financial_fields))
+                    
+                    if should_process_financials:
                         # Get presales distribution (these are PERCENTAGES, not units)
                         presales_dist_pct = project.get('presales_distribution', {})
                         total_units = project.get('total_units', 0)
@@ -260,7 +292,8 @@ def register_real_estate_tools(tool_system):
                             if year <= current_year:
                                 cumulative_cash_collected += amount
                         
-                        project_data.update({
+                        # Create financial data dictionary
+                        financial_data = {
                             # Original percentage data with clear labeling
                             "presales_distribution_percentages": presales_dist_pct,
                             "presales_distribution_note": "IMPORTANT: presales_distribution contains PERCENTAGES, not unit counts",
@@ -302,7 +335,17 @@ def register_real_estate_tools(tool_system):
                                 "remaining_cash_to_collect_billion_vnd": (total_revenue - cumulative_cash_collected) / 1e9 if total_revenue else 0
                             },
                             "construction_schedule": project.get('construction_schedule', {})
-                        })
+                        }
+                        
+                        # Add financial fields based on field selection
+                        if fields:
+                            # Only add requested financial fields
+                            for field_name, field_value in financial_data.items():
+                                if field_name in fields:
+                                    project_data[field_name] = field_value
+                        else:
+                            # Add all financial fields if no specific fields requested
+                            project_data.update(financial_data)
                         
                         # Calculate and add advanced financial metrics
                         # Use saved IRR if available, otherwise calculate it
@@ -314,7 +357,8 @@ def register_real_estate_tools(tool_system):
                         total_debt = project.get('total_debt', 0) or 0
                         cash_burden = total_debt + cumulative_interest
                         
-                        project_data.update({
+                        # Add advanced financial metrics
+                        advanced_metrics = {
                             "total_revenue": project.get('total_revenue'),
                             "total_cogs": project.get('total_cogs'),
                             "gross_margin": project.get('gross_margin'),
@@ -326,10 +370,18 @@ def register_real_estate_tools(tool_system):
                             "cumulative_interest": cumulative_interest,
                             "cash_burden": cash_burden,
                             "debt_to_revenue_ratio": (total_debt / project.get('total_revenue', 1)) if project.get('total_revenue') else None
-                        })
+                        }
+                        
+                        # Add advanced metrics based on field selection
+                        if fields:
+                            for field_name, field_value in advanced_metrics.items():
+                                if field_name in fields:
+                                    project_data[field_name] = field_value
+                        else:
+                            project_data.update(advanced_metrics)
                     
-                    # Add AI assumptions if requested
-                    if include_assumptions:
+                    # Add AI assumptions if requested or in fields
+                    if include_assumptions or (fields and "ai_assumptions" in fields):
                         project_data["ai_assumptions"] = project.get('ai_assumptions', {})
                     
                     result_projects.append(project_data)
@@ -344,10 +396,10 @@ def register_real_estate_tools(tool_system):
                 }
                 
             except Exception as e:
-                # Fallback to CSV on error
+                # Fallback to MongoDB via _load_real_estate_projects on error
                 pass
         
-        # Fallback to CSV
+        # Fallback to MongoDB via _load_real_estate_projects
         df = tool_system._load_real_estate_projects()
         
         if df.empty:
@@ -364,7 +416,12 @@ def register_real_estate_tools(tool_system):
             return {"error": f"Projects not found", "status": "failed"}
         
         # Select columns based on request
-        if include_financials:
+        if fields:
+            # Always include project_name and company_ticker
+            cols = ['project_name', 'company_ticker']
+            # Add requested fields that exist in the dataframe
+            cols.extend([f for f in fields if f in df.columns and f not in cols])
+        elif include_financials:
             cols = df.columns.tolist()
         else:
             cols = ['project_name', 'company_ticker', 'location', 'total_units',
