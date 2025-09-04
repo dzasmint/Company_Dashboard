@@ -1447,154 +1447,6 @@ def register_financial_forecast_tools(tool_system):
         return trends
     
     @tool_system.tool(
-        name="analyze_financial_trends",
-        description="Analyze financial trends and calculate growth rates (annual and quarterly)",
-        parameters={
-            "ticker": {
-                "type": "string",
-                "description": "Company ticker",
-                "required": True
-            },
-            "metrics": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Metrics to analyze",
-                "required": False
-            },
-            "period_type": {
-                "type": "string",
-                "enum": ["yoy", "cagr", "qoq", "ttm"],
-                "description": "Type of growth calculation (yoy=year-over-year, qoq=quarter-over-quarter, ttm=trailing twelve months)",
-                "required": False
-            },
-            "data_frequency": {
-                "type": "string",
-                "enum": ["annual", "quarterly"],
-                "description": "Use annual or quarterly data",
-                "required": False
-            }
-        }
-    )
-    def analyze_financial_trends(ticker: str, metrics: List[str] = None,
-                                period_type: str = "yoy", 
-                                data_frequency: str = "annual") -> Dict:
-        """Analyze financial trends with support for quarterly data"""
-        
-        ticker = ticker.upper()
-        
-        # Load appropriate data based on frequency
-        if data_frequency == "quarterly":
-            df = tool_system._load_quarterly_financial_statements()
-        else:
-            df = tool_system._load_financial_statements_csv()
-
-        if df.empty:
-            return {"error": f"{data_frequency.capitalize()} financial data not available", "status": "failed"}
-        
-        # Filter by ticker
-        df = df[df['TICKER'] == ticker]
-        
-        if df.empty:
-            return {"error": f"No data found for {ticker}", "status": "failed"}
-        
-        # Default metrics if not specified
-        if not metrics:
-            metrics = ['Net_Revenue', 'EBITDA', 'NPATMI', 'Gross_Profit']
-        
-        trends = {}
-        
-        for metric in metrics:
-            metric_df = df[df['KEYCODE'] == metric].sort_values('DATE')
-            
-            if not metric_df.empty:
-                if data_frequency == "quarterly":
-                    # Handle quarterly data
-                    values = []
-                    for _, row in metric_df.iterrows():
-                        date_str = row['DATE']
-                        value = row['VALUE']
-                        
-                        # Calculate QoQ if requested
-                        qoq_growth = None
-                        if period_type == "qoq" and len(values) > 0:
-                            prev_value = values[-1]['VALUE']
-                            if prev_value != 0:
-                                qoq_growth = ((value - prev_value) / abs(prev_value)) * 100
-                        
-                        # Calculate YoY for quarterly data
-                        yoy_growth = None
-                        if period_type in ["yoy", "ttm"]:
-                            # Find same quarter last year
-                            year = int(date_str[:4])
-                            quarter = date_str[4:]
-                            prev_year_date = f"{year-1}{quarter}"
-                            prev_year_row = metric_df[metric_df['DATE'] == prev_year_date]
-                            if not prev_year_row.empty:
-                                prev_value = prev_year_row.iloc[0]['VALUE']
-                                if prev_value != 0:
-                                    yoy_growth = ((value - prev_value) / abs(prev_value)) * 100
-                        
-                        values.append({
-                            'DATE': date_str,
-                            'VALUE': value,
-                            'YoY': yoy_growth,
-                            'QoQ': qoq_growth
-                        })
-                    
-                    # Calculate TTM if requested
-                    if period_type == "ttm" and len(values) >= 4:
-                        ttm_values = []
-                        for i in range(3, len(values)):
-                            ttm_sum = sum(values[j]['VALUE'] for j in range(i-3, i+1))
-                            ttm_values.append({
-                                'DATE': values[i]['DATE'],
-                                'TTM_VALUE': ttm_sum,
-                                'TTM_YoY': values[i].get('YoY')
-                            })
-                        
-                        trends[metric] = {
-                            "values": values[-8:],  # Last 2 years of quarterly data
-                            "ttm_values": ttm_values[-4:],  # Last year of TTM
-                            "latest_ttm": ttm_values[-1]['TTM_VALUE'] if ttm_values else None
-                        }
-                    else:
-                        trends[metric] = {
-                            "values": values[-8:],  # Last 2 years of quarterly data
-                            "latest_qoq": values[-1].get('QoQ') if values else None,
-                            "latest_yoy": values[-1].get('YoY') if values else None
-                        }
-                else:
-                    # Handle annual data (existing logic)
-                    values = metric_df[['DATE', 'VALUE', 'YoY']].to_dict('records')
-                    
-                    # Calculate CAGR if requested
-                    if period_type == "cagr" and len(values) > 1:
-                        first_val = values[0]['VALUE']
-                        last_val = values[-1]['VALUE']
-                        n_years = values[-1]['DATE'] - values[0]['DATE']
-                        
-                        if first_val > 0 and n_years > 0:
-                            cagr = (pow(last_val / first_val, 1/n_years) - 1) * 100
-                            trends[metric] = {
-                                "values": values,
-                                "cagr": round(cagr, 2),
-                                "period": f"{values[0]['DATE']}-{values[-1]['DATE']}"
-                            }
-                    else:
-                        trends[metric] = {
-                            "values": values,
-                            "latest_yoy": values[-1].get('YoY') if values else None
-                        }
-        
-        return {
-            "ticker": ticker,
-            "trends": trends,
-            "period_type": period_type,
-            "data_frequency": data_frequency,
-            "status": "success"
-        }
-    
-    @tool_system.tool(
         name="compare_companies",
         description="Compare financial metrics and project margins across multiple companies",
         parameters={
@@ -1736,16 +1588,14 @@ def register_financial_forecast_tools(tool_system):
         description="""Get financial forecast data from MongoDB CompanyForecast (forecast years onwards). ALL VALUES ARE IN BILLIONS VND.
         
 IMPORTANT TOKEN USAGE:
-- Default (2 years, P&L): ~600 tokens
+- Default (5 years, P&L): ~600 tokens
 - With fields parameter (e.g., revenue only): ~50 tokens
-- 1 year all statements: ~800 tokens  
-- 3 years all statements: ~1,800 tokens
 - All years (avoid): ~5,500 tokens
 - With breakdown: +2-3x tokens
 
 BEST PRACTICES:
 - USE fields PARAMETER when user asks for specific metrics (90% token reduction!)
-- Specify 1-3 years explicitly
+- Specify 1-5 years explicitly
 - Use statement_type='pnl' for income statement only
 - Only use include_breakdown=True when user asks for project details""",
         parameters={
@@ -1757,7 +1607,7 @@ BEST PRACTICES:
             "years": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Forecast years (e.g., ['2025', '2026']). ALWAYS specify 1-3 years. Default: current+next year",
+                "description": "Forecast years (e.g., ['2025', '2026']). ALWAYS specify 1-5 years. Default: current+next year",
                 "required": False
             },
             "statement_type": {
