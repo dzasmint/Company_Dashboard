@@ -780,10 +780,15 @@ def get_historical_data_cutoff():
     # Default fallback - conservative estimate
     return 2024  # Known good value from our data
 
-def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
+def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem, stream_container=None) -> str:
     """
-    Send message to OpenAI and handle tool calls
+    Send message to OpenAI and handle tool calls with streaming support
     Similar to Bank_Sample/7_DucGPT_Chatbot.py implementation
+    
+    Args:
+        user_message: The user's input message
+        tool_system: The enhanced AI tool system
+        stream_container: Optional Streamlit container for streaming responses
     """
     # Initialize session token tracking
     if 'session_total_tokens' not in st.session_state:
@@ -979,21 +984,97 @@ CRITICAL TOOL SELECTION RULES:
         while rounds < max_rounds:
             rounds += 1
             
-            # Call OpenAI
+            # Call OpenAI with streaming support
             try:
+                # Enable streaming only for final response (when no more tools expected)
+                should_stream = (rounds > 0 or not tools) and stream_container is not None
+                
                 response = st.session_state.openai_client.chat.completions.create(
                     model=os.getenv("OPENAI_MODEL", "gpt-5"),
                     messages=messages,
                     tools=tools,
                     tool_choice="auto",
-                    temperature=1
+                    temperature=1,
+                    stream=should_stream
                 )
             except Exception as e:
                 return f"❌ Error calling OpenAI: {str(e)}"
             
-            # Get assistant message and track tokens
-            assistant_message = response.choices[0].message
-            messages.append(assistant_message.model_dump())
+            # Handle streaming or regular response
+            if should_stream and stream_container is not None:
+                # Collect streamed response
+                collected_content = []
+                assistant_message = None
+                tool_calls = []
+                current_tool_call = None
+                
+                for chunk in response:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        
+                        # Handle tool calls in stream
+                        if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                            for tc_delta in delta.tool_calls:
+                                if tc_delta.index is not None:
+                                    # New or continuing tool call
+                                    while len(tool_calls) <= tc_delta.index:
+                                        tool_calls.append({
+                                            "id": "",
+                                            "type": "function",
+                                            "function": {"name": "", "arguments": ""}
+                                        })
+                                    
+                                    current_tool_call = tool_calls[tc_delta.index]
+                                    if tc_delta.id:
+                                        current_tool_call["id"] = tc_delta.id
+                                    if tc_delta.function:
+                                        if tc_delta.function.name:
+                                            current_tool_call["function"]["name"] = tc_delta.function.name
+                                        if tc_delta.function.arguments:
+                                            current_tool_call["function"]["arguments"] += tc_delta.function.arguments
+                        
+                        # Stream content to user
+                        if delta.content:
+                            collected_content.append(delta.content)
+                            # Update the stream container with accumulated content
+                            stream_container.markdown(''.join(collected_content))
+                
+                # Create assistant message from streamed data
+                if tool_calls:
+                    # Convert tool calls to proper format
+                    from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
+                    from openai.types.chat.chat_completion_message import ChatCompletionMessage
+                    formatted_tool_calls = [
+                        ChatCompletionMessageToolCall(
+                            id=tc["id"],
+                            type="function",
+                            function={"name": tc["function"]["name"], "arguments": tc["function"]["arguments"]}
+                        ) for tc in tool_calls
+                    ]
+                    assistant_message = ChatCompletionMessage(
+                        role="assistant",
+                        content=None,
+                        tool_calls=formatted_tool_calls
+                    )
+                elif collected_content:
+                    from openai.types.chat.chat_completion_message import ChatCompletionMessage
+                    assistant_message = ChatCompletionMessage(
+                        role="assistant",
+                        content=''.join(collected_content)
+                    )
+                else:
+                    # Empty response
+                    from openai.types.chat.chat_completion_message import ChatCompletionMessage
+                    assistant_message = ChatCompletionMessage(
+                        role="assistant",
+                        content=""
+                    )
+                
+                messages.append(assistant_message.model_dump())
+            else:
+                # Non-streaming response
+                assistant_message = response.choices[0].message
+                messages.append(assistant_message.model_dump())
             
             # Track tokens from OpenAI response (if available)
             if hasattr(response, 'usage') and response.usage:
@@ -1260,11 +1341,14 @@ def render_enhanced_ai_interface():
         with st.chat_message("assistant"):
             response_container = st.empty()
             
-            # Process with OpenAI and tools
-            response = chat_with_ai(user_input, tool_system)
+            # Process with OpenAI and tools (with streaming support)
+            response = chat_with_ai(user_input, tool_system, stream_container=response_container)
             
-            # Display response
-            response_container.write(response)
+            # Display response (only if not already streamed)
+            if isinstance(response, str):
+                # Either an error or the full response with token info
+                # Clear container and write the full response
+                response_container.markdown(response)
             
             # Add to history
             st.session_state.enhanced_chat_history.append({
