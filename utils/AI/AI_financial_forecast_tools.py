@@ -1737,12 +1737,14 @@ def register_financial_forecast_tools(tool_system):
         
 IMPORTANT TOKEN USAGE:
 - Default (2 years, P&L): ~600 tokens
+- With fields parameter (e.g., revenue only): ~50 tokens
 - 1 year all statements: ~800 tokens  
 - 3 years all statements: ~1,800 tokens
 - All years (avoid): ~5,500 tokens
 - With breakdown: +2-3x tokens
 
 BEST PRACTICES:
+- USE fields PARAMETER when user asks for specific metrics (90% token reduction!)
 - Specify 1-3 years explicitly
 - Use statement_type='pnl' for income statement only
 - Only use include_breakdown=True when user asks for project details""",
@@ -1764,6 +1766,12 @@ BEST PRACTICES:
                 "description": "Financial statement type. Use 'pnl' for most queries. Default: 'pnl'",
                 "required": False
             },
+            "fields": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific fields to return (e.g., ['revenue', 'npatmi', 'ebitda']). Common P&L fields: revenue, gross_profit, ebitda, npatmi, npm, gross_margin. Balance sheet: total_assets, total_debt, total_equity. DRAMATICALLY reduces token usage!",
+                "required": False
+            },
             "include_breakdown": {
                 "type": "boolean",
                 "description": "Include project-level breakdown (adds significant data). Default: false",
@@ -1772,7 +1780,8 @@ BEST PRACTICES:
         }
     )
     def get_financial_forecasts(ticker: str, years: List[str] = None, 
-                                statement_type: str = "pnl", 
+                                statement_type: str = "pnl",
+                                fields: List[str] = None,
                                 include_breakdown: bool = False) -> Dict:
         """Get financial forecast data from MongoDB CompanyForecast collection"""
         
@@ -1831,6 +1840,9 @@ BEST PRACTICES:
                     # Convert P&L values from raw VND to billions
                     pnl_converted = {}
                     for key, value in year_data.get('pnl', {}).items():
+                        # Filter by fields if specified
+                        if fields and key not in fields:
+                            continue
                         if isinstance(value, (int, float)) and key not in ['tax_rate']:
                             pnl_converted[key] = value / 1e9  # Convert to billions
                         else:
@@ -1841,32 +1853,48 @@ BEST PRACTICES:
                     bs_data = year_data.get('balance_sheet', {})
                     for section, items in bs_data.items():
                         if isinstance(items, dict):
-                            bs_converted[section] = {}
+                            section_data = {}
                             for key, value in items.items():
+                                # Filter by fields if specified
+                                if fields and key not in fields:
+                                    continue
                                 if isinstance(value, (int, float)):
-                                    bs_converted[section][key] = value / 1e9
+                                    section_data[key] = value / 1e9
                                 else:
-                                    bs_converted[section][key] = value
+                                    section_data[key] = value
+                            # Only add section if it has data
+                            if section_data:
+                                bs_converted[section] = section_data
                         elif isinstance(items, (int, float)):
-                            bs_converted[section] = items / 1e9
+                            if not fields or section in fields:
+                                bs_converted[section] = items / 1e9
                         else:
-                            bs_converted[section] = items
+                            if not fields or section in fields:
+                                bs_converted[section] = items
                     
                     # Convert Cash Flow values from raw VND to billions
                     cf_converted = {}
                     cf_data = year_data.get('cash_flow', {})
                     for section, items in cf_data.items():
                         if isinstance(items, dict):
-                            cf_converted[section] = {}
+                            section_data = {}
                             for key, value in items.items():
+                                # Filter by fields if specified
+                                if fields and key not in fields:
+                                    continue
                                 if isinstance(value, (int, float)):
-                                    cf_converted[section][key] = value / 1e9
+                                    section_data[key] = value / 1e9
                                 else:
-                                    cf_converted[section][key] = value
+                                    section_data[key] = value
+                            # Only add section if it has data
+                            if section_data:
+                                cf_converted[section] = section_data
                         elif isinstance(items, (int, float)):
-                            cf_converted[section] = items / 1e9
+                            if not fields or section in fields:
+                                cf_converted[section] = items / 1e9
                         else:
-                            cf_converted[section] = items
+                            if not fields or section in fields:
+                                cf_converted[section] = items
                     
                     result_data[year] = {
                         'pnl': pnl_converted,
@@ -1880,6 +1908,9 @@ BEST PRACTICES:
                     
                     if statement_type == 'pnl':
                         for key, value in statement_data.items():
+                            # Filter by fields if specified
+                            if fields and key not in fields:
+                                continue
                             if isinstance(value, (int, float)) and key not in ['tax_rate']:
                                 converted_data[key] = value / 1e9
                             else:
@@ -1888,16 +1919,25 @@ BEST PRACTICES:
                         # For balance_sheet and cash_flow (nested structure)
                         for section, items in statement_data.items():
                             if isinstance(items, dict):
-                                converted_data[section] = {}
+                                section_data = {}
                                 for key, value in items.items():
+                                    # Filter by fields if specified
+                                    if fields and key not in fields:
+                                        continue
                                     if isinstance(value, (int, float)):
-                                        converted_data[section][key] = value / 1e9
+                                        section_data[key] = value / 1e9
                                     else:
-                                        converted_data[section][key] = value
+                                        section_data[key] = value
+                                # Only add section if it has data
+                                if section_data:
+                                    converted_data[section] = section_data
                             elif isinstance(items, (int, float)):
-                                converted_data[section] = items / 1e9
+                                # Single values at section level
+                                if not fields or section in fields:
+                                    converted_data[section] = items / 1e9
                             else:
-                                converted_data[section] = items
+                                if not fields or section in fields:
+                                    converted_data[section] = items
                     
                     result_data[year] = {statement_type: converted_data}
                 
@@ -1905,13 +1945,18 @@ BEST PRACTICES:
                 if include_breakdown and 'project_breakdown' in year_data:
                     breakdown_converted = {}
                     for metric, projects in year_data['project_breakdown'].items():
+                        # Filter breakdown by fields if specified
+                        if fields and metric not in fields:
+                            continue
                         breakdown_converted[metric] = {}
                         for project, value in projects.items():
                             if isinstance(value, (int, float)):
                                 breakdown_converted[metric][project] = value / 1e9
                             else:
                                 breakdown_converted[metric][project] = value
-                    result_data[year]['project_breakdown'] = breakdown_converted
+                    # Only add breakdown if it has data
+                    if breakdown_converted:
+                        result_data[year]['project_breakdown'] = breakdown_converted
                     
                     # Add profitability metrics if available (keep as percentages)
                     if 'profitability_metrics' in year_data:
