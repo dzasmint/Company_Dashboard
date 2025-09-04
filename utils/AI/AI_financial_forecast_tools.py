@@ -16,7 +16,7 @@ def register_financial_forecast_tools(tool_system):
     """
     @tool_system.tool(
         name="get_historical_financials",
-        description="Get historical financial statements from parquet data (2016-2024, quarterly and annual)",
+        description="Get historical financial statements from parquet data (2016-current year, quarterly and annual)",
         parameters={
             "tickers": {
                 "type": "array",
@@ -33,7 +33,7 @@ def register_financial_forecast_tools(tool_system):
             "years": {
                 "type": "array",
                 "items": {"type": "integer"},
-                "description": "Historical years to retrieve (2016-2024)",
+                "description": "Historical years to retrieve (2016 to latest available)",
                 "required": False
             },
             "period_type": {
@@ -45,7 +45,7 @@ def register_financial_forecast_tools(tool_system):
             "quarters": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Specific quarters (e.g., ['2024Q1', '2024Q2', '2024Q3'])",
+                "description": "Specific quarters (e.g., ['2023Q1', '2023Q2', '2023Q3'])",
                 "required": False
             }
         }
@@ -118,7 +118,7 @@ def register_financial_forecast_tools(tool_system):
         
         # Filter by year from quarters (e.g., get all quarters for specific years)
         if years and data_type == "quarterly" and not quarters:
-            # Extract year from quarterly DATE (e.g., '2024Q1' -> 2024)
+            # Extract year from quarterly DATE (e.g., '2023Q1' -> 2023)
             df['YEAR_NUM'] = df['DATE'].str[:4].astype(int)
             df = df[df['YEAR_NUM'].isin(years)]
             df = df.drop('YEAR_NUM', axis=1)
@@ -951,7 +951,7 @@ def register_financial_forecast_tools(tool_system):
     
     @tool_system.tool(
         name="calculate_balance_sheet_ratios",
-        description="ALWAYS USE THIS TOOL for ANY balance sheet ratios, leverage metrics, debt analysis, liquidity ratios, or solvency questions. Calculates ALL balance sheet and leverage ratios including: current ratio (liquidity), quick ratio, debt/equity, net debt/equity, debt/assets, debt/EBITDA, EBITDA/interest (coverage), assets/equity (leverage multiplier), liabilities/assets. Can analyze trends over time (historical 2016-2024 + forecast 2025+). USE THIS for questions about: leverage, gearing, debt levels, liquidity, solvency, balance sheet strength, financial stability, debt capacity, interest coverage. Supports both annual and quarterly data. For quarterly: use year_start and year_end with period_type='quarterly' to get all quarters in range (e.g., 2023-2024 gives Q1'23 through Q4'24), OR use quarters parameter for specific quarters.",
+        description="ALWAYS USE THIS TOOL for ANY balance sheet ratios, leverage metrics, debt analysis, liquidity ratios, or solvency questions. Calculates ALL balance sheet and leverage ratios including: current ratio (liquidity), quick ratio, debt/equity, net debt/equity, debt/assets, debt/EBITDA, EBITDA/interest (coverage), assets/equity (leverage multiplier), liabilities/assets. Can analyze trends over time (historical data + forecasts). USE THIS for questions about: leverage, gearing, debt levels, liquidity, solvency, balance sheet strength, financial stability, debt capacity, interest coverage. Supports both annual and quarterly data. For quarterly: use year_start and year_end with period_type='quarterly' to get all quarters in range, OR use quarters parameter for specific quarters.",
         parameters={
             "ticker": {
                 "type": "string",
@@ -965,13 +965,13 @@ def register_financial_forecast_tools(tool_system):
             },
             "year_end": {
                 "type": "integer",
-                "description": "End year. For quarterly: 2024 means through Q4'24. For annual: 2024 means full year 2024. If not provided, returns single year",
+                "description": "End year. For quarterly: year means through Q4. For annual: returns full year. If not provided, returns single year",
                 "required": False
             },
             "period_type": {
                 "type": "string",
                 "enum": ["annual", "quarterly"],
-                "description": "Period type: 'annual' for yearly data, 'quarterly' for quarterly data. When using quarterly with year_start=2023 and year_end=2024, returns all 8 quarters (Q1'23 through Q4'24)",
+                "description": "Period type: 'annual' for yearly data, 'quarterly' for quarterly data. When using quarterly with year_start and year_end, returns all quarters in range",
                 "required": False
             },
             "quarters": {
@@ -1020,7 +1020,10 @@ def register_financial_forecast_tools(tool_system):
         else:
             df_historical = tool_system._load_financial_statements_csv()
             
-        historical_cutoff = 2024  # Default fallback
+        # Dynamic fallback based on current year
+        import datetime
+        current_year = datetime.datetime.now().year
+        historical_cutoff = current_year - 1  # Assume data up to last year by default
         if not df_historical.empty:
             # Get the maximum year available in historical data for this ticker
             df_ticker = df_historical[df_historical['TICKER'] == ticker]
@@ -1093,7 +1096,7 @@ def register_financial_forecast_tools(tool_system):
                     
                     if year <= historical_cutoff:
                         # Get quarterly historical data
-                        # The DATE column contains the full quarter string like "2024Q1"
+                        # The DATE column contains the full quarter string like "YYYYQ#"
                         df_quarter = df_historical[(df_historical['TICKER'] == ticker) & 
                                                   (df_historical['DATE'] == quarter)]
                         
@@ -1135,7 +1138,7 @@ def register_financial_forecast_tools(tool_system):
                 quarters_found = []
                 for q in ['Q1', 'Q2', 'Q3', 'Q4']:
                     quarter = f"{year}{q}"
-                    # The DATE column contains the full quarter string like "2024Q1"
+                    # The DATE column contains the full quarter string like "YYYYQ#"
                     df_quarter = df_historical[(df_historical['TICKER'] == ticker) & 
                                               (df_historical['DATE'] == quarter)]
                     
@@ -1731,7 +1734,19 @@ def register_financial_forecast_tools(tool_system):
     
     @tool_system.tool(
         name="get_financial_forecasts",
-        description="Get financial forecast data from MongoDB CompanyForecast (2025-2030+). ALL VALUES ARE IN BILLIONS VND",
+        description="""Get financial forecast data from MongoDB CompanyForecast (forecast years onwards). ALL VALUES ARE IN BILLIONS VND.
+        
+IMPORTANT TOKEN USAGE:
+- Default (2 years, P&L): ~600 tokens
+- 1 year all statements: ~800 tokens  
+- 3 years all statements: ~1,800 tokens
+- All years (avoid): ~5,500 tokens
+- With breakdown: +2-3x tokens
+
+BEST PRACTICES:
+- Specify 1-3 years explicitly
+- Use statement_type='pnl' for income statement only
+- Only use include_breakdown=True when user asks for project details""",
         parameters={
             "ticker": {
                 "type": "string",
@@ -1741,24 +1756,24 @@ def register_financial_forecast_tools(tool_system):
             "years": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Forecast years (e.g., ['2025', '2026'])",
+                "description": "Forecast years (e.g., ['2025', '2026']). ALWAYS specify 1-3 years. Default: current+next year",
                 "required": False
             },
             "statement_type": {
                 "type": "string",
                 "enum": ["pnl", "balance_sheet", "cash_flow", "all"],
-                "description": "Financial statement type",
+                "description": "Financial statement type. Use 'pnl' for most queries. Default: 'pnl'",
                 "required": False
             },
             "include_breakdown": {
                 "type": "boolean",
-                "description": "Include project-level breakdown",
+                "description": "Include project-level breakdown (adds significant data). Default: false",
                 "required": False
             }
         }
     )
     def get_financial_forecasts(ticker: str, years: List[str] = None, 
-                                statement_type: str = "all", 
+                                statement_type: str = "pnl", 
                                 include_breakdown: bool = False) -> Dict:
         """Get financial forecast data from MongoDB CompanyForecast collection"""
         
@@ -1784,6 +1799,26 @@ def register_financial_forecast_tools(tool_system):
             # Extract forecast data
             forecast_data = forecast_doc.get('forecast_data', {})
             available_years = forecast_doc.get('forecast_years', [])
+            
+            # Smart default: If no years specified, use current and next year only
+            if years is None:
+                import datetime
+                current_year = datetime.datetime.now().year
+                
+                # Get historical cutoff dynamically (same logic as in calculate_balance_sheet_ratios)
+                historical_cutoff = current_year - 1  # Default: assume data up to last year
+                try:
+                    # Check if we have any historical data to determine cutoff
+                    if available_years:
+                        # First available forecast year minus 1 is the historical cutoff
+                        first_forecast_year = int(min(available_years))
+                        historical_cutoff = first_forecast_year - 1
+                except:
+                    pass
+                
+                # Use first two forecast years as default
+                forecast_start = historical_cutoff + 1
+                years = [str(forecast_start), str(forecast_start + 1)]
             
             # Filter by years if specified
             if years:
@@ -1905,11 +1940,13 @@ def register_financial_forecast_tools(tool_system):
                             cagr = (pow(last_revenue / first_revenue, 1/n_years) - 1) * 100
                             summary['revenue_cagr'] = round(cagr, 2)
             
-            return {
+            # Add data size warning if response is large
+            import json
+            response = {
                 "ticker": ticker,
                 "forecast_data": result_data,
                 "available_years": available_years,
-                "years_requested": years if years else "all",
+                "years_requested": years,
                 "statement_type": statement_type,
                 "summary": summary,
                 "assumptions": forecast_doc.get('assumptions', []),
@@ -1917,9 +1954,142 @@ def register_financial_forecast_tools(tool_system):
                 "status": "success"
             }
             
+            # Check response size and add warning
+            try:
+                response_size = len(json.dumps(response, default=str))
+                if response_size > 12000:  # ~3000 tokens
+                    response["data_size_warning"] = f"Large response ({response_size} chars, ~{response_size//4} tokens). Consider using fewer years or specific statement_type."
+            except:
+                pass
+                
+            return response
+            
         except Exception as e:
             return {"error": str(e), "status": "failed"}
     
+    
+    @tool_system.tool(
+        name="get_forecast_summary",
+        description="Get lightweight forecast summary with key metrics only (optimized for low token usage)",
+        parameters={
+            "ticker": {
+                "type": "string",
+                "description": "Company ticker (available: DXG, KDH, NTL, TAL, TCH)",
+                "required": True
+            },
+            "years": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Forecast years (e.g., ['2025', '2026']). Default: current+next year",
+                "required": False
+            }
+        }
+    )
+    def get_forecast_summary(ticker: str, years: List[str] = None) -> Dict:
+        """Get lightweight forecast summary with key metrics only"""
+        
+        ticker = ticker.upper()
+        
+        # Check MongoDB connection
+        if tool_system.vietnam_stocks_db is None:
+            return {"error": "MongoDB not connected", "status": "failed"}
+        
+        try:
+            collection = tool_system.vietnam_stocks_db['CompanyForecast']
+            
+            # Get forecast document
+            forecast_doc = collection.find_one({'ticker': ticker}, {'_id': 0})
+            
+            if not forecast_doc:
+                return {
+                    "error": f"No forecast data for {ticker}",
+                    "status": "failed"
+                }
+            
+            # Smart default: current and next year
+            if years is None:
+                # Get available years from forecast data
+                available_years = forecast_doc.get('forecast_years', [])
+                
+                # Determine historical cutoff dynamically
+                import datetime
+                current_year = datetime.datetime.now().year
+                historical_cutoff = current_year - 1  # Assume data up to last year by default
+                try:
+                    if available_years:
+                        # First available forecast year minus 1 is the historical cutoff
+                        first_forecast_year = int(min(available_years))
+                        historical_cutoff = first_forecast_year - 1
+                except:
+                    pass
+                
+                # Use first two forecast years as default
+                forecast_start = historical_cutoff + 1
+                years = [str(forecast_start), str(forecast_start + 1)]
+            
+            forecast_data = forecast_doc.get('forecast_data', {})
+            
+            # Extract only key metrics
+            summary_data = {}
+            for year in years:
+                if year in forecast_data:
+                    year_data = forecast_data[year]
+                    
+                    # Key P&L metrics (handle nested structure)
+                    pnl = year_data.get('pnl', {})
+                    
+                    # Key balance sheet metrics (handle nested structure)
+                    bs = year_data.get('balance_sheet', {})
+                    assets = bs.get('assets', {}) if isinstance(bs.get('assets'), dict) else {}
+                    liabilities = bs.get('liabilities', {}) if isinstance(bs.get('liabilities'), dict) else {}
+                    equity = bs.get('equity', {}) if isinstance(bs.get('equity'), dict) else {}
+                    
+                    # Extract values with proper error handling
+                    revenue = pnl.get('net_revenue', 0) if isinstance(pnl, dict) else 0
+                    gross_profit = pnl.get('gross_profit', 0) if isinstance(pnl, dict) else 0
+                    ebitda = pnl.get('ebitda', 0) if isinstance(pnl, dict) else 0
+                    npatmi = pnl.get('npatmi', 0) if isinstance(pnl, dict) else 0
+                    total_assets = assets.get('total_assets', 0)
+                    total_equity = equity.get('total_equity', 0)
+                    net_debt_value = bs.get('net_debt', 0) if isinstance(bs, dict) else 0
+                    
+                    summary_data[year] = {
+                        "revenue": round(revenue / 1e9, 1) if revenue else 0,
+                        "gross_profit": round(gross_profit / 1e9, 1) if gross_profit else 0,
+                        "ebitda": round(ebitda / 1e9, 1) if ebitda else 0,
+                        "npatmi": round(npatmi / 1e9, 1) if npatmi else 0,
+                        "gross_margin": round(gross_profit / revenue * 100, 1) if revenue > 0 else 0,
+                        "net_margin": round(npatmi / revenue * 100, 1) if revenue > 0 else 0,
+                        "total_assets": round(total_assets / 1e9, 1) if total_assets else 0,
+                        "total_equity": round(total_equity / 1e9, 1) if total_equity else 0,
+                        "net_debt": round(net_debt_value / 1e9, 1),
+                        "roe": round(npatmi / total_equity * 100, 1) if total_equity > 0 else 0
+                    }
+            
+            # Calculate growth rates if multiple years
+            growth_metrics = {}
+            if len(years) >= 2 and all(y in summary_data for y in years[:2]):
+                y1, y2 = years[0], years[1]
+                for metric in ['revenue', 'npatmi']:
+                    val1 = summary_data[y1].get(metric, 0)
+                    val2 = summary_data[y2].get(metric, 0)
+                    if val1 > 0:
+                        growth = ((val2 / val1) - 1) * 100
+                        growth_metrics[f"{metric}_growth_{y1}_{y2}"] = round(growth, 1)
+            
+            return {
+                "ticker": ticker,
+                "years": years,
+                "summary": summary_data,
+                "growth_rates": growth_metrics,
+                "units": "billions VND",
+                "status": "success",
+                "token_efficient": True,
+                "note": "This is a lightweight summary. Use get_financial_forecasts for detailed data."
+            }
+            
+        except Exception as e:
+            return {"error": str(e), "status": "failed"}
     
     @tool_system.tool(
         name="analyze_project_contribution_to_forecast", 

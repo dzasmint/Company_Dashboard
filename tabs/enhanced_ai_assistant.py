@@ -904,6 +904,11 @@ def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem) -> str:
     if 'compressed_conversation_history' not in st.session_state:
         st.session_state.compressed_conversation_history = []
     
+    # Initialize session token tracking
+    if 'session_total_tokens' not in st.session_state:
+        st.session_state.session_total_tokens = 0
+        st.session_state.session_total_cost = 0.0
+    
     # Initialize pending charts in session state if not exists
     if 'pending_charts' not in st.session_state:
         st.session_state.pending_charts = []
@@ -946,12 +951,24 @@ CRITICAL TOOL SELECTION RULES:
    - Supports annual and quarterly data
    - Years are integers: {historical_cutoff-1}, {historical_cutoff}
 
-2. **get_financial_forecasts** - Forecast data ({forecast_start}-2030+)
+2. **get_forecast_summary** - Lightweight forecast summary (USE THIS FIRST!)
+   - Returns key metrics only: revenue, NPATMI, margins, ROE
+   - Optimized for quick analysis (~200 tokens vs 800-5000)
+   - Perfect for overview questions and comparisons
+
+3. **get_financial_forecasts** - Detailed forecast data ({forecast_start}-2030+)
+   - Use ONLY when user needs detailed financial statements
    - Available for: DXG, KDH, NTL, NLG, TAL, TCH, etc. in (MongoDB)
    - Returns P&L, Balance Sheet, Cash Flow projections
    - Years are strings: "{forecast_start}", "{forecast_start+1}"
+   - TOKEN OPTIMIZATION REQUIRED:
+     * ALWAYS specify 1-3 years explicitly (e.g., ["2025", "2026"])
+     * Use statement_type="pnl" for income statement questions
+     * Use statement_type="all" only when user needs complete financials
+     * Set include_breakdown=True ONLY if user asks for project details
+     * Default behavior (2 years, P&L) is optimized for most queries
 
-3. **calculate_period_metrics** - Smart period calculations
+4. **calculate_period_metrics** - Smart period calculations
    - Handles half-year periods: 1HYY, 2HYY (H = half year, YY = year)
    - Handles quarters: 1QYY, 2QYY, 3QYY, 4QYY
    - AUTOMATICALLY derives values when possible:
@@ -961,13 +978,13 @@ CRITICAL TOOL SELECTION RULES:
 
 **Valuation & Scoring Tools:**
 
-4. **get_valuation_analysis** - Comprehensive valuation metrics
+5. **get_valuation_analysis** - Comprehensive valuation metrics
    - Combines all valuation ratios (P/E, P/B, EV/EBITDA, etc.)
    - Historical and forward multiples
    - Peer comparison capabilities
    - Available for companies with forecast data
 
-5. **get_company_total_score** - Investment scoring (1-10 scale)
+6. **get_company_total_score** - Investment scoring (1-10 scale)
    - RNAV upside (25% weight)
    - Valuation multiples (30% weight)
    - Growth prospects (25% weight)
@@ -975,14 +992,14 @@ CRITICAL TOOL SELECTION RULES:
    - Returns STRONG BUY/BUY/HOLD/SELL recommendation
    - ALWAYS display full breakdown when showing scores
 
-6. **get_rnav_breakdown** - Real estate RNAV calculation
+7. **get_rnav_breakdown** - Real estate RNAV calculation
    - Detailed project-by-project analysis
    - Land value, construction costs, sales assumptions
    - Available for: KDH, TAL, TCH, NLG, NTL, DXG, etc.
 
 **Balance Sheet & Ratio Analysis:**
 
-7. **calculate_balance_sheet_ratios** - Comprehensive BS ratios
+8. **calculate_balance_sheet_ratios** - Comprehensive BS ratios
    - Supports historical (2016-{historical_cutoff}) and forecast ({forecast_start}+) data
    - Quarterly and annual calculations
    - Key ratios: debt_to_equity, net_debt_to_equity, current_ratio, etc.
@@ -990,40 +1007,40 @@ CRITICAL TOOL SELECTION RULES:
 
 **Trend & Comparison Tools:**
 
-8. **analyze_financial_trends** - Multi-year trend analysis
+9. **analyze_financial_trends** - Multi-year trend analysis
    - Growth rates, margins, returns over time
    - Identifies inflection points and patterns
 
-9. **compare_companies** - Peer comparison
+10. **compare_companies** - Peer comparison
    - Side-by-side financial metrics
    - Relative valuation analysis
    - Sector benchmarking
 
 **Real Estate Project Tools:**
 
-10. **list_real_estate_projects** - Project inventory
+11. **list_real_estate_projects** - Project inventory
     - Filter by ticker, status, location
     - Summary statistics
 
-11. **get_project_details** - Detailed project financials
+12. **get_project_details** - Detailed project financials
     - IRR, NPV, margins, timeline
     - Construction progress, sales status
 
-12. **rank_projects_by_metric** - Project ranking
+13. **rank_projects_by_metric** - Project ranking
     - Sort by IRR, NPV, margin, size
     - Investment prioritization
 
-13. **calculate_rnav_sensitivity** - RNAV sensitivity analysis
+14. **calculate_rnav_sensitivity** - RNAV sensitivity analysis
     - Test different ASP, cost, discount rate assumptions
     - Scenario planning
 
 **Advanced Forecast Tools:**
 
-14. **analyze_project_contribution_to_forecast** - Project impact analysis
+15. **analyze_project_contribution_to_forecast** - Project impact analysis
     - How individual projects affect company forecasts
     - Revenue/profit contribution by project
 
-15. **get_comprehensive_forecast_details** - Deep forecast dive
+16. **get_comprehensive_forecast_details** - Deep forecast dive
     - Segment breakdown, project details
     - Assumptions and drivers
 
@@ -1035,12 +1052,16 @@ CRITICAL TOOL SELECTION RULES:
 
 **Key Guidelines:**
 - For years ≤{historical_cutoff}: use get_historical_financials
-- For years ≥{forecast_start}: use get_financial_forecasts
+- For years ≥{forecast_start}: use get_financial_forecasts with OPTIMIZED parameters:
+  * Specify 1-3 years max (avoid default all years)
+  * Use statement_type="pnl" for P&L questions
+  * Use include_breakdown=False unless project details needed
 - For scoring/recommendations: ALWAYS use get_company_total_score
 - For valuation: use get_valuation_analysis (consolidated tool)
 - For balance sheet metrics: use calculate_balance_sheet_ratios
 - Display full details when presenting scores or analysis
-- Cite data sources (CSV for historical, MongoDB for forecast)"""
+- Cite data sources (CSV for historical, MongoDB for forecast)
+- MINIMIZE TOKEN USAGE: Be specific with parameters to avoid large responses"""
     
     # Add context from previous conversation if available
     #if context_str:
@@ -1057,9 +1078,20 @@ CRITICAL TOOL SELECTION RULES:
     # Get tool schemas
     tools = tool_system.get_openai_tools()
     
-    # Initialize progress tracking
+    # Initialize progress tracking and token counting
     max_rounds = 20
     tool_calls_made = []  # Track tool calls for compression
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tool_tokens = 0
+    
+    # Estimate initial tokens (system prompt + user message + tool schemas)
+    import json
+    initial_messages_str = json.dumps(messages, default=str)
+    tools_str = json.dumps(tools, default=str) if tools else ""
+    initial_tokens = len(initial_messages_str) // 4 + len(tools_str) // 4
+    total_input_tokens += initial_tokens
+    
     with st.spinner("🤖 AI is analyzing..."):
         rounds = 0
         final_response = None
@@ -1080,9 +1112,21 @@ CRITICAL TOOL SELECTION RULES:
             except Exception as e:
                 return f"❌ Error calling OpenAI: {str(e)}"
             
-            # Get assistant message
+            # Get assistant message and track tokens
             assistant_message = response.choices[0].message
             messages.append(assistant_message.model_dump())
+            
+            # Track tokens from OpenAI response (if available)
+            if hasattr(response, 'usage') and response.usage:
+                if hasattr(response.usage, 'prompt_tokens'):
+                    total_input_tokens += response.usage.prompt_tokens - initial_tokens  # Avoid double counting
+                    initial_tokens = 0  # Only count initial once
+                if hasattr(response.usage, 'completion_tokens'):
+                    total_output_tokens += response.usage.completion_tokens
+            else:
+                # Estimate if not provided
+                assistant_str = json.dumps(assistant_message.model_dump(), default=str)
+                total_output_tokens += len(assistant_str) // 4
             
             # Check if there are tool calls
             if assistant_message.tool_calls:
@@ -1097,10 +1141,20 @@ CRITICAL TOOL SELECTION RULES:
                     # Update status
                     tool_call_count += 1
                     tool_calls_made.append(function_name)  # Track for compression
-                    tool_status.info(f"🔧 Executing tool #{tool_call_count}: **{function_name}**")
+                    running_total = total_input_tokens + total_output_tokens + total_tool_tokens
+                    tool_status.info(f"🔧 Executing tool #{tool_call_count}: **{function_name}** | Tokens so far: ~{running_total:,}")
                     
                     # Execute the tool
                     tool_result = execute_tool_call(tool_system, function_name, function_args)
+                    
+                    # Track tool result tokens
+                    tool_result_str = json.dumps(tool_result, default=str)
+                    tool_tokens = len(tool_result_str) // 4
+                    total_tool_tokens += tool_tokens
+                    
+                    # Add warning if tool result is large
+                    if tool_tokens > 3000:
+                        tool_result["_token_warning"] = f"Large tool response: ~{tool_tokens} tokens"
                     
                     # Check if this is a chart rendering tool
                     if function_name in ["render_chart", "create_financial_chart"] and tool_result.get("status") == "success":
@@ -1108,7 +1162,7 @@ CRITICAL TOOL SELECTION RULES:
                             st.session_state.pending_charts.append(tool_result["chart_spec"])
                     
                     # Show tool result in expander
-                    with tool_results_container.expander(f"Tool: {function_name}", expanded=False):
+                    with tool_results_container.expander(f"Tool: {function_name} (~{tool_tokens} tokens)", expanded=False):
                         st.code(json.dumps(function_args, indent=2))
                         if tool_result.get("status") == "success":
                             st.success("✅ Success")
@@ -1136,9 +1190,47 @@ CRITICAL TOOL SELECTION RULES:
             else:
                 # No more tool calls, we have the final response
                 final_response = assistant_message.content
-                # Add tool count summary
+                
+                # Calculate total tokens and cost
+                total_tokens = total_input_tokens + total_output_tokens + total_tool_tokens
+                # Estimate cost (GPT-4 pricing: $0.01 per 1K input, $0.03 per 1K output)
+                estimated_cost = (total_input_tokens * 0.01 + (total_output_tokens + total_tool_tokens) * 0.03) / 1000
+                
+                # Add usage summary
+                usage_summary = []
                 if tool_call_count > 0:
-                    final_response = f"{final_response}\n\n---\n*Analysis completed using {tool_call_count} tool{'s' if tool_call_count > 1 else ''}.*"
+                    usage_summary.append(f"Analysis completed using {tool_call_count} tool{'s' if tool_call_count > 1 else ''}")
+                
+                # Update session totals
+                st.session_state.session_total_tokens += total_tokens
+                st.session_state.session_total_cost += estimated_cost
+                
+                # Add token usage details
+                token_details = [
+                    f"**Token Usage (This Query):**",
+                    f"• Input: ~{total_input_tokens:,} tokens",
+                    f"• Output: ~{total_output_tokens:,} tokens", 
+                    f"• Tool data: ~{total_tool_tokens:,} tokens",
+                    f"• **Total: ~{total_tokens:,} tokens** (≈${estimated_cost:.3f})",
+                    f"",
+                    f"**Session Total:** ~{st.session_state.session_total_tokens:,} tokens (≈${st.session_state.session_total_cost:.3f})"
+                ]
+                
+                if total_tool_tokens > 5000:
+                    token_details.append("")
+                    token_details.append("⚠️ **Optimization Tips:**")
+                    if "get_financial_forecasts" in tool_calls_made:
+                        token_details.append("• Use `get_forecast_summary` for overview questions")
+                        token_details.append("• Specify fewer years (1-2 instead of all)")
+                        token_details.append("• Use `statement_type='pnl'` when only P&L needed")
+                    if total_tool_tokens > 10000:
+                        token_details.append("• Consider breaking query into smaller, specific questions")
+                        token_details.append("• Use year/ticker filters to reduce data volume")
+                
+                usage_summary.extend(token_details)
+                
+                if usage_summary:
+                    final_response = f"{final_response}\n\n---\n" + "\n".join(usage_summary)
                 break
         
         if not final_response:
@@ -1146,6 +1238,12 @@ CRITICAL TOOL SELECTION RULES:
                 final_response = f"Analysis completed with {tool_call_count} tool calls. The query may be too complex."
             else:
                 final_response = "Please provide a more specific question about companies, projects, or market data."
+            
+            # Add token usage even for edge cases
+            total_tokens = total_input_tokens + total_output_tokens + total_tool_tokens
+            if total_tokens > 0:
+                estimated_cost = (total_input_tokens * 0.01 + (total_output_tokens + total_tool_tokens) * 0.03) / 1000
+                final_response += f"\n\n---\n**Token Usage:** ~{total_tokens:,} tokens (≈${estimated_cost:.3f})"
         
         # Update conversation history with compressed data
         if final_response:
@@ -1229,7 +1327,24 @@ def render_enhanced_ai_interface():
             for tool in tools:
                 st.write(f"• {tool}")
         
+        # Token usage statistics
+        st.divider()
+        st.subheader("📊 Token Usage")
+        
+        if 'session_total_tokens' in st.session_state:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Session Tokens", f"{st.session_state.session_total_tokens:,}")
+            with col2:
+                st.metric("Est. Cost", f"${st.session_state.session_total_cost:.3f}")
+            
+            if st.button("Reset Session Stats"):
+                st.session_state.session_total_tokens = 0
+                st.session_state.session_total_cost = 0.0
+                st.rerun()
+        
         # Memory indicator
+        st.divider()
         if 'compressed_conversation_history' in st.session_state:
             memory_count = len(st.session_state.compressed_conversation_history)
             st.metric("Memory", f"{memory_count}/10 messages")
