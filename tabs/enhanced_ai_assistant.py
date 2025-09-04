@@ -995,8 +995,7 @@ CRITICAL TOOL SELECTION RULES:
                     tools=tools,
                     tool_choice="auto",
                     temperature=1,
-                    stream=should_stream,
-                    timeout=30.0  # Add 30 second timeout
+                    stream=should_stream
                 )
             except Exception as e:
                 return f"❌ Error calling OpenAI: {str(e)}"
