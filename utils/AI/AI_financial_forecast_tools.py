@@ -1901,7 +1901,7 @@ BEST PRACTICES:
             "fields": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Specific fields to return (e.g., ['revenue', 'npatmi', 'ebitda']). Common P&L fields: revenue, gross_profit, ebitda, npatmi, npm, gross_margin. Balance sheet: total_assets, total_debt, total_equity. DRAMATICALLY reduces token usage!",
+                "description": "Specific fields to return. Canonical P&L: net_revenue, gross_profit, sga, ebitda, interest_income, interest_expense, pbt, tax, pat, minority_interest, npatmi. Balance sheet: cash_and_equivalents, account_receivable, inventory, other_assets, total_assets, account_payable, customer_prepayment, short_term_debt, long_term_debt, total_debt, other_liabilities, total_liabilities, retained_earnings, minority_interest, other_equity, total_equity, net_debt, working_capital. Cash flow: total_operating, total_investing, total_financing, net_cash_flow. Aliases accepted: revenue/sales→net_revenue; npat/net_profit/net_income→pat; accounts_receivable→account_receivable; accounts_payable→account_payable; advance_from_customers→customer_prepayment; st_debt→short_term_debt; lt_debt→long_term_debt; cash→cash_and_equivalents; equity→total_equity; assets→total_assets; debt→total_debt; cfo→total_operating; cfi→total_investing; cff→total_financing. You can also request derived margins: gross_margin, net_margin (aka npm). DRAMATICALLY reduces token usage!",
                 "required": False
             },
             "include_breakdown": {
@@ -1965,6 +1965,45 @@ BEST PRACTICES:
                 forecast_data = {year: data for year, data in forecast_data.items() 
                                 if year in years}
             
+            # Normalize requested fields using aliases for robustness
+            def normalize_field(name: str, stmt: str) -> str:
+                n = (name or "").strip().lower()
+                # Common aliases across statements
+                common = {
+                    'revenue': 'net_revenue', 'sales': 'net_revenue', 'turnover': 'net_revenue',
+                    'npat': 'pat', 'net_profit': 'pat', 'net_income': 'pat',
+                    'accounts_receivable': 'account_receivable', 'account_receivables': 'account_receivable', 'accounts_receivables': 'account_receivable',
+                    'accounts_payable': 'account_payable', 'account_payables': 'account_payable', 'accounts_payables': 'account_payable',
+                    'advance_from_customers': 'customer_prepayment', 'advances_from_customers': 'customer_prepayment',
+                    'st_debt': 'short_term_debt', 'lt_debt': 'long_term_debt',
+                    'cash': 'cash_and_equivalents', 'cash_equivalent': 'cash_and_equivalents', 'cash_equivalents': 'cash_and_equivalents',
+                    'equity': 'total_equity', 'assets': 'total_assets', 'debt': 'total_debt',
+                    'cfo': 'total_operating', 'operating_cf': 'total_operating', 'operating_cash_flow': 'total_operating',
+                    'cfi': 'total_investing', 'investing_cf': 'total_investing',
+                    'cff': 'total_financing', 'financing_cf': 'total_financing',
+                    'npm': 'net_margin'
+                }
+                n = common.get(n, n)
+                # Statement-specific tweaks (if needed later)
+                return n
+
+            normalized_fields = None
+            derived_gross_margin = False
+            derived_net_margin = False
+            if fields:
+                normalized_fields = []
+                for f in fields:
+                    canon = normalize_field(f, statement_type)
+                    if canon in ('gross_margin', 'net_margin'):
+                        if canon == 'gross_margin':
+                            derived_gross_margin = True
+                        else:
+                            derived_net_margin = True
+                    else:
+                        normalized_fields.append(canon)
+                # Ensure uniqueness
+                normalized_fields = list(dict.fromkeys(normalized_fields))
+            
             # Filter by statement type and convert from raw VND to billions
             result_data = {}
             for year, year_data in forecast_data.items():
@@ -1973,12 +2012,21 @@ BEST PRACTICES:
                     pnl_converted = {}
                     for key, value in year_data.get('pnl', {}).items():
                         # Filter by fields if specified
-                        if fields and key not in fields:
+                        if normalized_fields and key not in normalized_fields:
                             continue
                         if isinstance(value, (int, float)) and key not in ['tax_rate']:
                             pnl_converted[key] = value / 1e9  # Convert to billions
                         else:
                             pnl_converted[key] = value
+                    # Add derived margins if requested
+                    if derived_gross_margin or derived_net_margin:
+                        rev = year_data.get('pnl', {}).get('net_revenue', 0) or 0
+                        gp = year_data.get('pnl', {}).get('gross_profit', 0) or 0
+                        pat = year_data.get('pnl', {}).get('pat', 0) or 0
+                        if derived_gross_margin and rev:
+                            pnl_converted['gross_margin'] = round(gp / rev * 100, 2)
+                        if derived_net_margin and rev:
+                            pnl_converted['net_margin'] = round(pat / rev * 100, 2)
                     
                     # Convert Balance Sheet values from raw VND to billions
                     bs_converted = {}
@@ -1988,7 +2036,7 @@ BEST PRACTICES:
                             section_data = {}
                             for key, value in items.items():
                                 # Filter by fields if specified
-                                if fields and key not in fields:
+                                if normalized_fields and key not in normalized_fields:
                                     continue
                                 if isinstance(value, (int, float)):
                                     section_data[key] = value / 1e9
@@ -1998,10 +2046,10 @@ BEST PRACTICES:
                             if section_data:
                                 bs_converted[section] = section_data
                         elif isinstance(items, (int, float)):
-                            if not fields or section in fields:
+                            if not normalized_fields or section in normalized_fields:
                                 bs_converted[section] = items / 1e9
                         else:
-                            if not fields or section in fields:
+                            if not normalized_fields or section in normalized_fields:
                                 bs_converted[section] = items
                     
                     # Convert Cash Flow values from raw VND to billions
@@ -2012,7 +2060,7 @@ BEST PRACTICES:
                             section_data = {}
                             for key, value in items.items():
                                 # Filter by fields if specified
-                                if fields and key not in fields:
+                                if normalized_fields and key not in normalized_fields:
                                     continue
                                 if isinstance(value, (int, float)):
                                     section_data[key] = value / 1e9
@@ -2022,10 +2070,10 @@ BEST PRACTICES:
                             if section_data:
                                 cf_converted[section] = section_data
                         elif isinstance(items, (int, float)):
-                            if not fields or section in fields:
+                            if not normalized_fields or section in normalized_fields:
                                 cf_converted[section] = items / 1e9
                         else:
-                            if not fields or section in fields:
+                            if not normalized_fields or section in normalized_fields:
                                 cf_converted[section] = items
                     
                     result_data[year] = {
@@ -2041,12 +2089,21 @@ BEST PRACTICES:
                     if statement_type == 'pnl':
                         for key, value in statement_data.items():
                             # Filter by fields if specified
-                            if fields and key not in fields:
+                            if normalized_fields and key not in normalized_fields:
                                 continue
                             if isinstance(value, (int, float)) and key not in ['tax_rate']:
                                 converted_data[key] = value / 1e9
                             else:
                                 converted_data[key] = value
+                        # Add derived margins if requested
+                        if (derived_gross_margin or derived_net_margin):
+                            rev = statement_data.get('net_revenue', 0) or 0
+                            gp = statement_data.get('gross_profit', 0) or 0
+                            pat = statement_data.get('pat', 0) or 0
+                            if derived_gross_margin and rev:
+                                converted_data['gross_margin'] = round(gp / rev * 100, 2)
+                            if derived_net_margin and rev:
+                                converted_data['net_margin'] = round(pat / rev * 100, 2)
                     else:
                         # For balance_sheet and cash_flow (nested structure)
                         for section, items in statement_data.items():
@@ -2054,7 +2111,7 @@ BEST PRACTICES:
                                 section_data = {}
                                 for key, value in items.items():
                                     # Filter by fields if specified
-                                    if fields and key not in fields:
+                                    if normalized_fields and key not in normalized_fields:
                                         continue
                                     if isinstance(value, (int, float)):
                                         section_data[key] = value / 1e9
@@ -2065,10 +2122,10 @@ BEST PRACTICES:
                                     converted_data[section] = section_data
                             elif isinstance(items, (int, float)):
                                 # Single values at section level
-                                if not fields or section in fields:
+                                if not normalized_fields or section in normalized_fields:
                                     converted_data[section] = items / 1e9
                             else:
-                                if not fields or section in fields:
+                                if not normalized_fields or section in normalized_fields:
                                     converted_data[section] = items
                     
                     result_data[year] = {statement_type: converted_data}
@@ -2078,7 +2135,7 @@ BEST PRACTICES:
                     breakdown_converted = {}
                     for metric, projects in year_data['project_breakdown'].items():
                         # Filter breakdown by fields if specified
-                        if fields and metric not in fields:
+                        if normalized_fields and metric not in normalized_fields:
                             continue
                         breakdown_converted[metric] = {}
                         for project, value in projects.items():
