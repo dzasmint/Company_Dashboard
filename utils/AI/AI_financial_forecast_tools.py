@@ -496,7 +496,7 @@ def register_financial_forecast_tools(tool_system):
     )
     def calculate_period_metrics(ticker: str, metric: str, period: str, 
                                 calculation_method: str = "auto") -> Dict:
-        """Calculate metrics for specific periods using available data"""
+        """Calculate metrics for specific periods using MCP tools"""
         
         ticker = ticker.upper()
         
@@ -505,204 +505,251 @@ def register_financial_forecast_tools(tool_system):
         if not period_info["year"]:
             return {
                 "error": f"Invalid period notation: {period}",
-                "example_formats": ["1H25", "2H24", "1Q25", "4Q24"],
+                "example_formats": ["3M24", "6M24", "9M24", "1H25", "2H24", "1Q25", "4Q24"],
                 "status": "failed"
             }
         
         year = period_info["year"]
-        
-        # Check data availability
-        availability = tool_system._check_data_availability(ticker, year, [metric])
         
         # Perform calculation based on period type
         if period_info["type"] == "half":
             half_num = period_info["period_num"]
             
             if half_num == 1:  # First half (Q1 + Q2)
-                if availability["can_calculate_1H"]:
-                    # Sum Q1 and Q2
-                    df_q = tool_system._load_quarterly_financial_statements()
-                    q1_data = df_q[(df_q['TICKER'] == ticker) & 
-                                    (df_q['DATE'] == f"{year}Q1") & 
-                                    (df_q['KEYCODE'] == metric)]
-                    q2_data = df_q[(df_q['TICKER'] == ticker) & 
-                                    (df_q['DATE'] == f"{year}Q2") & 
-                                    (df_q['KEYCODE'] == metric)]
-                    
-                    if not q1_data.empty and not q2_data.empty:
-                        # Convert to billions VND for consistency
-                        value = (q1_data['VALUE'].iloc[0] + q2_data['VALUE'].iloc[0]) / 1e9
-                        return {
-                            "period": f"1H{year}",
-                            "metric": metric,
-                            "value": value,
-                            "calculation": f"Q1{year} + Q2{year}",
-                            "method": "sum_quarters",
-                            "data_source": "historical_quarterly",
-                            "status": "success"
-                        }
+                # Get Q1 and Q2 data using existing MCP tool
+                result = tool_system.get_historical_quarterly_financials(
+                    tickers=[ticker],
+                    quarters=[f"{year}Q1", f"{year}Q2"],
+                    metrics=[metric],
+                    unit="raw"
+                )
+                
+                q1_value = None
+                q2_value = None
+                if result.get("status") == "success" and result.get("data"):
+                    for entry in result["data"]:
+                        if entry["TICKER"] == ticker and entry["KEYCODE"] == metric:
+                            if entry["DATE"] == f"{year}Q1":
+                                q1_value = entry["VALUE"]
+                            elif entry["DATE"] == f"{year}Q2":
+                                q2_value = entry["VALUE"]
+                
+                if q1_value is not None and q2_value is not None:
+                    # Convert to billions VND for consistency
+                    value = (q1_value + q2_value) / 1e9
+                    return {
+                        "period": f"1H{year}",
+                        "metric": metric,
+                        "value": value,
+                        "calculation": f"Q1{year} + Q2{year}",
+                        "method": "sum_quarters",
+                        "data_source": "mcp_quarterly",
+                        "status": "success"
+                    }
                 
                 return {
                     "error": f"Cannot calculate 1H{year} {metric}",
-                    "reason": f"Missing quarters: {', '.join([q for q in [f'{year}Q1', f'{year}Q2'] if q not in availability['quarters_available']])}",
-                    "available_quarters": availability["quarters_available"],
+                    "reason": f"Missing quarterly data for Q1 or Q2 {year}",
                     "status": "failed"
                 }
             
-            else:  # Second half (derive from annual or sum Q3+Q4)
-                # Try to derive from annual forecast minus 1H actual
-                if availability["annual_forecast"] and availability["can_calculate_1H"]:
-                    # Get annual forecast
-                    if tool_system.vietnam_stocks_db is not None:
-                        collection = tool_system.vietnam_stocks_db['CompanyForecast']
-                        forecast = collection.find_one({'ticker': ticker})
-                        if forecast and year in forecast.get('forecast_data', {}):
-                            # Try different locations for the metric
-                            pnl = forecast['forecast_data'][year].get('pnl', {})
-                            # Handle different naming conventions for NPATMI
-                            if metric == 'NPATMI':
-                                annual_value = pnl.get('npatmi') or pnl.get('NPATMI') or pnl.get('patmi')
-                            else:
-                                annual_value = pnl.get(metric.lower()) or pnl.get(metric)
-                            
-                            if annual_value:
-                                # Get 1H actual
-                                df_q = tool_system._load_quarterly_financial_statements()
-                                q1_data = df_q[(df_q['TICKER'] == ticker) & 
-                                                (df_q['DATE'] == f"{year}Q1") & 
-                                                (df_q['KEYCODE'] == metric)]
-                                q2_data = df_q[(df_q['TICKER'] == ticker) & 
-                                                (df_q['DATE'] == f"{year}Q2") & 
-                                                (df_q['KEYCODE'] == metric)]
-                                
-                                if not q1_data.empty and not q2_data.empty:
-                                    # Both annual_value (from MongoDB) and quarterly values are in raw VND
-                                    h1_value_raw = q1_data['VALUE'].iloc[0] + q2_data['VALUE'].iloc[0]
-                                    h2_value_raw = annual_value - h1_value_raw
-                                    
-                                    # Convert to billions for display
-                                    h1_value = h1_value_raw / 1e9
-                                    h2_value = h2_value_raw / 1e9
-                                    annual_value_bn = annual_value / 1e9
-                                    
-                                    return {
-                                        "period": f"2H{year}",
-                                        "metric": metric,
-                                        "value": h2_value,
-                                        "calculation": f"{year} Forecast ({annual_value_bn:.2f}B) - 1H{year} Actual ({h1_value:.2f}B)",
-                                        "method": "derive_from_forecast",
-                                        "data_source": "forecast_minus_actual",
-                                        "status": "success"
-                                    }
+            else:  # Second half (Q3+Q4 or derive from forecast)
+                # First, try to get Q3 and Q4 actual data
+                result = tool_system.get_historical_quarterly_financials(
+                    tickers=[ticker],
+                    quarters=[f"{year}Q3", f"{year}Q4"],
+                    metrics=[metric],
+                    unit="raw"
+                )
                 
-                # Try to sum Q3 and Q4 if available
-                if f"{year}Q3" in availability["quarters_available"] and f"{year}Q4" in availability["quarters_available"]:
-                    df_q = tool_system._load_quarterly_financial_statements()
-                    q3_data = df_q[(df_q['TICKER'] == ticker) & 
-                                    (df_q['DATE'] == f"{year}Q3") & 
-                                    (df_q['KEYCODE'] == metric)]
-                    q4_data = df_q[(df_q['TICKER'] == ticker) & 
-                                    (df_q['DATE'] == f"{year}Q4") & 
-                                    (df_q['KEYCODE'] == metric)]
+                q3_value = None
+                q4_value = None
+                if result.get("status") == "success" and result.get("data"):
+                    for entry in result["data"]:
+                        if entry["TICKER"] == ticker and entry["KEYCODE"] == metric:
+                            if entry["DATE"] == f"{year}Q3":
+                                q3_value = entry["VALUE"]
+                            elif entry["DATE"] == f"{year}Q4":
+                                q4_value = entry["VALUE"]
+                
+                # If both Q3 and Q4 exist, use actual data
+                if q3_value is not None and q4_value is not None:
+                    value = (q3_value + q4_value) / 1e9
+                    return {
+                        "period": f"2H{year}",
+                        "metric": metric,
+                        "value": value,
+                        "calculation": f"Q3{year} + Q4{year}",
+                        "method": "actual_quarters",
+                        "data_source": "mcp_quarterly",
+                        "status": "success"
+                    }
+                
+                # If Q3+Q4 don't exist and calculation_method allows derivation
+                if calculation_method in ["auto", "derive"]:
+                    # Get annual forecast using existing tool
+                    forecast_result = tool_system.get_financial_forecasts(
+                        ticker=ticker,
+                        years=[str(year)],
+                        statement_type="pnl",
+                        fields=[metric]
+                    )
                     
-                    if not q3_data.empty and not q4_data.empty:
-                        # Convert to billions VND for consistency
-                        value = (q3_data['VALUE'].iloc[0] + q4_data['VALUE'].iloc[0]) / 1e9
-                        return {
-                            "period": f"2H{year}",
-                            "metric": metric,
-                            "value": value,
-                            "calculation": f"Q3{year} + Q4{year}",
-                            "method": "sum_quarters",
-                            "data_source": "historical_quarterly",
-                            "status": "success"
-                        }
+                    if forecast_result.get("status") == "success":
+                        # Extract annual forecast value
+                        forecast_data = forecast_result.get("forecast_data", {})
+                        year_data = forecast_data.get(str(year), {})
+                        pnl_data = year_data.get("pnl", {})
+                        
+                        # Handle different metric naming conventions
+                        metric_lower = metric.lower()
+                        annual_value = None
+                        
+                        if metric == "NPATMI":
+                            annual_value = pnl_data.get("patmi") or pnl_data.get("pat")
+                        else:
+                            annual_value = pnl_data.get(metric_lower) or pnl_data.get(metric)
+                        
+                        if annual_value:
+                            # Get 1H actual data (Q1+Q2) using existing tool
+                            h1_result = tool_system.get_historical_quarterly_financials(
+                                tickers=[ticker],
+                                quarters=[f"{year}Q1", f"{year}Q2"],
+                                metrics=[metric],
+                                unit="raw"
+                            )
+                            
+                            q1_value = None
+                            q2_value = None
+                            if h1_result.get("status") == "success" and h1_result.get("data"):
+                                for entry in h1_result["data"]:
+                                    if entry["TICKER"] == ticker and entry["KEYCODE"] == metric:
+                                        if entry["DATE"] == f"{year}Q1":
+                                            q1_value = entry["VALUE"]
+                                        elif entry["DATE"] == f"{year}Q2":
+                                            q2_value = entry["VALUE"]
+                            
+                            if q1_value is not None and q2_value is not None:
+                                # Calculate: 2H = Annual Forecast - 1H Actual
+                                # Note: annual_value is already in billions (from get_financial_forecasts)
+                                # q1_value and q2_value are in raw VND
+                                h1_actual_raw = q1_value + q2_value
+                                h1_actual_bn = h1_actual_raw / 1e9
+                                h2_derived = annual_value - h1_actual_bn
+                                
+                                return {
+                                    "period": f"2H{year}",
+                                    "metric": metric,
+                                    "value": h2_derived,
+                                    "calculation": f"{year} Forecast ({annual_value:.2f}B) - 1H{year} Actual ({h1_actual_bn:.2f}B)",
+                                    "method": "derived_from_forecast",
+                                    "data_source": "mixed_forecast_historical",
+                                    "components": {
+                                        "annual_forecast": annual_value,
+                                        "1H_actual": h1_actual_bn,
+                                        "2H_derived": h2_derived
+                                    },
+                                    "status": "success"
+                                }
                 
+                # If neither method works, return error
                 return {
                     "error": f"Cannot calculate 2H{year} {metric}",
-                    "reason": "Need either (1) annual forecast + 1H actual, or (2) Q3 and Q4 actuals",
-                    "available_data": {
-                        "annual_forecast": availability["annual_forecast"],
-                        "1H_actual": availability["can_calculate_1H"],
-                        "Q3_Q4_actual": f"{year}Q3" in availability["quarters_available"] and f"{year}Q4" in availability["quarters_available"]
+                    "reason": "Missing Q3+Q4 actual data and unable to derive from forecast",
+                    "available_methods": {
+                        "actual": "Q3+Q4 data not available",
+                        "derived": "Annual forecast or 1H actual data not available"
                     },
                     "status": "failed"
                 }
         
+        elif period_info["type"] == "months":
+            months = period_info["period_num"]
+            required_quarters = period_info["required_quarters"]
+            
+            # Get data for required quarters using existing MCP tool
+            result = tool_system.get_historical_quarterly_financials(
+                tickers=[ticker],
+                quarters=required_quarters,
+                metrics=[metric],
+                unit="raw"
+            )
+            
+            # Check if all required quarters have data
+            quarter_values = []
+            missing_quarters = []
+            found_quarters = set()
+            
+            if result.get("status") == "success" and result.get("data"):
+                for entry in result["data"]:
+                    if entry["TICKER"] == ticker and entry["KEYCODE"] == metric:
+                        quarter_values.append(entry["VALUE"])
+                        found_quarters.add(entry["DATE"])
+            
+            # Check for missing quarters
+            for quarter in required_quarters:
+                if quarter not in found_quarters:
+                    missing_quarters.append(quarter)
+            
+            if not missing_quarters:
+                # Sum all required quarters
+                total_value = sum(quarter_values) / 1e9  # Convert to billions VND
+                
+                # Create calculation string
+                if months == 3:
+                    calculation = f"Q1{year}"
+                elif months == 6:
+                    calculation = f"Q1{year} + Q2{year}"
+                elif months == 9:
+                    calculation = f"Q1{year} + Q2{year} + Q3{year}"
+                
+                return {
+                    "period": f"{months}M{year}",
+                    "metric": metric,
+                    "value": total_value,
+                    "calculation": calculation,
+                    "method": "sum_quarters",
+                    "data_source": "mcp_quarterly",
+                    "status": "success"
+                }
+            
+            return {
+                "error": f"Cannot calculate {months}M{year} {metric}",
+                "reason": f"Missing quarterly data for: {', '.join(missing_quarters)}",
+                "status": "failed"
+            }
+            
         elif period_info["type"] == "quarter":
             quarter_str = period_info["required_quarters"][0]
-            quarter_num = period_info["period_num"]
             
-            # Check if quarter data exists
-            if quarter_str in availability["quarters_available"]:
-                df_q = tool_system._load_quarterly_financial_statements()
-                q_data = df_q[(df_q['TICKER'] == ticker) & 
-                                (df_q['DATE'] == quarter_str) & 
-                                (df_q['KEYCODE'] == metric)]
-                
-                if not q_data.empty:
-                    return {
-                        "period": quarter_str,
-                        "metric": metric,
-                        "value": q_data['VALUE'].iloc[0] / 1e9,  # Convert to billions VND
-                        "method": "direct",
-                        "data_source": "historical_quarterly",
-                        "status": "success"
-                    }
+            # Get single quarter data using existing MCP tool
+            result = tool_system.get_historical_quarterly_financials(
+                tickers=[ticker],
+                quarters=[quarter_str],
+                metrics=[metric],
+                unit="raw"
+            )
             
-            # Try to derive from annual forecast if Q4
-            if quarter_num == 4 and availability["annual_forecast"]:
-                # Check if Q1-Q3 are available
-                q1_q3_available = all(f"{year}Q{i}" in availability["quarters_available"] for i in range(1, 4))
-                
-                if q1_q3_available:
-                    # Get annual forecast
-                    if tool_system.vietnam_stocks_db is not None:
-                        collection = tool_system.vietnam_stocks_db['CompanyForecast']
-                        forecast = collection.find_one({'ticker': ticker})
-                        if forecast and year in forecast.get('forecast_data', {}):
-                            # Try different locations for the metric
-                            pnl = forecast['forecast_data'][year].get('pnl', {})
-                            # Handle different naming conventions for NPATMI
-                            if metric == 'NPATMI':
-                                annual_value = pnl.get('npatmi') or pnl.get('NPATMI') or pnl.get('patmi')
-                            else:
-                                annual_value = pnl.get(metric.lower()) or pnl.get(metric)
-                            
-                            if annual_value:
-                                # Sum Q1-Q3
-                                df_q = tool_system._load_quarterly_financial_statements()
-                                q1_q3_sum_raw = 0
-                                for q in range(1, 4):
-                                    q_data = df_q[(df_q['TICKER'] == ticker) & 
-                                                    (df_q['DATE'] == f"{year}Q{q}") & 
-                                                    (df_q['KEYCODE'] == metric)]
-                                    if not q_data.empty:
-                                        q1_q3_sum_raw += q_data['VALUE'].iloc[0]  # Keep in raw VND
-                                
-                                # Both annual_value and q1_q3_sum are in raw VND
-                                q4_value_raw = annual_value - q1_q3_sum_raw
-                                
-                                # Convert to billions for display
-                                q4_value = q4_value_raw / 1e9
-                                annual_value_bn = annual_value / 1e9
-                                q1_q3_sum_bn = q1_q3_sum_raw / 1e9
-                                
-                                return {
-                                    "period": f"Q4{year}",
-                                    "metric": metric,
-                                    "value": q4_value,
-                                    "calculation": f"{year} Forecast ({annual_value_bn:.2f}B) - (Q1+Q2+Q3) ({q1_q3_sum_bn:.2f}B)",
-                                    "method": "derive_from_forecast",
-                                    "data_source": "forecast_minus_actual",
-                                    "status": "success"
-                                }
+            quarter_value = None
+            if result.get("status") == "success" and result.get("data"):
+                for entry in result["data"]:
+                    if entry["TICKER"] == ticker and entry["KEYCODE"] == metric and entry["DATE"] == quarter_str:
+                        quarter_value = entry["VALUE"]
+                        break
+            
+            if quarter_value is not None:
+                return {
+                    "period": quarter_str,
+                    "metric": metric,
+                    "value": quarter_value / 1e9,  # Convert to billions VND
+                    "method": "direct",
+                    "data_source": "mcp_quarterly", 
+                    "status": "success"
+                }
             
             return {
                 "error": f"Cannot calculate {quarter_str} {metric}",
-                "reason": f"Quarter data not available and cannot derive",
-                "available_quarters": availability["quarters_available"],
-                "suggestion": f"Need Q1-Q3 {year} actuals and {year} forecast to derive Q4" if quarter_num == 4 else f"Need actual {quarter_str} data",
+                "reason": f"Quarter data not available",
                 "status": "failed"
             }
         

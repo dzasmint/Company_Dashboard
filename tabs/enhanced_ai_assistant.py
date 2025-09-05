@@ -262,15 +262,35 @@ class EnhancedAIToolSystem:
         self._register_visualization_tools()
     
     def _parse_period_notation(self, period: str) -> Dict:
-        """Parse period notation like 2H25, 4Q24, 1H23 into components"""
+        """Parse period notation like 2H25, 4Q24, 1H23, 3M24, 6M24, 9M24 into components"""
         import re
         
         result = {
-            "type": None,  # "half", "quarter", "annual"
-            "period_num": None,  # 1, 2, 3, 4
+            "type": None,  # "half", "quarter", "annual", "months"
+            "period_num": None,  # 1, 2, 3, 4 (for quarters/halves) or 3, 6, 9 (for months)
             "year": None,
             "required_quarters": []
         }
+        
+        # Match patterns like 3M24, 6M24, 9M24 (month-based periods)
+        month_match = re.match(r'([369])M(\d{2,4})', period.upper())
+        if month_match:
+            months = int(month_match.group(1))
+            year = month_match.group(2)
+            if len(year) == 2:
+                year = "20" + year
+            result["type"] = "months"
+            result["period_num"] = months
+            result["year"] = year
+            
+            # Map months to quarters
+            if months == 3:  # 3M = Q1
+                result["required_quarters"] = [f"{year}Q1"]
+            elif months == 6:  # 6M = Q1 + Q2 (same as 1H)
+                result["required_quarters"] = [f"{year}Q1", f"{year}Q2"]
+            elif months == 9:  # 9M = Q1 + Q2 + Q3
+                result["required_quarters"] = [f"{year}Q1", f"{year}Q2", f"{year}Q3"]
+            return result
         
         # Match patterns like 1H25, 2H24
         half_match = re.match(r'([12])H(\d{2,4})', period.upper())

@@ -28,6 +28,13 @@ OPENAI_API_KEY="your_openai_key"
 PERPLEXITY_API_KEY="your_perplexity_key"
 ```
 
+### Development Dependencies
+For PDF extraction and OCR capabilities, system packages are required (defined in `packages.txt`):
+```bash
+# Linux/Ubuntu (for deployment)
+sudo apt-get install tesseract-ocr tesseract-ocr-eng tesseract-ocr-vie poppler-utils
+```
+
 ## High-Level Architecture
 
 ### Core Application Structure
@@ -64,10 +71,12 @@ from config.constants import PLOTLY_CONFIG, FINANCIAL_CATEGORIES
 ```
 
 **Multi-Source Data Integration**:
-- CSV files for historical financial data (via `DataLoader`)
+- Parquet/CSV files for historical financial data (via `DataLoader`)
 - MongoDB for real estate project data (via enhanced `mongodb_utils.py`)
-- SSI API for live Vietnamese stock prices (in `/utils/SSI_API.py`)
-- AI APIs (Perplexity/OpenAI) for project information enrichment
+- SSI API for live Vietnamese stock prices (via `utils/stock_candle.py`)
+- AI APIs (Perplexity/OpenAI/Claude) for project information enrichment
+- MCP tool system for historical financials (`get_historical_quarterly_financials`, `get_historical_annual_financials`)
+- PDF extraction capabilities for earnings reports (OCR via Tesseract)
 
 **Refactored Code Organization**: 
 - Eliminated code duplication in plotting functions (reduced from 4 similar functions to 1 factory)
@@ -94,10 +103,13 @@ from config.constants import PLOTLY_CONFIG, FINANCIAL_CATEGORIES
 ### Data Dependencies
 
 **Static Data Sources** (manual updates required):
-- `/data/FA_processed.csv` - Financial statements
+- `/data/FA_A_processed.parquet` - Annual financial statements (primary)
+- `/data/FA_processed.parquet` - Quarterly financial statements
 - `/data/Val_processed.csv` - Valuation metrics  
-- `/data/BankSupp_processed.csv` - Banking supplement data
-- `/data/Classification.xlsx` - Sector classifications
+- `/data/MktCap_processed.parquet` - Market capitalization data
+- `/data/MoC_Data.csv` - Ministry of Construction real estate projects
+- Legacy: `/data/BankSupp_processed.csv` - Banking supplement data
+- Legacy: `/data/Classification.xlsx` - Sector classifications
 
 **Dynamic Data Sources**:
 - SSI API for real-time stock prices and candlestick data
@@ -117,6 +129,8 @@ from config.constants import PLOTLY_CONFIG, FINANCIAL_CATEGORIES
 - **Data Loading**: Always use `data_loader` instance for consistency and caching
 - **Plotting**: Use `plot_factory` methods instead of custom plotting functions
 - **Configuration**: Reference `config/constants.py` instead of hardcoded values
+- **Archive Management**: Disabled/legacy files are moved to `/archive/` directory
+- **Specialized Pages**: Additional tools available in `/pages/` for specific use cases
 
 ## Coding Guidelines for Claude
 
@@ -183,3 +197,9 @@ tools.get_historical_quarterly_financials(
 Notes:
 - `DATE` uses `YYYYQn` for quarterly and `YYYY` for annual.
 - Use `metrics` to reduce payload; otherwise all 40+ KEYCODEs are returned.
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
