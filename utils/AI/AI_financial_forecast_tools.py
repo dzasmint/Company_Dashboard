@@ -4,9 +4,14 @@ Extracted from enhanced_ai_assistant.py
 Contains financial forecast analysis tools
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Union
 import pandas as pd
 from datetime import datetime
+
+# Constants for better maintainability
+BILLION_CONVERTER = 1e9
+DEFAULT_RATIO_PRECISION = 2
+DEFAULT_PERCENTAGE_PRECISION = 1
 
 def register_financial_forecast_tools(tool_system):
     """Register financial forecast analysis tools with the tool system
@@ -1317,89 +1322,102 @@ def register_financial_forecast_tools(tool_system):
             }
         }
     )
-    def calculate_balance_sheet_ratios(ticker: str, year_start: int = None, year_end: int = None, 
-                                      period_type: str = "annual", quarters: List[str] = None,
-                                      ratios: List[str] = None) -> Dict:
-        """Calculate balance sheet ratios from both historical and forecast data"""
+    def calculate_balance_sheet_ratios(ticker: str, year_start: Optional[int] = None, year_end: Optional[int] = None,
+                                       period_type: str = "annual", quarters: Optional[List[str]] = None,
+                                       ratios: Optional[List[str]] = None) -> Dict:
+        """
+        Calculate comprehensive balance sheet ratios from historical and forecast data.
+
+        This function calculates ALL major balance sheet and leverage ratios including:
+        - Liquidity ratios: current_ratio, quick_ratio, cash_ratio
+        - Leverage ratios: debt_to_equity, net_debt_to_equity, assets_to_equity
+        - Coverage ratios: ebitda_interest_coverage
+        - Solvency ratios: liabilities_to_assets
+        - Absolute values: total_debt_bn, net_debt_bn, debt_to_ebitda
+
+        Args:
+            ticker: Company ticker symbol (e.g., 'VHM', 'DXG')
+            year_start: Start year for analysis. Required unless quarters specified
+            year_end: End year for analysis. Defaults to year_start if not provided
+            period_type: 'annual' or 'quarterly' data type
+            quarters: Specific quarters to analyze (e.g., ['2023Q1', '2023Q2'])
+            ratios: Specific ratios to calculate. Leave empty for all ratios
+
+        Returns:
+            Dict containing:
+            - data: Nested dict with year/quarter -> ratios mapping
+            - status: 'success' or 'failed'
+            - ticker: Company ticker
+            - period_type: 'annual' or 'quarterly'
+            - historical_data_cutoff: Last year with historical data
+            - data_sources: Description of data sources used
+            - units: Unit descriptions for ratios and absolute values
+
+        Examples:
+            # Get all ratios for 2023
+            calculate_balance_sheet_ratios('VHM', year_start=2023)
+
+            # Get specific ratios for multiple years
+            calculate_balance_sheet_ratios('DXG', year_start=2022, year_end=2024,
+                                         ratios=['debt_to_equity', 'current_ratio'])
+
+            # Get quarterly ratios for specific quarters
+            calculate_balance_sheet_ratios('VHM', quarters=['2023Q1', '2023Q2'],
+                                         period_type='quarterly')
+        """
         
         ticker = ticker.upper()
         
-        # Validate inputs
-        if quarters is None and year_start is None:
-            return {"error": "Either year_start or quarters must be provided", "status": "failed"}
+        # ==========================================
+        # INPUT VALIDATION & SETUP
+        # ==========================================
+
+        # Validate and normalize inputs
+        validation_result = _validate_inputs(year_start, year_end, quarters, period_type)
+        if validation_result["status"] == "failed":
+            return validation_result
+
+        # Extract validated parameters
+        year_start = validation_result.get("year_start", year_start)
+        year_end = validation_result.get("year_end", year_end)
         
-        # Define year range only if not using specific quarters
-        if quarters is None:
-            if year_start is None:
-                return {"error": "year_start is required when not using specific quarters", "status": "failed"}
-            if year_end is None:
-                year_end = year_start
-            if year_end < year_start:
-                return {"error": "End year must be >= start year", "status": "failed"}
-        
-        # Normalize and define ratios (with aliases)
-        alias_map = {
+        # ==========================================
+        # RATIO CONFIGURATION & NORMALIZATION
+        # ==========================================
+
+        # Define comprehensive alias mapping for user-friendly ratio names
+        RATIO_ALIASES = {
             'interest_coverage': 'ebitda_interest_coverage', 'icr': 'ebitda_interest_coverage',
             'dte': 'debt_to_equity', 'nde': 'net_debt_to_equity',
             'net_debt_bn': 'net_debt', 'total_debt_bn': 'total_debt'
         }
+
+        # Default ratios to calculate if none specified
+        DEFAULT_RATIOS = [
+            'current_ratio', 'quick_ratio', 'cash_ratio', 'ebitda_interest_coverage',
+            'liabilities_to_assets', 'assets_to_equity', 'debt_to_equity',
+            'net_debt_to_equity', 'total_debt', 'net_debt', 'debt_to_ebitda'
+        ]
+
+        # Normalize and validate requested ratios
         if ratios:
-            norm = []
-            for r in ratios:
-                key = (r or '').strip().lower()
-                norm.append(alias_map.get(key, key))
-            ratios = list(dict.fromkeys(norm))
+            normalized_ratios = []
+            for ratio in ratios:
+                clean_ratio = (ratio or '').strip().lower()
+                normalized_ratios.append(RATIO_ALIASES.get(clean_ratio, clean_ratio))
+            ratios = list(dict.fromkeys(normalized_ratios))  # Remove duplicates while preserving order
         else:
-            ratios = ['current_ratio', 'quick_ratio', 'cash_ratio', 'ebitda_interest_coverage',
-                      'liabilities_to_assets', 'assets_to_equity', 'debt_to_equity',
-                      'net_debt_to_equity', 'total_debt', 'net_debt', 'debt_to_ebitda']
+            ratios = DEFAULT_RATIOS.copy()
         
-        # Dynamically determine historical cutoff based on available data
-        if period_type == "quarterly":
-            df_historical = tool_system._load_quarterly_financial_statements()
-        else:
-            df_historical = tool_system._load_annual_financial_statements()
-            
-        # Dynamic fallback based on current year
-        current_year = datetime.now().year
-        historical_cutoff = current_year - 1  # Assume data up to last year by default
-        if not df_historical.empty:
-            # Get the maximum year available in historical data for this ticker
-            df_ticker = df_historical[df_historical['TICKER'] == ticker]
-            if not df_ticker.empty:
-                if period_type == "quarterly":
-                    # For quarterly data, use YEAR column which has integer years
-                    # or extract year from DATE column if it contains quarter strings
-                    if 'YEAR' in df_ticker.columns:
-                        historical_cutoff = int(df_ticker['YEAR'].max())
-                    elif 'DATE' in df_ticker.columns:
-                        # Extract year from quarter strings like "2024Q1"
-                        max_date = df_ticker['DATE'].max()
-                        if isinstance(max_date, str) and 'Q' in max_date:
-                            historical_cutoff = int(max_date[:4])
-                        else:
-                            historical_cutoff = int(max_date)
-                else:
-                    # For annual data, check if we have complete year data
-                    # If we only have partial year (e.g., Q2 2025), the last complete year is 2024
-                    year_col = 'DATE' if 'DATE' in df_ticker.columns else 'YEAR'
-                    max_year = int(df_ticker[year_col].max())
-                    
-                    # Check if we have quarterly data to determine if current year is complete
-                    df_quarterly = tool_system._load_quarterly_financial_statements()
-                    if not df_quarterly.empty:
-                        df_ticker_q = df_quarterly[df_quarterly['TICKER'] == ticker]
-                        if not df_ticker_q.empty and 'DATE' in df_ticker_q.columns:
-                            # Check if we have Q4 data for the max year
-                            q4_check = f"{max_year}Q4"
-                            if q4_check in df_ticker_q['DATE'].values:
-                                historical_cutoff = max_year  # Complete year data available
-                            else:
-                                historical_cutoff = max_year - 1  # Only partial year data
-                        else:
-                            historical_cutoff = max_year
-                    else:
-                        historical_cutoff = max_year
+        # ==========================================
+        # DATA SOURCE CONFIGURATION
+        # ==========================================
+
+        # Load historical data and determine cutoff (optimized with caching)
+        data_config = _configure_data_sources(ticker, period_type, tool_system)
+        df_historical = data_config["historical_data"]
+        historical_cutoff = data_config["historical_cutoff"]
+        df_quarterly_cache = data_config.get("quarterly_cache")  # Cached for annual processing
         
         current_year = datetime.now().year
         
@@ -1413,6 +1431,10 @@ def register_financial_forecast_tools(tool_system):
         else:
             years_requested = "Not specified"
         
+        # ==========================================
+        # RESULTS STRUCTURE INITIALIZATION
+        # ==========================================
+
         results = {
             "ticker": ticker,
             "period_type": period_type,
@@ -1422,50 +1444,78 @@ def register_financial_forecast_tools(tool_system):
                 "historical": f"CSV data (up to {historical_cutoff})" + (" - quarterly available" if period_type == "quarterly" else ""),
                 "forecast": f"MongoDB data ({historical_cutoff + 1} onwards) - annual only"
             },
-            "units": {"ratios": "unitless", "*_bn": "VND_billion"},
+            "units": {
+                "ratios": "unitless (multiples)",
+                "percentages": "percentage (%)",
+                "currency_bn": "VND billions",
+                "note": "All monetary values converted to billions VND for readability"
+            },
+            "ratios_calculated": ratios,
             "data": {}
         }
         
+        # ==========================================
+        # PROCESS QUARTERLY DATA
+        # ==========================================
+
         # If quarterly periods are specified, process them
         if quarters and period_type == "quarterly":
             for quarter in quarters:
-                # Parse quarter like "2023Q1"
                 try:
+                    # Parse and validate quarter format
+                    if not _is_valid_quarter_format(quarter):
+                        results["data"][quarter] = {
+                            "period": quarter,
+                            "error": f"Invalid quarter format: {quarter}. Expected format: YYYYQN (e.g., 2023Q1)",
+                            "status": "invalid_format"
+                        }
+                        continue
+
                     year = int(quarter[:4])
-                    q_num = quarter[4:]
-                    
+
                     if year <= historical_cutoff:
                         # Get quarterly historical data
-                        # The DATE column contains the full quarter string like "YYYYQ#"
-                        df_quarter = df_historical[(df_historical['TICKER'] == ticker) & 
-                                                  (df_historical['DATE'] == quarter)]
-                        
+                        df_quarter = df_historical[(df_historical['TICKER'] == ticker) &
+                                                   (df_historical['DATE'] == quarter)]
+
                         if not df_quarter.empty:
-                            bs_data = {}
-                            for _, row in df_quarter.iterrows():
-                                keycode = row.get('KEYCODE', '')
-                                value = row.get('VALUE', 0)  # Column name is uppercase
-                                _map_historical_keycode(keycode, value, bs_data)
-                            
-                            results["data"][quarter] = {
-                                "period": quarter,
-                                "source": "historical_quarterly",
-                                "ratios": _calculate_ratios(bs_data, ratios)
-                            }
+                            try:
+                                bs_data = {}
+                                for _, row in df_quarter.iterrows():
+                                    keycode = row.get('KEYCODE', '')
+                                    value = row.get('VALUE', 0)
+                                    _map_historical_keycode(keycode, value, bs_data)
+
+                                ratios_result = _calculate_ratios(bs_data, ratios)
+                                results["data"][quarter] = {
+                                    "period": quarter,
+                                    "source": "historical_quarterly",
+                                    "ratios": ratios_result,
+                                    "status": "success"
+                                }
+                            except Exception as e:
+                                results["data"][quarter] = {
+                                    "period": quarter,
+                                    "error": f"Error processing quarterly data: {str(e)}",
+                                    "status": "processing_error"
+                                }
                         else:
                             results["data"][quarter] = {
                                 "period": quarter,
-                                "error": f"No quarterly data for {quarter}"
+                                "error": f"No quarterly data available for {quarter}",
+                                "status": "no_data"
                             }
                     else:
                         results["data"][quarter] = {
                             "period": quarter,
-                            "error": f"Quarterly data not available for forecast years (>{historical_cutoff})"
+                            "error": f"Quarterly data not available for forecast years (>{historical_cutoff})",
+                            "status": "forecast_year"
                         }
-                except (ValueError, IndexError):
+                except Exception as e:
                     results["data"][quarter] = {
                         "period": quarter,
-                        "error": f"Invalid quarter format: {quarter}"
+                        "error": f"Unexpected error processing quarter {quarter}: {str(e)}",
+                        "status": "unexpected_error"
                     }
         
         # Process annual data or quarterly for year ranges
@@ -1513,96 +1563,137 @@ def register_financial_forecast_tools(tool_system):
                         # Only add annual forecast error if beyond historical cutoff
                         results["data"][str(year)] = annual_data
         
-        # Process annual data
+        # ==========================================
+        # PROCESS ANNUAL DATA
+        # ==========================================
+
         else:
             # Load historical data once (outside the loop for efficiency)
             df = df_historical if not df_historical.empty else pd.DataFrame()
-            
+
             if year_start is None:
-                return {"error": "year_start is required for annual data", "status": "failed"}
-            
+                return {
+                    "error": "year_start is required for annual data",
+                    "suggestion": "Provide year_start parameter (e.g., year_start=2023)",
+                    "status": "failed"
+                }
+
             for year in range(year_start, year_end + 1):
                 year_str = str(year)
-                year_data = {"year": year, "source": None, "ratios": {}}
-                
-                # Determine data source
-                if year <= historical_cutoff:
-                    # Get historical data from CSV
-                    year_data["source"] = "historical"
-                    
-                    if not df.empty:
-                        # Filter for ticker and year (column is DATE for annual data)
-                        year_col = 'DATE' if 'DATE' in df.columns else 'YEAR'
-                        df_year = df[(df['TICKER'] == ticker) & (df[year_col] == year)]
-                        
-                        if not df_year.empty:
-                            # Extract balance sheet items from historical data
-                            bs_data = {}
-                            for _, row in df_year.iterrows():
-                                keycode = row.get('KEYCODE', '')
-                                value = row.get('VALUE', 0)  # Column name is uppercase
-                                
-                                # Map historical KEYCODEs to our structure
-                                _map_historical_keycode(keycode, value, bs_data)
-                            
-                            # Calculate ratios for historical data
-                            year_data["ratios"] = _calculate_ratios(bs_data, ratios)
-                        else:
-                            year_data["error"] = f"No historical data for {year}"
-                
-                else:
-                    # Get forecast data from MongoDB
-                    year_data["source"] = "forecast"
-                    
-                    if tool_system.vietnam_stocks_db is None:
-                        year_data["error"] = "MongoDB not connected for forecast data"
-                    else:
-                        try:
-                            forecast_collection = tool_system.vietnam_stocks_db['CompanyForecast']
-                            forecast_doc = forecast_collection.find_one({"ticker": ticker})
-                            
-                            if forecast_doc and 'forecast_data' in forecast_doc:
-                                if year_str in forecast_doc['forecast_data']:
-                                    forecast_year = forecast_doc['forecast_data'][year_str]
-                                    bs = forecast_year.get('balance_sheet', {})
-                                    pnl = forecast_year.get('pnl', {})
-                                    
-                                    # Extract forecast balance sheet items
-                                    bs_data = {
-                                        'current_assets': bs.get('assets', {}).get('current_assets', 0),
-                                        'current_liabilities': bs.get('liabilities', {}).get('current_liabilities', 0),
-                                        'total_liabilities': bs.get('liabilities', {}).get('total_liabilities', 0),
-                                        'total_assets': bs.get('assets', {}).get('total_assets', 0),
-                                        'total_equity': bs.get('equity', {}).get('total_equity', 0),
-                                        'short_term_debt': bs.get('liabilities', {}).get('short_term_debt', 0),
-                                        'long_term_debt': bs.get('liabilities', {}).get('long_term_debt', 0),
-                                        'cash': bs.get('assets', {}).get('cash_and_equivalents', 0),
-                                        'st_investment': bs.get('assets', {}).get('short_term_investment', 0),
-                                        'ebitda': pnl.get('ebitda', 0),
-                                        'interest_expense': pnl.get('interest_expense', 0)
-                                    }
-                                    
-                                    # Calculate ratios for forecast data
-                                    year_data["ratios"] = _calculate_ratios(bs_data, ratios)
-                                else:
-                                    year_data["error"] = f"No forecast data for {year}"
+                year_data = {"year": year, "source": None, "ratios": {}, "status": "success"}
+
+                try:
+                    # Determine data source
+                    if year <= historical_cutoff:
+                        # Get historical data from CSV
+                        year_data["source"] = "historical"
+
+                        if not df.empty:
+                            # Filter for ticker and year (column is DATE for annual data)
+                            year_col = 'DATE' if 'DATE' in df.columns else 'YEAR'
+                            df_year = df[(df['TICKER'] == ticker) & (df[year_col] == year)]
+
+                            if not df_year.empty:
+                                # Extract balance sheet items from historical data
+                                bs_data = {}
+                                for _, row in df_year.iterrows():
+                                    keycode = row.get('KEYCODE', '')
+                                    value = row.get('VALUE', 0)
+                                    _map_historical_keycode(keycode, value, bs_data)
+
+                                # Calculate ratios for historical data
+                                year_data["ratios"] = _calculate_ratios(bs_data, ratios)
                             else:
-                                year_data["error"] = f"No forecast document for {ticker}"
-                        except Exception as e:
-                            year_data["error"] = str(e)
-                
+                                year_data.update({
+                                    "error": f"No historical data available for {ticker} in {year}",
+                                    "status": "no_historical_data"
+                                })
+                        else:
+                            year_data.update({
+                                "error": "Historical data source is empty",
+                                "status": "data_source_error"
+                            })
+
+                    else:
+                        # Get forecast data from MongoDB
+                        year_data["source"] = "forecast"
+
+                        if tool_system.vietnam_stocks_db is None:
+                            year_data.update({
+                                "error": "MongoDB not connected for forecast data",
+                                "status": "db_connection_error"
+                            })
+                        else:
+                            try:
+                                forecast_collection = tool_system.vietnam_stocks_db['CompanyForecast']
+                                forecast_doc = forecast_collection.find_one({"ticker": ticker})
+
+                                if forecast_doc and 'forecast_data' in forecast_doc:
+                                    if year_str in forecast_doc['forecast_data']:
+                                        forecast_year = forecast_doc['forecast_data'][year_str]
+                                        bs = forecast_year.get('balance_sheet', {})
+                                        pnl = forecast_year.get('pnl', {})
+
+                                        # Extract forecast balance sheet items
+                                        bs_data = {
+                                            'current_assets': bs.get('assets', {}).get('current_assets', 0),
+                                            'current_liabilities': bs.get('liabilities', {}).get('current_liabilities', 0),
+                                            'total_liabilities': bs.get('liabilities', {}).get('total_liabilities', 0),
+                                            'total_assets': bs.get('assets', {}).get('total_assets', 0),
+                                            'total_equity': bs.get('equity', {}).get('total_equity', 0),
+                                            'short_term_debt': bs.get('liabilities', {}).get('short_term_debt', 0),
+                                            'long_term_debt': bs.get('liabilities', {}).get('long_term_debt', 0),
+                                            'cash': bs.get('assets', {}).get('cash_and_equivalents', 0),
+                                            'st_investment': bs.get('assets', {}).get('short_term_investment', 0),
+                                            'ebitda': pnl.get('ebitda', 0),
+                                            'interest_expense': pnl.get('interest_expense', 0)
+                                        }
+
+                                        # Calculate ratios for forecast data
+                                        year_data["ratios"] = _calculate_ratios(bs_data, ratios)
+                                    else:
+                                        year_data.update({
+                                            "error": f"No forecast data available for {year}",
+                                            "status": "no_forecast_data"
+                                        })
+                                else:
+                                    year_data.update({
+                                        "error": f"No forecast document found for ticker {ticker}",
+                                        "status": "no_forecast_document"
+                                    })
+                            except Exception as e:
+                                year_data.update({
+                                    "error": f"Error retrieving forecast data: {str(e)}",
+                                    "status": "forecast_processing_error"
+                                })
+
+                except Exception as e:
+                    year_data.update({
+                        "error": f"Unexpected error processing year {year}: {str(e)}",
+                        "status": "unexpected_error"
+                    })
+
                 results["data"][year] = year_data
         
         # Add summary statistics if multiple years
         if year_end > year_start:
             results["summary"] = _calculate_ratio_trends(results["data"], ratios)
         
+        # ==========================================
+        # FINAL RESULT FORMATTING
+        # ==========================================
+
         return {
             "data": results,
-            "status": "success"
+            "status": "success",
+            "processing_summary": {
+                "ratios_requested": len(ratios),
+                "periods_analyzed": len(results["data"]),
+                "data_quality": "mixed" if any("error" in str(v) for v in results["data"].values()) else "complete"
+            }
         }
     
-    def _map_historical_keycode(keycode: str, value: float, bs_data: Dict):
+    def _map_historical_keycode(keycode: str, value: float, bs_data: Dict[str, float]) -> None:
         """Helper to map historical KEYCODEs to standardized structure"""
         if keycode == 'Current_Assets':
             bs_data['current_assets'] = value
@@ -1649,7 +1740,7 @@ def register_financial_forecast_tools(tool_system):
         elif keycode == 'Interest_Expense':
             bs_data['interest_expense'] = value
     
-    def _process_forecast_year(ticker: str, year: int, ratios: List[str], tool_system) -> Dict:
+    def _process_forecast_year(ticker: str, year: int, ratios: List[str], tool_system) -> Dict[str, Union[str, int, Dict]]:
         """Helper to process forecast year data from MongoDB"""
         year_data = {"year": year, "source": "forecast", "ratios": {}}
         
@@ -1705,7 +1796,7 @@ def register_financial_forecast_tools(tool_system):
         
         return year_data
     
-    def _calculate_ratios(bs_data: Dict, ratios: List[str]) -> Dict:
+    def _calculate_ratios(bs_data: Dict[str, float], ratios: List[str]) -> Dict[str, Union[float, str, None]]:
         """Helper function to calculate requested ratios"""
         calculated = {}
         
@@ -1793,8 +1884,8 @@ def register_financial_forecast_tools(tool_system):
             st_debt = bs_data.get('short_term_debt', 0)
             lt_debt = bs_data.get('long_term_debt', 0)
             total_debt = st_debt + lt_debt
-            calculated['total_debt_bn'] = round(total_debt / 1e9, 2)
-        
+            calculated['total_debt_bn'] = round(total_debt / BILLION_CONVERTER, DEFAULT_RATIO_PRECISION)
+
         # 7b. Net Debt (absolute value in billions)
         if 'net_debt' in ratios:
             st_debt = bs_data.get('short_term_debt', 0)
@@ -1802,7 +1893,7 @@ def register_financial_forecast_tools(tool_system):
             cash = bs_data.get('cash', 0)
             st_investment = bs_data.get('st_investment', 0)
             net_debt = st_debt + lt_debt - cash - st_investment
-            calculated['net_debt_bn'] = round(net_debt / 1e9, 2)
+            calculated['net_debt_bn'] = round(net_debt / BILLION_CONVERTER, DEFAULT_RATIO_PRECISION)
         
         # 8. Total Debt / EBITDA
         if 'debt_to_ebitda' in ratios:
@@ -1817,7 +1908,7 @@ def register_financial_forecast_tools(tool_system):
         
         return calculated
     
-    def _calculate_ratio_trends(year_data: Dict, ratios: List[str]) -> Dict:
+    def _calculate_ratio_trends(year_data: Dict[str, Dict], ratios: List[str]) -> Dict[str, Dict[str, Union[float, str]]]:
         """Calculate trends and averages for multi-year data"""
         trends = {}
         
@@ -2744,4 +2835,162 @@ def _calculate_growth(self, prev_value: float, curr_value: float) -> float:
     if prev_value == 0:
         return 0 if curr_value == 0 else 100
     return ((curr_value - prev_value) / abs(prev_value)) * 100
+
+
+def _validate_inputs(year_start: Optional[int], year_end: Optional[int],
+                    quarters: Optional[List[str]], period_type: str) -> Dict[str, Union[str, int]]:
+    """
+    Validate and normalize input parameters for balance sheet ratio calculations.
+
+    Args:
+        year_start: Start year for analysis
+        year_end: End year for analysis
+        quarters: Specific quarters to analyze
+        period_type: 'annual' or 'quarterly'
+
+    Returns:
+        Dict with validation results and normalized parameters
+    """
+    # Validate required inputs
+    if quarters is None and year_start is None:
+        return {
+            "error": "Either year_start or quarters must be provided",
+            "suggestion": "Use year_start=2023 for annual data or quarters=['2023Q1', '2023Q2'] for quarterly",
+            "status": "failed"
+        }
+
+    # Define year range only if not using specific quarters
+    if quarters is None:
+        if year_start is None:
+            return {
+                "error": "year_start is required when not using specific quarters",
+                "suggestion": "Provide year_start parameter (e.g., year_start=2023)",
+                "status": "failed"
+            }
+        if year_end is None:
+            year_end = year_start
+        if year_end < year_start:
+            return {
+                "error": f"End year ({year_end}) must be >= start year ({year_start})",
+                "suggestion": "Swap year_start and year_end values or correct the range",
+                "status": "failed"
+            }
+
+    # Validate period type
+    if period_type not in ["annual", "quarterly"]:
+        return {
+            "error": f"Invalid period_type: {period_type}",
+            "suggestion": "Use 'annual' or 'quarterly'",
+            "status": "failed"
+        }
+
+    # Validate quarters format if provided
+    if quarters:
+        for quarter in quarters:
+            if not isinstance(quarter, str) or len(quarter) != 6 or 'Q' not in quarter:
+                return {
+                    "error": f"Invalid quarter format: {quarter}",
+                    "suggestion": "Use format 'YYYYQN' (e.g., '2023Q1')",
+                    "status": "failed"
+                }
+
+    return {
+        "status": "success",
+        "year_start": year_start,
+        "year_end": year_end,
+        "quarters": quarters,
+        "period_type": period_type
+    }
+
+
+def _configure_data_sources(ticker: str, period_type: str, tool_system) -> Dict[str, Union[pd.DataFrame, int]]:
+    """
+    Configure data sources and determine historical cutoff for balance sheet analysis.
+    Optimized to load data only once and cache quarterly data for annual processing.
+
+    Args:
+        ticker: Company ticker symbol
+        period_type: 'annual' or 'quarterly'
+        tool_system: The tool system instance
+
+    Returns:
+        Dict containing historical data and cutoff information
+    """
+    # Load appropriate historical data (optimized loading)
+    if period_type == "quarterly":
+        df_historical = tool_system._load_quarterly_financial_statements()
+        df_quarterly = df_historical  # Cache for potential annual checks
+    else:
+        df_historical = tool_system._load_annual_financial_statements()
+        # Pre-load quarterly data for annual cutoff determination (cached)
+        df_quarterly = tool_system._load_quarterly_financial_statements()
+
+    # Dynamic fallback based on current year
+    current_year = datetime.now().year
+    historical_cutoff = current_year - 1  # Assume data up to last year by default
+
+    if not df_historical.empty:
+        # Get the maximum year available in historical data for this ticker
+        df_ticker = df_historical[df_historical['TICKER'] == ticker]
+        if not df_ticker.empty:
+            if period_type == "quarterly":
+                # For quarterly data, use YEAR column or extract from DATE column
+                if 'YEAR' in df_ticker.columns:
+                    historical_cutoff = int(df_ticker['YEAR'].max())
+                elif 'DATE' in df_ticker.columns:
+                    # Extract year from quarter strings like "2024Q1"
+                    max_date = df_ticker['DATE'].max()
+                    if isinstance(max_date, str) and 'Q' in max_date:
+                        historical_cutoff = int(max_date[:4])
+                    else:
+                        historical_cutoff = int(max_date)
+            else:
+                # For annual data, check if we have complete year data
+                year_col = 'DATE' if 'DATE' in df_ticker.columns else 'YEAR'
+                max_year = int(df_ticker[year_col].max())
+
+                # Use cached quarterly data to determine if current year is complete
+                if not df_quarterly.empty:
+                    df_ticker_q = df_quarterly[df_quarterly['TICKER'] == ticker]
+                    if not df_ticker_q.empty and 'DATE' in df_ticker_q.columns:
+                        # Check if we have Q4 data for the max year
+                        q4_check = f"{max_year}Q4"
+                        if q4_check in df_ticker_q['DATE'].values:
+                            historical_cutoff = max_year  # Complete year data available
+                        else:
+                            historical_cutoff = max_year - 1  # Only partial year data
+                    else:
+                        historical_cutoff = max_year
+                else:
+                    historical_cutoff = max_year
+
+    return {
+        "historical_data": df_historical,
+        "historical_cutoff": historical_cutoff,
+        "quarterly_cache": df_quarterly if period_type == "annual" else None  # Cache for annual processing
+    }
+
+
+def _is_valid_quarter_format(quarter: str) -> bool:
+    """
+    Validate quarter format (YYYYQN).
+
+    Args:
+        quarter: Quarter string to validate
+
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not isinstance(quarter, str) or len(quarter) != 6:
+        return False
+
+    if 'Q' not in quarter:
+        return False
+
+    try:
+        year = int(quarter[:4])
+        quarter_num = int(quarter[5:])
+        return 2000 <= year <= 2050 and 1 <= quarter_num <= 4
+    except ValueError:
+        return False
     
