@@ -899,7 +899,8 @@ CRITICAL TOOL SELECTION RULES:
 9. **calculate_balance_sheet_ratios** - Comprehensive BS ratios
    - Supports historical (2016-{historical_cutoff}) and forecast ({forecast_start}+) data
    - Quarterly and annual calculations
-   - Key ratios: debt_to_equity, net_debt_to_equity, current_ratio, etc.
+   - Key ratios: current_ratio, quick_ratio, cash_ratio, debt_to_equity (dte), net_debt_to_equity (nde), liabilities_to_assets, assets_to_equity, debt_to_ebitda, ebitda_interest_coverage (interest_coverage/icr), total_debt, net_debt
+   - Notes: Returns VND_billion for *_bn values; others are unitless. For forecasts, current assets/liabilities are synthesized from components.
    - Automatically detects data availability
 
 **Trend & Comparison Tools:**

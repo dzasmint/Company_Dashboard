@@ -168,6 +168,11 @@ Key behavior (updated):
 
 Metric aliases: The tools map common names to KEYCODEs (e.g., `revenue→Net_Revenue`, `ebitda→EBITDA`, `accounts_receivable→Account_Receivable`, `accounts_payable→Account_Payable`, `advance_from_customers→Advance_From_Custmers`, `sga→GA_Expense`). Prefer canonical KEYCODEs for precision.
 
+Balance sheet ratios:
+- calculate_balance_sheet_ratios supports aliases: `interest_coverage|icr→ebitda_interest_coverage`, `dte→debt_to_equity`, `nde→net_debt_to_equity`.
+- Added ratios: `quick_ratio`, `cash_ratio`, `net_debt` (returns `net_debt_bn`).
+- For forecasts, current assets/liabilities are synthesized: cash + AR + inventory (+ ST investment) and AP + customer_prepayment + ST debt.
+
 Example (quarterly, in billions):
 ```python
 tools.get_historical_quarterly_financials(

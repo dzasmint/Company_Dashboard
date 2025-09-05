@@ -1233,7 +1233,7 @@ def register_financial_forecast_tools(tool_system):
     
     @tool_system.tool(
         name="calculate_balance_sheet_ratios",
-        description="ALWAYS USE THIS TOOL for ANY balance sheet ratios, leverage metrics, debt analysis, liquidity ratios, or solvency questions. Calculates ALL balance sheet and leverage ratios including: current ratio (liquidity), quick ratio, debt/equity, net debt/equity, debt/assets, debt/EBITDA, EBITDA/interest (coverage), assets/equity (leverage multiplier), liabilities/assets. Can analyze trends over time (historical data + forecasts). USE THIS for questions about: leverage, gearing, debt levels, liquidity, solvency, balance sheet strength, financial stability, debt capacity, interest coverage. Supports both annual and quarterly data. For quarterly: use year_start and year_end with period_type='quarterly' to get all quarters in range, OR use quarters parameter for specific quarters.",
+        description="ALWAYS USE THIS TOOL for ANY balance sheet ratios, leverage metrics, debt analysis, liquidity ratios, or solvency questions. Calculates ALL balance sheet and leverage ratios including: current ratio (liquidity), quick ratio (acid‑test), cash ratio, debt/equity, net debt/equity, debt/assets, debt/EBITDA, EBITDA/interest (coverage), assets/equity (leverage multiplier), liabilities/assets. Can analyze trends over time (historical data + forecasts). USE THIS for questions about: leverage, gearing, debt levels, liquidity, solvency, balance sheet strength, financial stability, debt capacity, interest coverage. Supports both annual and quarterly data. For quarterly: use year_start and year_end with period_type='quarterly' to get all quarters in range, OR use quarters parameter for specific quarters.",
         parameters={
             "ticker": {
                 "type": "string",
@@ -1265,7 +1265,7 @@ def register_financial_forecast_tools(tool_system):
             "ratios": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Specific ratios to calculate. Options: 'current_ratio' (liquidity), 'ebitda_interest_coverage' (debt service ability), 'liabilities_to_assets' (leverage %), 'assets_to_equity' (leverage multiplier), 'debt_to_equity' (gearing), 'net_debt_to_equity' (net gearing), 'total_debt' (absolute debt in billions), 'debt_to_ebitda' (debt payback years). LEAVE EMPTY to calculate ALL ratios - recommended for comprehensive analysis.",
+                "description": "Specific ratios to calculate. Options: 'current_ratio', 'quick_ratio', 'cash_ratio', 'ebitda_interest_coverage' (aka 'interest_coverage', 'icr'), 'liabilities_to_assets', 'assets_to_equity', 'debt_to_equity' (aka 'dte'), 'net_debt_to_equity' (aka 'nde'), 'total_debt' (absolute debt in billions), 'net_debt' (absolute net debt in billions), 'debt_to_ebitda'. Aliases accepted. LEAVE EMPTY to calculate ALL ratios.",
                 "required": False
             }
         }
@@ -1290,11 +1290,22 @@ def register_financial_forecast_tools(tool_system):
             if year_end < year_start:
                 return {"error": "End year must be >= start year", "status": "failed"}
         
-        # Define all available ratios if not specified
-        if not ratios:
-            ratios = ['current_ratio', 'ebitda_interest_coverage', 'liabilities_to_assets', 
-                     'assets_to_equity', 'debt_to_equity', 'net_debt_to_equity', 
-                     'total_debt', 'debt_to_ebitda']
+        # Normalize and define ratios (with aliases)
+        alias_map = {
+            'interest_coverage': 'ebitda_interest_coverage', 'icr': 'ebitda_interest_coverage',
+            'dte': 'debt_to_equity', 'nde': 'net_debt_to_equity',
+            'net_debt_bn': 'net_debt', 'total_debt_bn': 'total_debt'
+        }
+        if ratios:
+            norm = []
+            for r in ratios:
+                key = (r or '').strip().lower()
+                norm.append(alias_map.get(key, key))
+            ratios = list(dict.fromkeys(norm))
+        else:
+            ratios = ['current_ratio', 'quick_ratio', 'cash_ratio', 'ebitda_interest_coverage',
+                      'liabilities_to_assets', 'assets_to_equity', 'debt_to_equity',
+                      'net_debt_to_equity', 'total_debt', 'net_debt', 'debt_to_ebitda']
         
         # Dynamically determine historical cutoff based on available data
         if period_type == "quarterly":
@@ -1364,6 +1375,7 @@ def register_financial_forecast_tools(tool_system):
                 "historical": f"CSV data (up to {historical_cutoff})" + (" - quarterly available" if period_type == "quarterly" else ""),
                 "forecast": f"MongoDB data ({historical_cutoff + 1} onwards) - annual only"
             },
+            "units": {"ratios": "unitless", "*_bn": "VND_billion"},
             "data": {}
         }
         
@@ -1549,6 +1561,18 @@ def register_financial_forecast_tools(tool_system):
             bs_data['current_assets'] = value
         elif keycode == 'Current_Liabilities':
             bs_data['current_liabilities'] = value
+        elif keycode == 'Account_Receivable':
+            bs_data['account_receivable'] = value
+            bs_data['synth_current_assets'] = bs_data.get('synth_current_assets', 0) + value
+        elif keycode == 'Inventory':
+            bs_data['inventory'] = value
+            bs_data['synth_current_assets'] = bs_data.get('synth_current_assets', 0) + value
+        elif keycode == 'Account_Payable':
+            bs_data['account_payable'] = value
+            bs_data['synth_current_liabilities'] = bs_data.get('synth_current_liabilities', 0) + value
+        elif keycode == 'Advance_From_Custmers':
+            bs_data['customer_prepayment'] = value
+            bs_data['synth_current_liabilities'] = bs_data.get('synth_current_liabilities', 0) + value
         elif keycode == 'Total_Liabilities':
             bs_data['total_liabilities'] = value
         elif keycode in ['Total_Assets', 'Total_Asset']:  # Handle both variations
@@ -1557,18 +1581,22 @@ def register_financial_forecast_tools(tool_system):
             bs_data['total_equity'] = value
         elif keycode in ['Short_term_Debt', 'ST_Debt']:  # Handle both variations
             bs_data['short_term_debt'] = value
+            bs_data['synth_current_liabilities'] = bs_data.get('synth_current_liabilities', 0) + value
         elif keycode in ['Long_term_Debt', 'LT_Debt']:  # Handle both variations
             bs_data['long_term_debt'] = value
         elif keycode in ['Cash_and_Cash_Equivalents', 'Cash']:  # Handle both variations
             if 'cash' not in bs_data:
                 bs_data['cash'] = 0
             bs_data['cash'] += value  # Accumulate cash values
+            bs_data['synth_current_assets'] = bs_data.get('synth_current_assets', 0) + value
         elif keycode == 'Cash_Equivalent':  # Additional cash component
             if 'cash' not in bs_data:
                 bs_data['cash'] = 0
             bs_data['cash'] += value  # Add to cash total
+            bs_data['synth_current_assets'] = bs_data.get('synth_current_assets', 0) + value
         elif keycode in ['Short_term_Investment', 'Short_Investment']:  # Handle both variations
             bs_data['st_investment'] = value
+            bs_data['synth_current_assets'] = bs_data.get('synth_current_assets', 0) + value
         elif keycode == 'EBITDA':
             bs_data['ebitda'] = value
         elif keycode == 'Interest_Expense':
@@ -1595,8 +1623,18 @@ def register_financial_forecast_tools(tool_system):
                     
                     # Extract forecast balance sheet items
                     bs_data = {
-                        'current_assets': bs.get('assets', {}).get('current_assets', 0),
-                        'current_liabilities': bs.get('liabilities', {}).get('current_liabilities', 0),
+                        # Synthesize current assets/liabilities from components if totals not present
+                        'current_assets': bs.get('assets', {}).get('current_assets', 0) or (
+                            bs.get('assets', {}).get('cash_and_equivalents', 0) +
+                            bs.get('assets', {}).get('account_receivable', 0) +
+                            bs.get('assets', {}).get('inventory', 0) +
+                            bs.get('assets', {}).get('short_term_investment', 0)
+                        ),
+                        'current_liabilities': bs.get('liabilities', {}).get('current_liabilities', 0) or (
+                            bs.get('liabilities', {}).get('account_payable', 0) +
+                            bs.get('liabilities', {}).get('customer_prepayment', 0) +
+                            bs.get('liabilities', {}).get('short_term_debt', 0)
+                        ),
                         'total_liabilities': bs.get('liabilities', {}).get('total_liabilities', 0),
                         'total_assets': bs.get('assets', {}).get('total_assets', 0),
                         'total_equity': bs.get('equity', {}).get('total_equity', 0),
@@ -1604,6 +1642,7 @@ def register_financial_forecast_tools(tool_system):
                         'long_term_debt': bs.get('liabilities', {}).get('long_term_debt', 0),
                         'cash': bs.get('assets', {}).get('cash_and_equivalents', 0),
                         'st_investment': bs.get('assets', {}).get('short_term_investment', 0),
+                        'inventory': bs.get('assets', {}).get('inventory', 0),
                         'ebitda': pnl.get('ebitda', 0),
                         'interest_expense': pnl.get('interest_expense', 0)
                     }
@@ -1625,13 +1664,32 @@ def register_financial_forecast_tools(tool_system):
         
         # 1. Current Ratio
         if 'current_ratio' in ratios:
-            current_assets = bs_data.get('current_assets', 0)
-            current_liabilities = bs_data.get('current_liabilities', 0)
+            current_assets = bs_data.get('current_assets') or bs_data.get('synth_current_assets', 0)
+            current_liabilities = bs_data.get('current_liabilities') or bs_data.get('synth_current_liabilities', 0)
             if current_liabilities > 0:
                 calculated['current_ratio'] = round(current_assets / current_liabilities, 2)
             else:
                 calculated['current_ratio'] = None
-        
+
+        # 1b. Quick Ratio (Acid-test)
+        if 'quick_ratio' in ratios:
+            current_assets = bs_data.get('current_assets') or bs_data.get('synth_current_assets', 0)
+            inventory = bs_data.get('inventory', 0)
+            current_liabilities = bs_data.get('current_liabilities') or bs_data.get('synth_current_liabilities', 0)
+            if current_liabilities > 0:
+                calculated['quick_ratio'] = round((current_assets - inventory) / current_liabilities, 2)
+            else:
+                calculated['quick_ratio'] = None
+
+        # 1c. Cash Ratio
+        if 'cash_ratio' in ratios:
+            cash = bs_data.get('cash', 0)
+            current_liabilities = bs_data.get('current_liabilities') or bs_data.get('synth_current_liabilities', 0)
+            if current_liabilities > 0:
+                calculated['cash_ratio'] = round(cash / current_liabilities, 2)
+            else:
+                calculated['cash_ratio'] = None
+
         # 2. EBITDA/Interest Expense
         if 'ebitda_interest_coverage' in ratios:
             ebitda = bs_data.get('ebitda', 0)
@@ -1689,6 +1747,15 @@ def register_financial_forecast_tools(tool_system):
             lt_debt = bs_data.get('long_term_debt', 0)
             total_debt = st_debt + lt_debt
             calculated['total_debt_bn'] = round(total_debt / 1e9, 2)
+        
+        # 7b. Net Debt (absolute value in billions)
+        if 'net_debt' in ratios:
+            st_debt = bs_data.get('short_term_debt', 0)
+            lt_debt = bs_data.get('long_term_debt', 0)
+            cash = bs_data.get('cash', 0)
+            st_investment = bs_data.get('st_investment', 0)
+            net_debt = st_debt + lt_debt - cash - st_investment
+            calculated['net_debt_bn'] = round(net_debt / 1e9, 2)
         
         # 8. Total Debt / EBITDA
         if 'debt_to_ebitda' in ratios:
