@@ -27,7 +27,7 @@ def register_financial_forecast_tools(tool_system):
             "metrics": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Financial metrics KEYCODEs (e.g., ['Net_Revenue', 'EBITDA', 'NPATMI'])",
+                "description": "Financial metrics KEYCODEs (e.g., ['Net_Revenue', 'EBITDA', 'NPATMI']). Aliases accepted: accounts_receivable/account_receivables → Account_Receivable; accounts_payable/account_payables → Account_Payable; sga → GA_Expense; advance_from_customers → Advance_From_Custmers.",
                 "required": False
             },
             "years": {
@@ -115,12 +115,19 @@ def register_financial_forecast_tools(tool_system):
                 'cash_equivalent': 'Cash_Equivalent', 
                 'short_investment': 'Short_Investment',
                 'account_receivable': 'Account_Receivable',
+                'accounts_receivable': 'Account_Receivable',
+                'account_receivables': 'Account_Receivable',
+                'accounts_receivables': 'Account_Receivable',
                 'inventory': 'Inventory',
                 'tangible_fixed_asset': 'Tangible_Fixed_Asset',
+                'tangible_fixed_assets': 'Tangible_Fixed_Asset',
                 
                 # Balance Sheet - Liabilities  
                 'total_liabilities': 'Total_Liabilities',
                 'account_payable': 'Account_Payable',
+                'accounts_payable': 'Account_Payable',
+                'account_payables': 'Account_Payable',
+                'accounts_payables': 'Account_Payable',
                 'advance_from_customers': 'Advance_From_Custmers',  # Note typo in KEYCODE
                 'st_debt': 'ST_Debt',
                 'short_term_debt': 'ST_Debt',
@@ -228,7 +235,7 @@ def register_financial_forecast_tools(tool_system):
             "metrics": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Financial metrics KEYCODEs (e.g., ['Net_Revenue', 'EBITDA', 'NPATMI'])",
+                "description": "Financial metrics KEYCODEs (e.g., ['Net_Revenue', 'EBITDA', 'NPATMI']). Aliases accepted: accounts_receivable/account_receivables → Account_Receivable; accounts_payable/account_payables → Account_Payable; sga → GA_Expense; advance_from_customers → Advance_From_Custmers.",
                 "required": False
             },
             "quarters": {
@@ -337,12 +344,19 @@ def register_financial_forecast_tools(tool_system):
                 'cash_equivalent': 'Cash_Equivalent', 
                 'short_investment': 'Short_Investment',
                 'account_receivable': 'Account_Receivable',
+                'accounts_receivable': 'Account_Receivable',
+                'account_receivables': 'Account_Receivable',
+                'accounts_receivables': 'Account_Receivable',
                 'inventory': 'Inventory',
                 'tangible_fixed_asset': 'Tangible_Fixed_Asset',
+                'tangible_fixed_assets': 'Tangible_Fixed_Asset',
                 
                 # Balance Sheet - Liabilities  
                 'total_liabilities': 'Total_Liabilities',
                 'account_payable': 'Account_Payable',
+                'accounts_payable': 'Account_Payable',
+                'account_payables': 'Account_Payable',
+                'accounts_payables': 'Account_Payable',
                 'advance_from_customers': 'Advance_From_Custmers',  # Note typo in KEYCODE
                 'st_debt': 'ST_Debt',
                 'short_term_debt': 'ST_Debt',

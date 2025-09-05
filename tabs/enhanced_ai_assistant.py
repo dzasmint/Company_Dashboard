@@ -835,6 +835,7 @@ CRITICAL TOOL SELECTION RULES:
    - Parameters: tickers, metrics, years (integers), unit ('raw'|'billions')
    - Returns annual statements; includes YoY growth columns ("_YoY") when pivoted
    - Recommended: use unit="billions" and specify metrics to reduce payload
+   - Metric aliases supported: accounts_receivable→Account_Receivable; accounts_payable→Account_Payable; sga→GA_Expense; advance_from_customers→Advance_From_Custmers
 
 2. **get_historical_quarterly_financials** - Quarterly historical data
    - Source: FA_processed.parquet
@@ -843,6 +844,7 @@ CRITICAL TOOL SELECTION RULES:
    - Use years to get all quarters in those years (e.g., [2023] returns Q1-Q4)
    - Returns pivoted values and YoY growth columns ("_YoY") when pivoted
    - Recommended: use unit="billions" and specify metrics to reduce payload
+   - Metric aliases supported: accounts_receivable→Account_Receivable; accounts_payable→Account_Payable; sga→GA_Expense; advance_from_customers→Advance_From_Custmers
 
 3. **get_forecast_summary** - Lightweight forecast summary (USE THIS FIRST!)
    - Returns key metrics only: revenue, NPATMI, margins, ROE

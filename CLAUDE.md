@@ -166,7 +166,7 @@ Key behavior (updated):
 - YoY: Results include YoY growth as separate columns with `_YoY` suffix when pivoted (e.g., `Net_Revenue_YoY`). Non‑pivot responses keep the original `YoY` column.
 - Metadata: Responses include `units` and `conversion_applied` flags for clarity.
 
-Metric aliases: The tools map common names to KEYCODEs (e.g., `revenue→Net_Revenue`, `ebitda→EBITDA`, `advance_from_customers→Advance_From_Custmers`, `sga→GA_Expense`). Prefer canonical KEYCODEs for precision.
+Metric aliases: The tools map common names to KEYCODEs (e.g., `revenue→Net_Revenue`, `ebitda→EBITDA`, `accounts_receivable→Account_Receivable`, `accounts_payable→Account_Payable`, `advance_from_customers→Advance_From_Custmers`, `sga→GA_Expense`). Prefer canonical KEYCODEs for precision.
 
 Example (quarterly, in billions):
 ```python
