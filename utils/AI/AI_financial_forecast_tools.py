@@ -15,8 +15,8 @@ def register_financial_forecast_tools(tool_system):
         tool_system: The EnhancedAIToolSystem instance to register tools with
     """
     @tool_system.tool(
-        name="get_historical_financials",
-        description="Get historical financial statements from parquet data (2016-current year, quarterly and annual)",
+        name="get_historical_annual_financials",
+        description="Get historical annual financial statements from FA_A_processed.parquet (2016-current year)",
         parameters={
             "tickers": {
                 "type": "array",
@@ -33,115 +33,124 @@ def register_financial_forecast_tools(tool_system):
             "years": {
                 "type": "array",
                 "items": {"type": "integer"},
-                "description": "Historical years to retrieve (2016 to latest available)",
+                "description": "Years to retrieve (e.g., [2022, 2023])",
                 "required": False
             },
-            "period_type": {
+            "unit": {
                 "type": "string",
-                "enum": ["annual", "quarterly", "both"],
-                "description": "Period type: 'annual' for yearly data, 'quarterly' for quarterly data, 'both' for all",
-                "required": False
-            },
-            "quarters": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Specific quarters (e.g., ['2023Q1', '2023Q2', '2023Q3'])",
+                "enum": ["raw", "billions"],
+                "description": "Value units. 'raw' = original VND; 'billions' = divide monetary metrics by 1e9. Ratios, margins, and OS are not scaled",
                 "required": False
             }
         }
     )
-    def get_historical_financials(tickers: List[str], metrics: List[str] = None, 
-                                    years: List[int] = None, period_type: str = "annual",
-                                    quarters: List[str] = None) -> Dict:
-        """Get historical financial statements from CSV data (annual or quarterly)"""
+    def get_historical_annual_financials(tickers: List[str], metrics: List[str] = None, 
+                                         years: List[int] = None,
+                                         unit: str = "raw") -> Dict:
+        """Get historical annual financial statements from FA_A_processed.parquet"""
         
         # Normalize tickers
         tickers = [t.upper() for t in tickers]
         
-        # Load appropriate data based on period_type
-        if period_type == "quarterly" or quarters:
-            # Load quarterly data
-            df = tool_system._load_quarterly_financial_statements()
-            data_type = "quarterly"
-        elif period_type == "both":
-            # Load both annual and quarterly data
-            df_annual = tool_system._load_financial_statements_csv()
-            df_quarterly = tool_system._load_quarterly_financial_statements()
-            
-            # Combine both datasets
-            if not df_annual.empty and not df_quarterly.empty:
-                # Add period type column for clarity
-                df_annual['PERIOD'] = 'Annual'
-                df_quarterly['PERIOD'] = 'Quarterly'
-                df = pd.concat([df_annual, df_quarterly], ignore_index=True)
-                data_type = "both"
-            elif not df_annual.empty:
-                df = df_annual
-                data_type = "annual"
-            else:
-                df = df_quarterly
-                data_type = "quarterly"
-        else:
-            # Default to annual data
-            df = tool_system._load_financial_statements_csv()
-            data_type = "annual"
+        # Load annual data from FA_A_processed.parquet
+        df = tool_system._load_annual_financial_statements()  # This loads FA_A_processed.parquet
         
         if df.empty:
-            return {"error": "Historical financial data not available", "status": "failed"}
+            return {"error": "Historical annual financial data not available", "status": "failed"}
         
         # Filter by tickers
         df = df[df['TICKER'].isin(tickers)]
         
         if df.empty:
             return {
-                "error": f"No data found for tickers: {tickers}",
+                "error": f"No annual data found for tickers: {tickers}",
                 "status": "failed"
             }
         
-        # Filter by years if specified (for annual data)
-        if years and data_type in ["annual", "both"]:
-            if data_type == "annual":
-                df = df[df['DATE'].isin(years)]
-            else:
-                # For combined data, filter annual records by years
-                mask = (df['PERIOD'] == 'Quarterly') | (df['DATE'].isin(years))
-                df = df[mask]
-        
-        # Filter by quarters if specified (for quarterly data)
-        if quarters and data_type in ["quarterly", "both"]:
-            if data_type == "quarterly":
-                df = df[df['DATE'].isin(quarters)]
-            else:
-                # For combined data, filter quarterly records by quarters
-                mask = (df['PERIOD'] == 'Annual') | (df['DATE'].isin(quarters))
-                df = df[mask]
-        
-        # Filter by year from quarters (e.g., get all quarters for specific years)
-        if years and data_type == "quarterly" and not quarters:
-            # Extract year from quarterly DATE (e.g., '2023Q1' -> 2023)
-            df['YEAR_NUM'] = df['DATE'].str[:4].astype(int)
-            df = df[df['YEAR_NUM'].isin(years)]
-            df = df.drop('YEAR_NUM', axis=1)
+        # Filter by years if specified
+        if years:
+            df = df[df['DATE'].isin(years)]
+            if df.empty:
+                return {
+                    "error": f"No annual data found for years: {years}",
+                    "status": "failed"
+                }
         
         # Filter by metrics if specified
         if metrics:
-            # Map common names to KEYCODEs
+            # Comprehensive mapping of common names to KEYCODEs
             metric_mapping = {
+                # Revenue & Profit metrics
                 'revenue': 'Net_Revenue',
+                'net_revenue': 'Net_Revenue',
+                'gross_profit': 'Gross_Profit',
+                'ebit': 'EBIT',
                 'ebitda': 'EBITDA',
+                'pbt': 'PBT',
                 'npat': 'NPAT',
                 'npatmi': 'NPATMI',
-                'gross_profit': 'Gross_Profit',
+                
+                # Margin metrics
                 'gross_margin': 'Gross_Margin',
-                'operating_cash_flow': 'Opt_CF',
+                'ebit_margin': 'EBIT_Margin', 
                 'ebitda_margin': 'EBITDA_Margin',
                 'npat_margin': 'NPAT_Margin',
-                'total_assets': 'Total_Assets',
-                'total_debt': 'Total_Debt',
-                'equity': 'Equity',
+                
+                # Expense metrics
                 'cogs': 'COGS',
-                'sga': 'SGA',
-                'interest_expense': 'Interest_Expense'
+                'selling_expense': 'Selling_Expense',
+                'ga_expense': 'GA_Expense',
+                'sga': 'SGA',  # Note: SGA doesn't exist in data, use GA_Expense
+                'dep_expense': 'Dep_Expense',
+                'interest_expense': 'Interest_Expense',
+                'financial_expense': 'Financial_Expense',
+                'financial_income': 'Financial_Income',
+                'tax': 'Tax',
+                'eff_tax_rate': 'Eff_Tax_Rate',
+                
+                # Balance Sheet - Assets
+                'total_asset': 'Total_Asset',
+                'total_assets': 'Total_Asset',
+                'cash': 'Cash',
+                'cash_equivalent': 'Cash_Equivalent', 
+                'short_investment': 'Short_Investment',
+                'account_receivable': 'Account_Receivable',
+                'inventory': 'Inventory',
+                'tangible_fixed_asset': 'Tangible_Fixed_Asset',
+                
+                # Balance Sheet - Liabilities  
+                'total_liabilities': 'Total_Liabilities',
+                'account_payable': 'Account_Payable',
+                'advance_from_customers': 'Advance_From_Custmers',  # Note typo in KEYCODE
+                'st_debt': 'ST_Debt',
+                'short_term_debt': 'ST_Debt',
+                'lt_debt': 'LT_Debt',
+                'long_term_debt': 'LT_Debt',
+                'total_debt': 'Total_Debt',
+                
+                # Balance Sheet - Equity
+                'equity': 'TOTAL_Equity',
+                'total_equity': 'TOTAL_Equity',
+                'retain_earning': 'Retain_Earning',
+                'retained_earnings': 'Retain_Earning',
+                'minority_interest': 'Minority_Interest',
+                'minority_interest_in_earning': 'Minority_Interest_In_Earning',
+                
+                # Cash Flow metrics
+                'operating_cf': 'Operating_CF',
+                'operating_cash_flow': 'Operating_CF',
+                'inv_cf': 'Inv_CF',
+                'investment_cf': 'Inv_CF',
+                'fin_cf': 'Fin_CF',
+                'financing_cf': 'Fin_CF',
+                'fcf': 'FCF',
+                'free_cash_flow': 'FCF',
+                'capex': 'Capex',
+                
+                # Other metrics
+                'os': 'OS',
+                'shares_outstanding': 'OS',
+                'invested_capital': 'Invested_Capital'
             }
             
             mapped_metrics = []
@@ -151,35 +160,294 @@ def register_financial_forecast_tools(tool_system):
             
             df = df[df['KEYCODE'].isin(mapped_metrics)]
         
+        # Optional unit conversion for monetary metrics only
+        try:
+            ratio_like = {"EBITDA_Margin", "EBIT_Margin", "Gross_Margin", "NPAT_Margin", "Eff_Tax_Rate"}
+            non_scaled = {"OS"}
+            if unit == "billions" and not df.empty:
+                mask_scale = (~df['KEYCODE'].isin(ratio_like)) & (~df['KEYCODE'].isin(non_scaled))
+                df.loc[mask_scale, 'VALUE'] = df.loc[mask_scale, 'VALUE'] / 1e9
+        except Exception:
+            pass
+        
         # Pivot data for better readability
         if not df.empty and len(df['KEYCODE'].unique()) > 1:
-            # Determine index columns based on data type
-            index_cols = ['TICKER', 'DATE']
-            if 'PERIOD' in df.columns:
-                index_cols.append('PERIOD')
-            
+            # Pivot VALUE data
             pivot_df = df.pivot_table(
-                index=index_cols,
+                index=['TICKER', 'DATE'],
                 columns='KEYCODE',
                 values='VALUE',
                 aggfunc='first'
             ).reset_index()
             
+            # Also pivot YoY growth data if needed
+            if 'YoY' in df.columns and not df['YoY'].isna().all():
+                yoy_pivot = df.pivot_table(
+                    index=['TICKER', 'DATE'],
+                    columns='KEYCODE',
+                    values='YoY',
+                    aggfunc='first'
+                )
+                # Add YoY columns with _YoY suffix
+                for col in yoy_pivot.columns:
+                    pivot_df[f"{col}_YoY"] = yoy_pivot[col].values
+            
             return {
                 "data": pivot_df.to_dict('records'),
-                "source": f"historical_{data_type}",
+                "source": "FA_A_processed.parquet",
                 "records": len(pivot_df),
-                "period_type": data_type,
+                "period_type": "annual",
                 "date_range": f"{df['DATE'].min()}-{df['DATE'].max()}",
+                "columns_available": list(pivot_df.columns),
+                "units": "VND_billion" if unit == "billions" else "VND",
+                "conversion_applied": unit == "billions",
                 "status": "success"
             }
         else:
             return {
                 "data": df.to_dict('records'),
-                "source": f"historical_{data_type}",
+                "source": "FA_A_processed.parquet",
                 "records": len(df),
-                "period_type": data_type,
+                "period_type": "annual",
                 "date_range": f"{df['DATE'].min()}-{df['DATE'].max()}" if not df.empty else "N/A",
+                "units": "VND_billion" if unit == "billions" else "VND",
+                "conversion_applied": unit == "billions",
+                "status": "success"
+            }
+    
+    @tool_system.tool(
+        name="get_historical_quarterly_financials",
+        description="Get historical quarterly financial statements from FA_processed.parquet",
+        parameters={
+            "tickers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Company tickers (e.g., ['VHM', 'DXG'])",
+                "required": True
+            },
+            "metrics": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Financial metrics KEYCODEs (e.g., ['Net_Revenue', 'EBITDA', 'NPATMI'])",
+                "required": False
+            },
+            "quarters": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific quarters (e.g., ['2023Q1', '2023Q2', '2023Q3'])",
+                "required": False
+            },
+            "years": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "Get all quarters for these years (e.g., [2023] returns 2023Q1-Q4)",
+                "required": False
+            },
+            "unit": {
+                "type": "string",
+                "enum": ["raw", "billions"],
+                "description": "Value units. 'raw' = original VND; 'billions' = divide monetary metrics by 1e9. Ratios, margins, and OS are not scaled",
+                "required": False
+            }
+        }
+    )
+    def get_historical_quarterly_financials(tickers: List[str], metrics: List[str] = None,
+                                           quarters: List[str] = None, years: List[int] = None,
+                                           unit: str = "raw") -> Dict:
+        """Get historical quarterly financial statements from FA_processed.parquet"""
+        
+        # Normalize tickers
+        tickers = [t.upper() for t in tickers]
+        
+        # Load quarterly data from FA_processed.parquet
+        df = tool_system._load_quarterly_financial_statements()  # This loads FA_processed.parquet
+        
+        if df.empty:
+            return {"error": "Historical quarterly financial data not available", "status": "failed"}
+        
+        # Filter by tickers
+        df = df[df['TICKER'].isin(tickers)]
+        
+        if df.empty:
+            return {
+                "error": f"No quarterly data found for tickers: {tickers}",
+                "status": "failed"
+            }
+        
+        # Filter by specific quarters if provided
+        if quarters:
+            df = df[df['DATE'].isin(quarters)]
+            if df.empty:
+                return {
+                    "error": f"No quarterly data found for quarters: {quarters}",
+                    "status": "failed"
+                }
+        
+        # Filter by years to get all quarters in those years
+        elif years:
+            # Extract year from quarterly DATE (e.g., '2023Q1' -> 2023)
+            df['YEAR_NUM'] = df['DATE'].str[:4].astype(int)
+            df = df[df['YEAR_NUM'].isin(years)]
+            df = df.drop('YEAR_NUM', axis=1)
+            if df.empty:
+                return {
+                    "error": f"No quarterly data found for years: {years}",
+                    "status": "failed"
+                }
+        
+        # Get available columns for guidance
+        available_keycodes = df['KEYCODE'].unique().tolist()
+        
+        # Filter by metrics if specified
+        if metrics:
+            # Comprehensive mapping of common names to KEYCODEs (all 43 available)
+            metric_mapping = {
+                # Revenue & Profit metrics
+                'revenue': 'Net_Revenue',
+                'net_revenue': 'Net_Revenue',
+                'gross_profit': 'Gross_Profit',
+                'ebit': 'EBIT',
+                'ebitda': 'EBITDA',
+                'pbt': 'PBT',
+                'npat': 'NPAT',
+                'npatmi': 'NPATMI',
+                
+                # Margin metrics
+                'gross_margin': 'Gross_Margin',
+                'ebit_margin': 'EBIT_Margin', 
+                'ebitda_margin': 'EBITDA_Margin',
+                'npat_margin': 'NPAT_Margin',
+                
+                # Expense metrics
+                'cogs': 'COGS',
+                'selling_expense': 'Selling_Expense',
+                'ga_expense': 'GA_Expense',
+                'sga': 'GA_Expense',  # Note: SGA doesn't exist in data, maps to GA_Expense
+                'dep_expense': 'Dep_Expense',
+                'interest_expense': 'Interest_Expense',
+                'financial_expense': 'Financial_Expense',
+                'financial_income': 'Financial_Income',
+                'tax': 'Tax',
+                'eff_tax_rate': 'Eff_Tax_Rate',
+                
+                # Balance Sheet - Assets
+                'total_asset': 'Total_Asset',
+                'total_assets': 'Total_Asset',
+                'cash': 'Cash',
+                'cash_equivalent': 'Cash_Equivalent', 
+                'short_investment': 'Short_Investment',
+                'account_receivable': 'Account_Receivable',
+                'inventory': 'Inventory',
+                'tangible_fixed_asset': 'Tangible_Fixed_Asset',
+                
+                # Balance Sheet - Liabilities  
+                'total_liabilities': 'Total_Liabilities',
+                'account_payable': 'Account_Payable',
+                'advance_from_customers': 'Advance_From_Custmers',  # Note typo in KEYCODE
+                'st_debt': 'ST_Debt',
+                'short_term_debt': 'ST_Debt',
+                'lt_debt': 'LT_Debt',
+                'long_term_debt': 'LT_Debt',
+                'total_debt': 'Total_Debt',
+                
+                # Balance Sheet - Equity
+                'equity': 'TOTAL_Equity',
+                'total_equity': 'TOTAL_Equity',
+                'retain_earning': 'Retain_Earning',
+                'retained_earnings': 'Retain_Earning',
+                'minority_interest': 'Minority_Interest',
+                'minority_interest_in_earning': 'Minority_Interest_In_Earning',
+                
+                # Cash Flow metrics
+                'operating_cf': 'Operating_CF',
+                'operating_cash_flow': 'Operating_CF',
+                'inv_cf': 'Inv_CF',
+                'investment_cf': 'Inv_CF',
+                'fin_cf': 'Fin_CF',
+                'financing_cf': 'Fin_CF',
+                'fcf': 'FCF',
+                'free_cash_flow': 'FCF',
+                'capex': 'Capex',
+                
+                # Other metrics
+                'os': 'OS',
+                'shares_outstanding': 'OS',
+                'invested_capital': 'Invested_Capital',
+                
+                # YoY Growth metrics - preserve these if present
+                'net_revenue_yoy': 'Net_Revenue_YoY',
+                'gross_profit_yoy': 'Gross_Profit_YoY',
+                'ebit_yoy': 'EBIT_YoY',
+                'ebitda_yoy': 'EBITDA_YoY',
+                'npat_yoy': 'NPAT_YoY',
+                'npatmi_yoy': 'NPATMI_YoY',
+                'operating_cf_yoy': 'Operating_CF_YoY',
+                'fcf_yoy': 'FCF_YoY'
+            }
+            
+            mapped_metrics = []
+            for m in metrics:
+                mapped = metric_mapping.get(m.lower(), m)
+                mapped_metrics.append(mapped)
+            
+            df = df[df['KEYCODE'].isin(mapped_metrics)]
+        
+        # Optional unit conversion for monetary metrics only
+        try:
+            ratio_like = {"EBITDA_Margin", "EBIT_Margin", "Gross_Margin", "NPAT_Margin", "Eff_Tax_Rate"}
+            non_scaled = {"OS"}
+            if unit == "billions" and not df.empty:
+                # Scale VALUE for monetary rows only
+                mask_scale = (~df['KEYCODE'].isin(ratio_like)) & (~df['KEYCODE'].isin(non_scaled))
+                df.loc[mask_scale, 'VALUE'] = df.loc[mask_scale, 'VALUE'] / 1e9
+        except Exception:
+            pass
+
+        # Pivot data for better readability
+        if not df.empty and len(df['KEYCODE'].unique()) > 1:
+            # Create value pivot
+            pivot_df = df.pivot_table(
+                index=['TICKER', 'DATE'],
+                columns='KEYCODE',
+                values='VALUE',
+                aggfunc='first'
+            ).reset_index()
+            
+            # Also pivot YoY growth data and append with _YoY suffix
+            if 'YoY' in df.columns and not df['YoY'].isna().all():
+                yoy_pivot = df.pivot_table(
+                    index=['TICKER', 'DATE'],
+                    columns='KEYCODE',
+                    values='YoY',
+                    aggfunc='first'
+                ).reset_index()
+                # Rename YoY columns with suffix and merge for alignment
+                yoy_cols = {c: f"{c}_YoY" for c in yoy_pivot.columns if c not in ['TICKER', 'DATE']}
+                yoy_pivot = yoy_pivot.rename(columns=yoy_cols)
+                pivot_df = pivot_df.merge(yoy_pivot, on=['TICKER', 'DATE'], how='left')
+            
+            return {
+                "data": pivot_df.to_dict('records'),
+                "source": "FA_processed.parquet",
+                "records": len(pivot_df),
+                "period_type": "quarterly",
+                "date_range": f"{df['DATE'].min()}-{df['DATE'].max()}",
+                "columns_available": pivot_df.columns.tolist(),
+                "units": "VND_billion" if unit == "billions" else "VND",
+                "conversion_applied": unit == "billions",
+                "status": "success"
+            }
+        else:
+            # Non-pivot path returns raw rows (keep YoY column). Units metadata included.
+            return {
+                "data": df.to_dict('records'),
+                "source": "FA_processed.parquet",
+                "records": len(df),
+                "period_type": "quarterly",
+                "date_range": f"{df['DATE'].min()}-{df['DATE'].max()}" if not df.empty else "N/A",
+                "columns_available": available_keycodes if not df.empty else [],
+                "units": "VND_billion" if unit == "billions" else "VND",
+                "conversion_applied": unit == "billions",
                 "status": "success"
             }
     
@@ -1018,7 +1286,7 @@ def register_financial_forecast_tools(tool_system):
         if period_type == "quarterly":
             df_historical = tool_system._load_quarterly_financial_statements()
         else:
-            df_historical = tool_system._load_financial_statements_csv()
+            df_historical = tool_system._load_annual_financial_statements()
             
         # Dynamic fallback based on current year
         current_year = datetime.now().year
@@ -1481,7 +1749,7 @@ def register_financial_forecast_tools(tool_system):
         tickers = [t.upper() for t in tickers]
         
         # Load financial data
-        df = tool_system._load_financial_statements_csv()
+        df = tool_system._load_annual_financial_statements()
         
         if df.empty:
             return {"error": "Financial data not available", "status": "failed"}

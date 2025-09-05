@@ -152,7 +152,7 @@ class EnhancedAIToolSystem:
     # ========== Data Loading Methods ==========
     
     @lru_cache(maxsize=1)
-    def _load_financial_statements_csv(self):
+    def _load_annual_financial_statements(self):
         """Load annual financial statements from parquet"""
         if 'financial_csv' not in self.data:
             fa_path = self.data_dir / 'FA_A_processed.parquet'
@@ -349,7 +349,7 @@ class EnhancedAIToolSystem:
                     availability["quarters_missing"].append(quarter_str)
         
         # Check annual historical data
-        df_a = self._load_financial_statements_csv()
+        df_a = self._load_annual_financial_statements()
         if not df_a.empty:
             ticker_data = df_a[df_a['TICKER'] == ticker.upper()]
             if int(year) in ticker_data['DATE'].values:
@@ -823,36 +823,47 @@ def chat_with_ai(user_message: str, tool_system: EnhancedAIToolSystem, stream_co
     
     # Add system message for real estate and financial analysis
     system_content = f"""You are a comprehensive financial analyst assistant specializing in Vietnamese real estate and financial markets for an investment firm.
-Use the available tools to gather data and provide detailed analysis.
+Use the available tools to gather data and provide detailed, concise analysis. Always state units and sources.
 
 CRITICAL TOOL SELECTION RULES:
 
 **Core Financial Analysis Tools:**
 
-1. **get_historical_financials** - Historical data (2016-{historical_cutoff})
+1. **get_historical_annual_financials** - Annual historical data (2016-{historical_cutoff})
+   - Source: FA_A_processed.parquet
    - Contains 1000+ companies (VHM, DXG, NLG, TCH, etc.)
-   - Returns actual financial statements from CSV/Parquet
-   - Supports annual and quarterly data
-   - Years are integers: {historical_cutoff-1}, {historical_cutoff}
+   - Parameters: tickers, metrics, years (integers), unit ('raw'|'billions')
+   - Returns annual statements; includes YoY growth columns ("_YoY") when pivoted
+   - Recommended: use unit="billions" and specify metrics to reduce payload
 
-2. **get_forecast_summary** - Lightweight forecast summary (USE THIS FIRST!)
+2. **get_historical_quarterly_financials** - Quarterly historical data
+   - Source: FA_processed.parquet
+   - Parameters: tickers, metrics, quarters OR years, unit ('raw'|'billions')
+   - Use quarters for specific periods (e.g., ['2023Q1', '2023Q2'])
+   - Use years to get all quarters in those years (e.g., [2023] returns Q1-Q4)
+   - Returns pivoted values and YoY growth columns ("_YoY") when pivoted
+   - Recommended: use unit="billions" and specify metrics to reduce payload
+
+3. **get_forecast_summary** - Lightweight forecast summary (USE THIS FIRST!)
    - Returns key metrics only: revenue, NPATMI, margins, ROE
    - Optimized for quick analysis (~200 tokens vs 800-5000)
    - Perfect for overview questions and comparisons
 
-3. **get_financial_forecasts** - Detailed forecast data ({forecast_start}-2030+)
+4. **get_financial_forecasts** - Detailed forecast data ({forecast_start}-2030+)
    - Use ONLY when user needs detailed financial statements
-   - Available for: DXG, KDH, NTL, NLG, TAL, TCH, etc. in (MongoDB)
+   - Available tickers: DXG, KDH, NTL, TAL, TCH (MongoDB)
    - Returns P&L, Balance Sheet, Cash Flow projections
    - Years are strings: "{forecast_start}", "{forecast_start+1}"
    - TOKEN OPTIMIZATION REQUIRED:
      * ALWAYS specify 1-3 years explicitly (e.g., ["2025", "2026"])
      * Use statement_type="pnl" for income statement questions
+     * Use fields=[...] to restrict metrics (e.g., ["revenue","npatmi","ebitda"]) and cut tokens
      * Use statement_type="all" only when user needs complete financials
      * Set include_breakdown=True ONLY if user asks for project details
      * Default behavior (2 years, P&L) is optimized for most queries
+   - Units: values are in billions VND; always keep units in outputs
 
-4. **calculate_period_metrics** - Smart period calculations
+5. **calculate_period_metrics** - Smart period calculations
    - Handles half-year periods: 1HYY, 2HYY (H = half year, YY = year)
    - Handles quarters: 1QYY, 2QYY, 3QYY, 4QYY
    - AUTOMATICALLY derives values when possible:
@@ -862,13 +873,13 @@ CRITICAL TOOL SELECTION RULES:
 
 **Valuation & Scoring Tools:**
 
-5. **get_valuation_analysis** - Comprehensive valuation metrics
+6. **get_valuation_analysis** - Comprehensive valuation metrics
    - Combines all valuation ratios (P/E, P/B, EV/EBITDA, etc.)
    - Historical and forward multiples
    - Peer comparison capabilities
    - Available for companies with forecast data
 
-6. **get_company_total_score** - Investment scoring (1-10 scale)
+7. **get_company_total_score** - Investment scoring (1-10 scale)
    - RNAV upside (25% weight)
    - Valuation multiples (30% weight)
    - Growth prospects (25% weight)
@@ -876,14 +887,14 @@ CRITICAL TOOL SELECTION RULES:
    - Returns STRONG BUY/BUY/HOLD/SELL recommendation
    - ALWAYS display full breakdown when showing scores
 
-7. **get_rnav_breakdown** - Real estate RNAV calculation
+8. **get_rnav_breakdown** - Real estate RNAV calculation
    - Detailed project-by-project analysis
    - Land value, construction costs, sales assumptions
    - Available for: KDH, TAL, TCH, NLG, NTL, DXG, etc.
 
 **Balance Sheet & Ratio Analysis:**
 
-8. **calculate_balance_sheet_ratios** - Comprehensive BS ratios
+9. **calculate_balance_sheet_ratios** - Comprehensive BS ratios
    - Supports historical (2016-{historical_cutoff}) and forecast ({forecast_start}+) data
    - Quarterly and annual calculations
    - Key ratios: debt_to_equity, net_debt_to_equity, current_ratio, etc.
@@ -891,37 +902,37 @@ CRITICAL TOOL SELECTION RULES:
 
 **Trend & Comparison Tools:**
 
-9. **analyze_financial_trends** - Multi-year trend analysis
-   - Growth rates, margins, returns over time
-   - Identifies inflection points and patterns
+10. **analyze_financial_trends** - Multi-year trend analysis
+    - Growth rates, margins, returns over time
+    - Identifies inflection points and patterns
 
-10. **compare_companies** - Peer comparison
+11. **compare_companies** - Peer comparison
    - Side-by-side financial metrics
    - Relative valuation analysis
    - Sector benchmarking
 
 **Real Estate Project Tools:**
 
-7. **search_projects** - Search real estate projects by company
-   - Input: List of tickers (e.g., ['DXG', 'KDH', 'NLG'])
-   - Output: Project name, location, total units, RNAV value, completion year
-   - Organized by company with aggregated summaries
-   - Use for discovery and screening of projects
+12. **search_projects** - Search real estate projects by company
+    - Input: List of tickers (e.g., ['DXG', 'KDH', 'NLG'])
+    - Output: Project name, location, total units, RNAV value, completion year
+    - Organized by company with aggregated summaries
+    - Use for discovery and screening of projects
 
-8. **get_project_overview** - Comprehensive project details
-   - Input: Project name (e.g., 'Prive', 'Gem Skyworld Long Thanh')
-   - Returns: Land details, construction info, product mix, timelines, financial parameters
-   - Includes WACC, debt financing, SG&A percentages
-   - Use when user needs detailed project information
+13. **get_project_overview** - Comprehensive project details
+    - Input: Project name (e.g., 'Prive', 'Gem Skyworld Long Thanh')
+    - Returns: Land details, construction info, product mix, timelines, financial parameters
+    - Includes WACC, debt financing, SG&A percentages
+    - Use when user needs detailed project information
 
-9. **get_project_metrics** - Time series financial data for projects
-   - Input: project_name, metrics array, year_range, total flag
-   - Metrics: presales, revenue_recognition, cash_balance, debt_balance, npv, etc.
-   - Breakdown by low-rise/high-rise: presales_low_rise, revenue_recognition_high_rise
-   - Set total=True to get sum across years instead of time series
-   - Use for project-level financial analysis over time
+14. **get_project_metrics** - Time series financial data for projects
+    - Input: project_name, metrics array, year_range, total flag
+    - Metrics: presales, revenue_recognition, cash_balance, debt_balance, npv, etc.
+    - Breakdown by low-rise/high-rise: presales_low_rise, revenue_recognition_high_rise
+    - Set total=True to get sum across years instead of time series
+    - Use for project-level financial analysis over time
 
-10. **rank_projects_by_metric** - Rank and compare projects
+15. **rank_projects_by_metric** - Rank and compare projects
     - Input: List of project names, metric to rank by, order (ascending/descending)
     - Supports static fields: rnav_value, land_area, total_units, project_irr, wacc_rate
     - Supports time-series: presales, revenue_recognition, cash_balance, debt_balance
@@ -929,11 +940,11 @@ CRITICAL TOOL SELECTION RULES:
 
 **Advanced Forecast Tools:**
 
-11. **analyze_project_contribution_to_forecast** - Project impact analysis
+16. **analyze_project_contribution_to_forecast** - Project impact analysis
     - How individual projects affect company forecasts
     - Revenue/profit contribution by project
 
-12. **get_comprehensive_forecast_details** - Deep forecast dive
+17. **get_comprehensive_forecast_details** - Deep forecast dive
     - Segment breakdown, project details
     - Assumptions and drivers
 
@@ -942,9 +953,11 @@ CRITICAL TOOL SELECTION RULES:
 - Historical years: integers ({historical_cutoff-1}, {historical_cutoff})
 - Forecast years: strings ("{forecast_start}", "{forecast_start+1}")
 - Quarters: "{historical_cutoff}Q1", "{historical_cutoff}Q2" format
+ - Units: Historical tools support unit parameter ('raw'|'billions'); prefer 'billions'. Forecast tools already return billions VND.
 
 **Key Guidelines:**
-- For years ≤{historical_cutoff}: use get_historical_financials
+- For annual historical data: use get_historical_annual_financials
+- For quarterly historical data: use get_historical_quarterly_financials
 - For years ≥{forecast_start}: use get_financial_forecasts with OPTIMIZED parameters:
   * Specify 1-3 years max (avoid default all years)
   * Use statement_type="pnl" for P&L questions
@@ -954,7 +967,8 @@ CRITICAL TOOL SELECTION RULES:
 - For balance sheet metrics: use calculate_balance_sheet_ratios
 - Display full details when presenting scores or analysis
 - Cite data sources (CSV for historical, MongoDB for forecast)
-- MINIMIZE TOKEN USAGE: Be specific with parameters to avoid large responses"""
+- MINIMIZE TOKEN USAGE: Be specific with parameters (metrics, years, fields) to avoid large responses
+- OUTPUTS: Include units (e.g., VND bn), timeframe, and data source. Summarize first; only include large tables when requested."""
     
     # Add context from previous conversation if available
     #if context_str:

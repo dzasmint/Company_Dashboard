@@ -154,3 +154,27 @@ When writing code for this repository:
    - Display DataFrames directly without wrapping
    - Use simple print statements for quick checks
    - Format numbers inline with f-strings when needed
+
+## AI Tooling Notes (Historical Financials)
+
+The MCP tool system provides two historical endpoints backed by parquet files:
+- `get_historical_quarterly_financials` → `data/FA_processed.parquet`
+- `get_historical_annual_financials` → `data/FA_A_processed.parquet`
+
+Key behavior (updated):
+- Units: Both tools accept `unit` ('raw' | 'billions', default 'raw'). When `billions`, only monetary metrics are divided by 1e9. Ratios/margins (`EBITDA_Margin`, `EBIT_Margin`, `Gross_Margin`, `NPAT_Margin`, `Eff_Tax_Rate`) and `OS` are not scaled.
+- YoY: Results include YoY growth as separate columns with `_YoY` suffix when pivoted (e.g., `Net_Revenue_YoY`). Non‑pivot responses keep the original `YoY` column.
+- Metadata: Responses include `units` and `conversion_applied` flags for clarity.
+
+Metric aliases: The tools map common names to KEYCODEs (e.g., `revenue→Net_Revenue`, `ebitda→EBITDA`, `advance_from_customers→Advance_From_Custmers`, `sga→GA_Expense`). Prefer canonical KEYCODEs for precision.
+
+Example (quarterly, in billions):
+```python
+tools.get_historical_quarterly_financials(
+    tickers=["DXG"], years=[2023], metrics=["Net_Revenue","EBITDA"], unit="billions"
+)
+```
+
+Notes:
+- `DATE` uses `YYYYQn` for quarterly and `YYYY` for annual.
+- Use `metrics` to reduce payload; otherwise all 40+ KEYCODEs are returned.
