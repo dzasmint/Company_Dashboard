@@ -870,7 +870,9 @@ Forecasts & Summaries
 8) get_rnav_breakdown — RNAV by project (land, construction, pricing, timing) for covered developers (e.g., KDH, TAL, TCH, NLG, NTL, DXG).
 
  Advanced Forecast Detail
-8.1) analyze_project_contribution_to_forecast — Project-level contributions to company forecasts.
+8.1) analyze_project_contribution_to_forecast — Project-level contributions to company forecasts by metric.
+    - Args: ticker, metric (revenue/cogs/gross_profit/sga/interest/pbt/pat/patmi/minority_interest/presales_inflow/land_outflow/construction_outflow/interest_outflow/sga_outflow/tax_outflow/debt_changes/net_cash_flow), year
+    - Returns project breakdown with contribution percentages for specified metric
 8.2) get_comprehensive_forecast_details — Deep dive: segments, projects, assumptions and drivers.
 
 Real Estate Projects (MongoDB RealEstateProjects)

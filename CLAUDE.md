@@ -169,8 +169,9 @@ When writing code for this repository:
    - Use simple print statements for quick checks
    - Format numbers inline with f-strings when needed
 
-## AI Tooling Notes (Historical Financials)
+## AI Tooling Notes
 
+### Historical Financials
 The MCP tool system provides two historical endpoints backed by parquet files:
 - `get_historical_quarterly_financials` → `data/FA_processed.parquet`
 - `get_historical_annual_financials` → `data/FA_A_processed.parquet`
@@ -186,6 +187,31 @@ Balance sheet ratios:
 - calculate_balance_sheet_ratios supports aliases: `interest_coverage|icr→ebitda_interest_coverage`, `dte→debt_to_equity`, `nde→net_debt_to_equity`.
 - Added ratios: `quick_ratio`, `cash_ratio`, `net_debt` (returns `net_debt_bn`).
 - For forecasts, current assets/liabilities are synthesized: cash + AR + inventory (+ ST investment) and AP + customer_prepayment + ST debt.
+
+### Enhanced Project Contribution Analysis
+The `analyse_project_contribution_to_forecast` tool has been enhanced to support both P&L and Cash Flow metrics:
+
+**Available Metrics (17 total):**
+
+**P&L Statement (from project_breakdown):**
+- `revenue`, `cogs`, `gross_profit`, `sga`, `interest`
+- `pbt`, `pat`, `patmi`, `minority_interest`
+
+**Cash Flow Statement (from cash_flow_detail):**
+- `presales_inflow`, `land_outflow`, `construction_outflow`
+- `interest_outflow`, `sga_outflow`, `tax_outflow`
+- `debt_changes`, `net_cash_flow`
+
+**Usage:**
+```python
+# P&L metric
+analyse_project_contribution_to_forecast(ticker="VHM", metric="revenue", year="2025")
+
+# Cash Flow metric
+analyse_project_contribution_to_forecast(ticker="VHM", metric="presales_inflow", year="2025")
+```
+
+The tool automatically determines the data source (project_breakdown vs cash_flow_detail) based on the requested metric and provides project-level contribution analysis with percentages.
 
 Example (quarterly, in billions):
 ```python

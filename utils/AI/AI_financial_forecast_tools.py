@@ -2395,12 +2395,42 @@ BEST PRACTICES:
             return {"error": str(e), "status": "failed"}
     
     @tool_system.tool(
-        name="analyze_project_contribution_to_forecast", 
-        description="Analyze how individual real estate projects contribute to the company's forecast revenue and profitability",
+        name="analyze_project_contribution_to_forecast",
+        description="""Analyze how individual real estate projects contribute to a specific metric in the company's forecast.
+
+AVAILABLE METRICS:
+
+P&L STATEMENT:
+- revenue: Total revenue contribution
+- cogs: Cost of goods sold
+- gross_profit: Gross profit contribution
+- sga: Selling, general & administrative expenses
+- interest: Interest expense
+- pbt: Profit before tax
+- pat: Profit after tax
+- patmi: Profit after tax and minority interest
+- minority_interest: Minority interest expense
+
+CASH FLOW STATEMENT:
+- presales_inflow: Pre-sales cash inflows
+- land_outflow: Land acquisition cash outflows
+- construction_outflow: Construction expenditure outflows
+- interest_outflow: Interest payment outflows
+- sga_outflow: SG&A cash outflows
+- tax_outflow: Tax payment outflows
+- debt_changes: Debt financing changes
+- net_cash_flow: Net cash flow contribution
+
+Choose the appropriate metric based on your analysis needs.""",
         parameters={
             "ticker": {
                 "type": "string",
                 "description": "Company ticker to analyze",
+                "required": True
+            },
+            "metric": {
+                "type": "string",
+                "description": "Financial metric to analyze project contributions for. P&L metrics: revenue, cogs, gross_profit, sga, interest, pbt, pat, patmi, minority_interest. Cash Flow metrics: presales_inflow, land_outflow, construction_outflow, interest_outflow, sga_outflow, tax_outflow, debt_changes, net_cash_flow",
                 "required": True
             },
             "year": {
@@ -2410,290 +2440,155 @@ BEST PRACTICES:
             }
         }
     )
-    def analyze_project_contribution_to_forecast(ticker: str, year: str) -> Dict:
-        """Analyze breakdown of project contributions to company forecast"""
-        
+    def analyze_project_contribution_to_forecast(ticker: str, metric: str, year: str) -> Dict:
+        """Analyze breakdown of project contributions to company forecast for a specific metric"""
+
         if tool_system.vietnam_stocks_db is None:
             return {"error": "MongoDB not connected", "status": "failed"}
-        
+
         ticker = ticker.upper()
-        
+        metric = metric.lower().strip()
+
+        # Available metrics from project_breakdown and cash_flow_detail
+        available_metrics = {
+            # P&L metrics from project_breakdown
+            'revenue', 'cogs', 'gross_profit', 'sga', 'interest',
+            'pbt', 'pat', 'patmi', 'minority_interest',
+            # Cash flow metrics from cash_flow_detail
+            'presales_inflow', 'land_outflow', 'construction_outflow',
+            'interest_outflow', 'sga_outflow', 'tax_outflow',
+            'debt_changes', 'net_cash_flow'
+        }
+
+        # Validate metric
+        if metric not in available_metrics:
+            return {
+                "error": f"Invalid metric: {metric}",
+                "available_metrics": sorted(list(available_metrics)),
+                "suggestion": f"Choose from: {', '.join(sorted(list(available_metrics)))}",
+                "status": "failed"
+            }
+
         try:
             # Get company forecast
             forecast_collection = tool_system.vietnam_stocks_db['CompanyForecast']
             company_doc = forecast_collection.find_one({'ticker': ticker}, {'_id': 0})
-            
+
             if not company_doc or year not in company_doc.get('forecast_data', {}):
                 return {"error": f"No forecast data for {ticker} in {year}", "status": "failed"}
-            
+
             year_data = company_doc['forecast_data'][year]
             company_pnl = year_data.get('pnl', {})
+            company_cash_flow = year_data.get('cash_flow', {})
             project_breakdown = year_data.get('project_breakdown', {})
-            
+            cash_flow_detail = year_data.get('cash_flow_detail', {})
+
             # Get project details from RealEstateProjects
             projects_collection = tool_system.vietnam_stocks_db['RealEstateProjects']
             projects = list(projects_collection.find({'company_ticker': ticker}, {'_id': 0}))
-            
+
+            # Determine data source and get company total for the requested metric
+            company_total = 0
+            data_source = None
+
+            # Check if metric is from P&L (project_breakdown)
+            if metric in ['revenue', 'cogs', 'gross_profit', 'sga', 'interest', 'pbt', 'pat', 'patmi', 'minority_interest']:
+                company_total = company_pnl.get(metric, 0) / 1e9
+                data_source = 'project_breakdown'
+            # Check if metric is from cash flow (cash_flow_detail)
+            elif metric in ['presales_inflow', 'land_outflow', 'construction_outflow', 'interest_outflow', 'sga_outflow', 'tax_outflow', 'debt_changes', 'net_cash_flow']:
+                # For cash flow metrics, get total from cash_flow section
+                cash_flow_mapping = {
+                    'presales_inflow': 'presales_inflow',
+                    'land_outflow': 'land_outflow',
+                    'construction_outflow': 'construction_outflow',
+                    'interest_outflow': 'project_interest_expense',
+                    'sga_outflow': 'project_sga',
+                    'tax_outflow': 'tax',
+                    'debt_changes': 'debt_changes',
+                    'net_cash_flow': 'total_operating'  # Use operating cash flow as proxy for net
+                }
+                cf_metric = cash_flow_mapping.get(metric, metric)
+                if 'operating' in company_cash_flow and cf_metric in company_cash_flow['operating']:
+                    company_total = company_cash_flow['operating'][cf_metric] / 1e9
+                elif 'investing' in company_cash_flow and cf_metric in company_cash_flow['investing']:
+                    company_total = company_cash_flow['investing'][cf_metric] / 1e9
+                elif 'financing' in company_cash_flow and cf_metric in company_cash_flow['financing']:
+                    company_total = company_cash_flow['financing'][cf_metric] / 1e9
+                elif cf_metric in company_cash_flow:
+                    company_total = company_cash_flow[cf_metric] / 1e9
+                data_source = 'cash_flow_detail'
+
             result = {
                 "ticker": ticker,
+                "metric": metric,
                 "year": year,
-                "company_totals": {
-                    "total_revenue": company_pnl.get('net_revenue', 0) / 1e9,
-                    "total_pat": company_pnl.get('pat', 0) / 1e9,
-                    "total_patmi": company_pnl.get('npatmi', 0) / 1e9,
-                    "minority_interest": company_pnl.get('minority_interest', 0) / 1e9
-                },
+                "company_total": company_total,
+                "data_source": data_source,
                 "project_contributions": {},
                 "summary": {}
             }
-            
-            # Add project-level contribution data
-            total_project_revenue = 0
-            total_project_pat = 0
-            total_project_patmi = 0
-            
-            # Process revenue contributions
-            if 'revenue' in project_breakdown:
-                for project_name, revenue_value in project_breakdown['revenue'].items():
-                    revenue_billions = revenue_value / 1e9
-                    total_project_revenue += revenue_billions
-                    
-                    if project_name not in result['project_contributions']:
-                        result['project_contributions'][project_name] = {}
-                    
-                    result['project_contributions'][project_name]['revenue'] = revenue_billions
-                    result['project_contributions'][project_name]['revenue_contribution_pct'] = (
-                        (revenue_billions / result['company_totals']['total_revenue'] * 100) 
-                        if result['company_totals']['total_revenue'] != 0 else 0
-                    )
-            
-            # Process PAT contributions
-            if 'pat' in project_breakdown:
-                for project_name, pat_value in project_breakdown['pat'].items():
-                    pat_billions = pat_value / 1e9
-                    patmi_billions = project_breakdown.get('patmi', {}).get(project_name, 0) / 1e9
-                    total_project_pat += pat_billions
-                    total_project_patmi += patmi_billions
-                    
-                    if project_name not in result['project_contributions']:
-                        result['project_contributions'][project_name] = {}
-                    
-                    result['project_contributions'][project_name].update({
-                        'pat': pat_billions,
-                        'patmi': patmi_billions,
-                        'pat_contribution_pct': (
-                            (pat_billions / result['company_totals']['total_pat'] * 100) 
-                            if result['company_totals']['total_pat'] != 0 else 0
+
+            # Process project contributions for the specific metric
+            total_project_contribution = 0
+
+            # Check project_breakdown first (P&L metrics)
+            if metric in project_breakdown:
+                for project_name, metric_value in project_breakdown[metric].items():
+                    contribution_billions = metric_value / 1e9
+                    total_project_contribution += contribution_billions
+
+                    result['project_contributions'][project_name] = {
+                        'contribution': contribution_billions,
+                        'contribution_pct': (
+                            (contribution_billions / company_total * 100)
+                            if company_total != 0 else 0
                         )
-                    })
-            
+                    }
+            # Check cash_flow_detail for cash flow metrics
+            elif 'by_project' in cash_flow_detail:
+                for project_name, project_cf_data in cash_flow_detail['by_project'].items():
+                    if metric in project_cf_data:
+                        contribution_billions = project_cf_data[metric] / 1e9
+                        total_project_contribution += contribution_billions
+
+                        result['project_contributions'][project_name] = {
+                            'contribution': contribution_billions,
+                            'contribution_pct': (
+                                (contribution_billions / company_total * 100)
+                                if company_total != 0 else 0
+                            )
+                        }
+
             # Calculate summary statistics
             result['summary'] = {
                 'total_projects_contributing': len(result['project_contributions']),
-                'projects_total_revenue': total_project_revenue,
-                'projects_total_pat': total_project_pat,
-                'projects_total_patmi': total_project_patmi,
-                'other_business_revenue': result['company_totals']['total_revenue'] - total_project_revenue,
-                'other_business_pat': result['company_totals']['total_pat'] - total_project_pat,
-                'other_business_patmi': result['company_totals']['total_patmi'] - total_project_patmi,
-                'projects_revenue_contribution_pct': (
-                    (total_project_revenue / result['company_totals']['total_revenue'] * 100) 
-                    if result['company_totals']['total_revenue'] != 0 else 0
+                'projects_total_contribution': total_project_contribution,
+                'other_business_contribution': company_total - total_project_contribution,
+                'projects_contribution_pct': (
+                    (total_project_contribution / company_total * 100)
+                    if company_total != 0 else 0
                 ),
-                'projects_pat_contribution_pct': (
-                    (total_project_pat / result['company_totals']['total_pat'] * 100) 
-                    if result['company_totals']['total_pat'] != 0 else 0
-                )
+                'metric_unit': 'billions VND'
             }
-            
-            # Sort projects by PAT contribution
+
+            # Sort projects by contribution (descending)
             sorted_projects = sorted(
                 result['project_contributions'].items(),
-                key=lambda x: x[1].get('pat', 0),
+                key=lambda x: x[1]['contribution'],
                 reverse=True
             )
             result['project_contributions'] = dict(sorted_projects)
-            
+
             return {
                 "analysis": result,
+                "available_metrics": sorted(list(available_metrics)),
                 "status": "success"
             }
-            
+
         except Exception as e:
             return {"error": str(e), "status": "failed"}
     
-    @tool_system.tool(
-        name="get_comprehensive_forecast_details",
-        description="Get comprehensive forecast data including all financial statements, project details, and interest income calculations. ALL VALUES ARE IN BILLIONS VND",
-        parameters={
-            "ticker": {
-                "type": "string",
-                "description": "Company ticker",
-                "required": True
-            },
-            "years": {
-                "type": "array",
-                "items": {"type": "integer"},
-                "description": "Forecast years to retrieve (2025-2030)",
-                "required": False
-            },
-            "include_project_breakdown": {
-                "type": "boolean",
-                "description": "Include detailed project-level breakdown",
-                "required": False
-            },
-            "include_assumptions": {
-                "type": "boolean",
-                "description": "Include all forecast assumptions",
-                "required": False
-            },
-            "include_valuation": {
-                "type": "boolean",
-                "description": "Include valuation metrics (RNAV, P/E, P/B)",
-                "required": False
-            }
-        }
-    )
-    def get_comprehensive_forecast_details(ticker: str, years: List[int] = None, 
-                                            include_project_breakdown: bool = True,
-                                            include_assumptions: bool = True,
-                                            include_valuation: bool = True) -> Dict:
-        """Get comprehensive forecast details from MongoDB CompanyForecast collection"""
-        
-        if tool_system.vietnam_stocks_db is None:
-            return {"error": "MongoDB not connected", "status": "failed"}
-        
-        ticker = ticker.upper()
-        
-        try:
-            collection = tool_system.vietnam_stocks_db['CompanyForecast']
-            
-            # Get forecast document
-            doc = collection.find_one({'ticker': ticker}, {'_id': 0})
-            
-            if not doc:
-                return {"error": f"No forecast data found for {ticker}", "status": "failed"}
-            
-            # Filter years if specified
-            if years:
-                years_str = [str(y) for y in years]
-            else:
-                # Get all available years
-                years_str = list(doc.get('forecast_data', {}).keys())
-            
-            result = {
-                "ticker": ticker,
-                "company_name": doc.get('company_name', ticker),
-                "last_updated": doc.get('last_updated', 'N/A'),
-                "years": years_str
-            }
-            
-            # Add assumptions if requested
-            if include_assumptions:
-                result['assumptions'] = doc.get('assumptions', {})
-            
-            # Process each year's data
-            forecast_data = {}
-            for year in years_str:
-                if year not in doc.get('forecast_data', {}):
-                    continue
-                
-                year_data = doc['forecast_data'][year]
-                
-                # Get P&L data (stored as 'pnl' not 'consolidated_pnl')
-                pnl_data = year_data.get('pnl', year_data.get('consolidated_pnl', {}))
-                
-                # Get balance sheet data
-                bs_data = year_data.get('balance_sheet', year_data.get('consolidated_balance_sheet', {}))
-                
-                # Get cash flow data
-                cf_data = year_data.get('cash_flow', year_data.get('consolidated_cash_flow', {}))
-                
-                # Comprehensive financial statements
-                forecast_data[year] = {
-                    'consolidated_pnl': pnl_data,
-                    'consolidated_balance_sheet': bs_data,
-                    'consolidated_cash_flow': cf_data,
-                    'interest_income': pnl_data.get('interest_income', 0),
-                    'key_metrics': {
-                        'revenue': pnl_data.get('net_revenue', pnl_data.get('revenue', 0)),
-                        'gross_profit': pnl_data.get('gross_profit', 0),
-                        'ebitda': pnl_data.get('ebitda', 0),
-                        'npat': pnl_data.get('pat', pnl_data.get('npat', 0)),
-                        'npatmi': pnl_data.get('npatmi', 0),
-                        'total_assets': bs_data.get('total_assets', bs_data.get('assets', {}).get('total_assets', 0)),
-                        'total_equity': bs_data.get('total_equity', bs_data.get('equity', {}).get('total_equity', 0)),
-                        'total_debt': bs_data.get('total_debt', bs_data.get('liabilities', {}).get('total_debt', 0)),
-                        'cash_balance': bs_data.get('cash', bs_data.get('assets', {}).get('cash', 0)),
-                        'operating_cash_flow': cf_data.get('operating_cash_flow', cf_data.get('operating_activities', {}).get('total', 0))
-                    },
-                    'units': 'billion_vnd'  # Clarify units
-                }
-                
-                # Add project breakdown if requested
-                if include_project_breakdown and 'project_breakdown' in year_data:
-                    project_breakdown = year_data['project_breakdown']
-                    
-                    # Summarize project data
-                    project_summary = {}
-                    for project_name, project_data in project_breakdown.items():
-                        project_summary[project_name] = {
-                            'revenue': project_data.get('revenue', 0),
-                            'cogs': project_data.get('cogs', 0),
-                            'gross_profit': project_data.get('gross_profit', 0),
-                            'inventory_change': project_data.get('inventory_change', 0),
-                            'debt_change': project_data.get('debt_change', 0),
-                            'prepayment_change': project_data.get('prepayment_change', 0),
-                            'cash_change': project_data.get('cash_change', 0),
-                            'presales': project_data.get('presales', 0),
-                            'cash_collection': project_data.get('cash_collection', 0)
-                        }
-                    
-                    forecast_data[year]['project_breakdown'] = project_summary
-            
-            result['forecast_data'] = forecast_data
-            
-            # Calculate growth rates
-            if len(years_str) > 1:
-                growth_rates = {}
-                sorted_years = sorted(years_str)
-                for i in range(1, len(sorted_years)):
-                    prev_year = sorted_years[i-1]
-                    curr_year = sorted_years[i]
-                    
-                    prev_revenue = forecast_data.get(prev_year, {}).get('key_metrics', {}).get('revenue', 0)
-                    curr_revenue = forecast_data.get(curr_year, {}).get('key_metrics', {}).get('revenue', 0)
-                    
-                    if prev_revenue > 0:
-                        growth_rates[f"{prev_year}-{curr_year}"] = {
-                            'revenue_growth': ((curr_revenue - prev_revenue) / prev_revenue) * 100,
-                            'npat_growth': tool_system._calculate_growth(
-                                forecast_data.get(prev_year, {}).get('key_metrics', {}).get('npat', 0),
-                                forecast_data.get(curr_year, {}).get('key_metrics', {}).get('npat', 0)
-                            )
-                        }
-                
-                result['growth_rates'] = growth_rates
-            
-            # Add valuation data if requested
-            if include_valuation and 'valuation_data' in doc:
-                valuation = doc['valuation_data']
-                result['valuation'] = {
-                    "current_price": valuation.get('current_price', 0),
-                    "rnav_per_share": valuation.get('rnav_per_share', 0),
-                    "rnav_upside_pct": ((valuation.get('rnav_per_share', 0) / valuation.get('current_price', 1) - 1) * 100) if valuation.get('current_price', 0) > 0 else 0,
-                    "multiples": valuation.get('multiples', {}),
-                    "has_rnav_details": len(valuation.get('rnav_details', [])) > 0
-                }
-            
-            return {
-                "data": result,
-                "source": "CompanyForecast",
-                "status": "success"
-            }
-            
-        except Exception as e:
-            return {"error": str(e), "status": "failed"}
 
 def _calculate_growth(self, prev_value: float, curr_value: float) -> float:
     """Helper to calculate growth rate"""
