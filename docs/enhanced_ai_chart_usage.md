@@ -106,9 +106,8 @@ result = system.execute_tool('render_chart', {
    - Chart rendering utilities
 
 3. **Test Files**
-   - `test_enhanced_chart.py` - Tool testing
-   - `test_enhanced_ai_chart_integration.py` - Integration test
-   - `examples/enhanced_ai_with_charts.py` - Usage example
+    - `test_enhanced_chart.py` - Tool testing
+    - `test_enhanced_ai_chart_integration.py` - Integration test
 
 ## Color Scheme
 
