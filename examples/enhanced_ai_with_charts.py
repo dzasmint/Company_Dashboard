@@ -40,7 +40,7 @@ def execute_tool_and_handle_charts(tool_name: str, arguments: dict):
     result = st.session_state.tool_system.execute_tool(tool_name, arguments)
     
     # Check if this is a chart rendering tool
-    if tool_name in ["render_chart", "create_financial_chart"] and result.get("status") == "success":
+    if tool_name == "render_chart" and result.get("status") == "success":
         if "chart_spec" in result:
             st.session_state.pending_charts.append(result["chart_spec"])
     

@@ -41,10 +41,9 @@ Integrates all data sources: CSV files, MongoDB collections, and AI services
    - Support for both annual and quarterly data frequencies
    - Parameters: ticker, metrics, period_type, data_frequency
 
-7. **create_financial_chart** - Interactive Plotly visualizations
-   - Chart types: line, bar, waterfall, scatter, area, combo
-   - Auto-detects data structure from other tools
-   - Parameters: chart_type, data, title, x_axis, y_axis, options
+7. **render_chart** - Interactive Plotly visualizations
+   - Chart types: line, bar, stacked_bar, scatter, area
+   - Accepts processed, chart-ready data (x + series)
    - Automatically displays in Streamlit context
 
 ### Data Sources:
@@ -893,7 +892,6 @@ AI + Web Search
 Visualization
 18) render_chart — Render charts from processed data
    - Workflow: call data tools first; then pass clean x + series arrays; set y_format ('percent'|'number'|'currency').
-19) create_financial_chart — Back-compat wrapper; converts data into render_chart format.
    - Do not paste large tables in text. Describe the chart and rely on rendering.
 
 DATA FORMATS
@@ -1081,7 +1079,7 @@ OPERATING RULES
                         tool_result["_token_warning"] = f"Large tool response: ~{tool_tokens} tokens"
                     
                     # Check if this is a chart rendering tool
-                    if function_name in ["render_chart", "create_financial_chart"] and tool_result.get("status") == "success":
+                    if function_name == "render_chart" and tool_result.get("status") == "success":
                         if "chart_spec" in tool_result:
                             st.session_state.pending_charts.append(tool_result["chart_spec"])
                     
