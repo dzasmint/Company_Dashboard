@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import json
-from .claude_project_extractor import ClaudeProjectExtractor
+from .chatGPT_project_extractor import ChatGPTProjectExtractor
 from .perplexity_utils import PerplexityProjectResearcher
 from .mongodb_utils import MongoDBHelper
 import numpy as np
@@ -18,7 +18,7 @@ class ProjectPipelineManager:
     
     def __init__(self, claude_api_key: Optional[str] = None, perplexity_api_key: Optional[str] = None):
         """Initialize with AI agent API keys"""
-        self.claude_extractor = ClaudeProjectExtractor(api_key=claude_api_key)
+        self.claude_extractor = ChatGPTProjectExtractor(api_key=claude_api_key)
         self.perplexity_researcher = PerplexityProjectResearcher(api_key=perplexity_api_key)
         self.mongo_helper = MongoDBHelper()
     

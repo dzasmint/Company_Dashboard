@@ -1,8 +1,8 @@
 """
-Claude AI integration for extracting real estate projects from financial statements
+ChatGPT AI integration for extracting real estate projects from financial statements
 """
 
-import anthropic
+import openai
 import json
 import os
 import streamlit as st
@@ -17,16 +17,16 @@ import numpy as np
 # Load environment variables
 load_dotenv()
 
-class ClaudeProjectExtractor:
-    """Extract real estate project information from financial statements using Claude AI"""
-    
+class ChatGPTProjectExtractor:
+    """Extract real estate project information from financial statements using ChatGPT AI"""
+
     def __init__(self, api_key: Optional[str] = None):
-        """Initialize Claude client with API key"""
-        self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+        """Initialize OpenAI client with API key"""
+        self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY not found. Please set it in .env file or pass it directly.")
-        
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+            raise ValueError("OPENAI_API_KEY not found. Please set it in .env file or pass it directly.")
+
+        self.client = openai.OpenAI(api_key=self.api_key)
     
     def _convert_none_to_zero(self, obj):
         """Recursively convert None values to 0 in nested dictionaries/lists"""
@@ -476,26 +476,32 @@ Tổng cộng: 11,050,000""",
         """
         
         try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+            response = self.client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": """You are a financial analyst expert specialized in reading sell-side equity research reports
+                    on Vietnamese real estate companies. You understand how analysts discuss and value real estate projects,
+                    including RNAV methodology, project pipeline analysis, and development assumptions.
+                    Always return valid JSON only, with no additional text."""},
+                    {"role": "user", "content": prompt}
+                ],
                 max_tokens=4000,
-                temperature=0,
-                system="""You are a financial analyst expert specialized in reading sell-side equity research reports 
-                on Vietnamese real estate companies. You understand how analysts discuss and value real estate projects,
-                including RNAV methodology, project pipeline analysis, and development assumptions.
-                Always return valid JSON only, with no additional text.""",
-                messages=[{"role": "user", "content": prompt}]
+                temperature=0
             )
-            
+
             # Parse the response
-            response_text = response.content[0].text
-            
+            response_text = response.choices[0].message.content
+
+            # Check if response is None
+            if response_text is None:
+                raise ValueError("Empty response from ChatGPT API")
+
             # Clean up response if needed
             if "```json" in response_text:
                 response_text = response_text.split("```json")[1].split("```")[0]
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0]
-            
+
             # Parse JSON
             result = json.loads(response_text)
             
@@ -532,7 +538,7 @@ Tổng cộng: 11,050,000""",
                 'company_ticker': company_ticker,
                 'extraction_date': pd.Timestamp.now().isoformat(),
                 'document_type': 'analyst_report',
-                'model_used': 'claude-3-5-sonnet-20241022'
+                'model_used': 'gpt-4'
             }
             
             return result
@@ -674,26 +680,32 @@ Tổng cộng: 11,050,000""",
         """
         
         try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+            response = self.client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": """You are a financial analyst expert specialized in analyzing real estate company presentations.
+                    You understand how companies present their project pipelines, development strategies, and project details.
+                    You can extract structured project information from presentations, investor decks, and management slides.
+                    Always return valid JSON only, with no additional text."""},
+                    {"role": "user", "content": prompt}
+                ],
                 max_tokens=4000,
-                temperature=0,
-                system="""You are a financial analyst expert specialized in analyzing real estate company presentations.
-                You understand how companies present their project pipelines, development strategies, and project details.
-                You can extract structured project information from presentations, investor decks, and management slides.
-                Always return valid JSON only, with no additional text.""",
-                messages=[{"role": "user", "content": prompt}]
+                temperature=0
             )
-            
+
             # Parse the response
-            response_text = response.content[0].text
-            
+            response_text = response.choices[0].message.content
+
+            # Check if response is None
+            if response_text is None:
+                raise ValueError("Empty response from ChatGPT API")
+
             # Clean up response if needed
             if "```json" in response_text:
                 response_text = response_text.split("```json")[1].split("```")[0]
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0]
-            
+
             # Parse JSON
             result = json.loads(response_text)
             
@@ -714,7 +726,7 @@ Tổng cộng: 11,050,000""",
                 'company_ticker': company_ticker,
                 'extraction_date': pd.Timestamp.now().isoformat(),
                 'document_type': 'company_presentation',
-                'model_used': 'claude-3-5-sonnet-20241022'
+                'model_used': 'gpt-4'
             }
             
             return result
@@ -824,41 +836,47 @@ Tổng cộng: 11,050,000""",
         """
         
         try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+            response = self.client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": """You are a financial analyst expert in extracting revenue segments and project data
+                    from Vietnamese financial statements. You understand both revenue analysis and real estate
+                    project extraction.
+
+                    CRITICAL: You must ONLY return valid JSON without any additional text, explanation, or markdown formatting.
+                    Start your response with { and end with }. Do not use markdown code blocks."""},
+                    {"role": "user", "content": prompt}
+                ],
                 max_tokens=4000,
-                temperature=0,
-                system="""You are a financial analyst expert in extracting revenue segments and project data
-                from Vietnamese financial statements. You understand both revenue analysis and real estate
-                project extraction. 
-                
-                CRITICAL: You must ONLY return valid JSON without any additional text, explanation, or markdown formatting.
-                Start your response with { and end with }. Do not use markdown code blocks.""",
-                messages=[{"role": "user", "content": prompt}]
+                temperature=0
             )
-            
+
             # Parse response
-            response_text = response.content[0].text
-            
+            response_text = response.choices[0].message.content
+
+            # Check if response is None
+            if response_text is None:
+                raise ValueError("Empty response from ChatGPT API")
+
             # Clean the response text
             if "```json" in response_text:
                 response_text = response_text.split("```json")[1].split("```")[0]
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0]
-            
+
             # Remove any leading/trailing whitespace
             response_text = response_text.strip()
-            
+
             # Try to find JSON content if it's embedded in text
             if response_text and not response_text.startswith('{'):
                 # Look for JSON structure
                 json_start = response_text.find('{')
                 if json_start != -1:
                     response_text = response_text[json_start:]
-            
+
             if not response_text:
-                raise ValueError("Empty response from Claude")
-            
+                raise ValueError("Empty response from ChatGPT")
+
             # Parse JSON
             try:
                 result = json.loads(response_text)
@@ -1032,26 +1050,32 @@ Tổng cộng: 11,050,000""",
         """
         
         try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",  # Using Claude 3.5 Sonnet - most advanced model
+            response = self.client.chat.completions.create(
+                model="gpt-4",  # Using GPT-4 - most advanced model
+                messages=[
+                    {"role": "system", "content": """You are a financial analyst expert specialized in Vietnamese real estate companies.
+                    You understand both English and Vietnamese financial terminology.
+                    You are meticulous about extracting accurate data from financial statements.
+                    Always return valid JSON only, with no additional text."""},
+                    {"role": "user", "content": prompt}
+                ],
                 max_tokens=4000,
-                temperature=0,  # Use 0 for more consistent extraction
-                system="""You are a financial analyst expert specialized in Vietnamese real estate companies. 
-                You understand both English and Vietnamese financial terminology. 
-                You are meticulous about extracting accurate data from financial statements.
-                Always return valid JSON only, with no additional text.""",
-                messages=[{"role": "user", "content": prompt}]
+                temperature=0  # Use 0 for more consistent extraction
             )
-            
+
             # Parse the response
-            response_text = response.content[0].text
-            
+            response_text = response.choices[0].message.content
+
+            # Check if response is None
+            if response_text is None:
+                raise ValueError("Empty response from ChatGPT API")
+
             # Clean up response if needed (remove any markdown formatting)
             if "```json" in response_text:
                 response_text = response_text.split("```json")[1].split("```")[0]
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0]
-            
+
             # Parse JSON
             result = json.loads(response_text)
             
@@ -1085,7 +1109,7 @@ Tổng cộng: 11,050,000""",
                 'company_name': company_name,
                 'company_ticker': company_ticker,
                 'extraction_date': pd.Timestamp.now().isoformat(),
-                'model_used': 'claude-3-5-sonnet-20241022'
+                'model_used': 'gpt-4'
             }
             
             return result
@@ -1489,25 +1513,31 @@ Tổng cộng: 11,050,000""",
         """
         
         try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+            response = self.client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": """You are an expert at merging and deduplicating real estate project data from multiple sources.
+                    You understand project naming variations, Vietnamese and English names, and can identify duplicate projects
+                    even when they have slightly different names or specifications. Always return valid JSON only."""},
+                    {"role": "user", "content": merge_prompt}
+                ],
                 max_tokens=4000,
-                temperature=0,
-                system="""You are an expert at merging and deduplicating real estate project data from multiple sources.
-                You understand project naming variations, Vietnamese and English names, and can identify duplicate projects
-                even when they have slightly different names or specifications. Always return valid JSON only.""",
-                messages=[{"role": "user", "content": merge_prompt}]
+                temperature=0
             )
-            
+
             # Parse response
-            response_text = response.content[0].text
-            
+            response_text = response.choices[0].message.content
+
+            # Check if response is None
+            if response_text is None:
+                raise ValueError("Empty response from ChatGPT API")
+
             # Clean up response if needed
             if "```json" in response_text:
                 response_text = response_text.split("```json")[1].split("```")[0]
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0]
-            
+
             # Parse JSON
             result = json.loads(response_text)
             
@@ -1643,24 +1673,30 @@ Tổng cộng: 11,050,000""",
         """
         
         try:
-            response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+            response = self.client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": """You are an expert at comparing real estate project databases to identify new discoveries
+                    and updates. You can match projects even with name variations. Always return valid JSON only."""},
+                    {"role": "user", "content": comparison_prompt}
+                ],
                 max_tokens=4000,
-                temperature=0,
-                system="""You are an expert at comparing real estate project databases to identify new discoveries
-                and updates. You can match projects even with name variations. Always return valid JSON only.""",
-                messages=[{"role": "user", "content": comparison_prompt}]
+                temperature=0
             )
-            
+
             # Parse response
-            response_text = response.content[0].text
-            
+            response_text = response.choices[0].message.content
+
+            # Check if response is None
+            if response_text is None:
+                raise ValueError("Empty response from ChatGPT API")
+
             # Clean up response if needed
             if "```json" in response_text:
                 response_text = response_text.split("```json")[1].split("```")[0]
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0]
-            
+
             # Parse JSON
             result = json.loads(response_text)
             

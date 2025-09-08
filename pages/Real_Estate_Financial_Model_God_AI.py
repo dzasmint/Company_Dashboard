@@ -50,7 +50,7 @@ from utils.perplexity_utils import (
     parse_sell_side_reports
 )
 from utils.project_pipeline_manager import ProjectPipelineManager
-from utils.claude_project_extractor import ClaudeProjectExtractor
+from utils.chatGPT_project_extractor import ChatGPTProjectExtractor
 
 # Import tabs
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
