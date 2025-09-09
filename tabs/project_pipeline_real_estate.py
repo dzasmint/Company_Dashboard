@@ -2607,10 +2607,7 @@ class ProjectPipelineRealEstateTab:
         # st.info("💡 **Key Difference**: 'Presales (Bookings)' = contractual sales. 'Cash Inflow (Actual Collection)' = cash received (30% upfront, 70% distributed). Customer Prepayment Balance is based on actual cash received.")
         
         # Import balance sheet manager
-        import sys
-        import os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from balance_sheet_manager import generate_simplified_balance_sheet_schedules
+        from utils.balance_sheet_manager import generate_simplified_balance_sheet_schedules
         
         # Get all parameters from edited project
         edited = st.session_state.edited_project
@@ -2801,7 +2798,7 @@ class ProjectPipelineRealEstateTab:
                     st.warning("⚠️ Tax Rate is 0%. Please set Tax Rate in the Assumptions tab for accurate calculations.")
                 
                 # Import the main balance sheet function directly to pass presales schedule
-                from balance_sheet_manager import generate_balance_sheet_schedules
+                from utils.balance_sheet_manager import generate_balance_sheet_schedules
                 
                 # Calculate the actual presales schedule combining low-rise and high-rise
                 # This ensures consistency with the presales distribution display
