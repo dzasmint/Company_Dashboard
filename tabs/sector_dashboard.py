@@ -12,12 +12,13 @@ from utils.mongodb_utils import (
 class SectorDashboardTab:
     """Sector-level dashboard with comparable table across tickers"""
 
-    AVAILABLE_METRICS = [
+    # All available metrics and default ordering for display
+    ORDERED_METRICS = [
+        "Current Price",
+        "RNAV per share",
         "Total Project RNAV",
         "2026E Revenue",
         "2026E NPATMI",
-        "Current Price",
-        "RNAV per share",
     ]
 
     def __init__(self, parent=None):
@@ -48,41 +49,26 @@ class SectorDashboardTab:
         })
         base_df = base_df.dropna(subset=['Ticker']).reset_index(drop=True)
 
-        # Metric selection controls
-        st.markdown("Add columns to compare across metrics.")
-        if 'sector_metrics' not in st.session_state:
-            st.session_state.sector_metrics = []
-
-        cols = st.columns([2, 2, 1, 1])
-        with cols[0]:
-            metric_to_add = st.selectbox(
-                "Add metric",
-                options=[m for m in self.AVAILABLE_METRICS if m not in st.session_state.sector_metrics],
-                index=0 if any(m not in st.session_state.sector_metrics for m in self.AVAILABLE_METRICS) else None,
-                key="sector_metric_selector"
-            )
-        with cols[1]:
-            if st.button("Add Column", use_container_width=True):
-                if metric_to_add and metric_to_add not in st.session_state.sector_metrics:
-                    st.session_state.sector_metrics.append(metric_to_add)
-                    st.toast(f"Added column: {metric_to_add}")
-                    st.rerun()
-        with cols[2]:
-            if st.button("Clear Columns"):
-                st.session_state.sector_metrics = []
-                st.rerun()
-        with cols[3]:
-            # Placeholder for future export
-            pass
-
-        metrics = st.session_state.sector_metrics
+        # Metric selection controls (multiselect)
+        selected_metrics = st.multiselect(
+            "Select metrics",
+            options=self.ORDERED_METRICS,
+            default=self.ORDERED_METRICS,
+            help="Remove metrics to hide columns; order is preserved."
+        )
 
         # Build the comparable table
         df_display = base_df.copy()
-        if metrics:
-            df_metrics = self._compute_metrics_for_tickers(df_display['Ticker'].tolist(), metrics)
+        if selected_metrics:
+            df_metrics = self._compute_metrics_for_tickers(df_display['Ticker'].tolist(), selected_metrics)
             if not df_metrics.empty:
                 df_display = df_display.merge(df_metrics, left_on='Ticker', right_on='Ticker', how='left')
+                # Reorder columns: Ticker, Company Name, then selected metrics in chosen order
+                col_order = ['Ticker', 'Company Name'] + selected_metrics
+                existing = [c for c in col_order if c in df_display.columns]
+                df_display = df_display[existing]
+        else:
+            st.info("No metrics selected. Use the selector above to choose metrics.")
 
         st.dataframe(df_display, use_container_width=True)
 
