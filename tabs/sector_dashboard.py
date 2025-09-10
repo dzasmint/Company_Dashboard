@@ -186,8 +186,14 @@ class SectorDashboardTab:
                 value = None
                 # Try historical annual first
                 try:
-                    hist_res = tool_system.get_historical_annual_financials(
-                        tickers=[ticker], metrics=['Net_Revenue'], years=[int(year)], unit="billions"
+                    hist_res = tool_system.execute_tool(
+                        'get_historical_annual_financials',
+                        {
+                            'tickers': [ticker],
+                            'metrics': ['Net_Revenue'],
+                            'years': [int(year)],
+                            'unit': 'billions'
+                        }
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
                         # The data is already pivoted when metrics are specified
@@ -209,8 +215,14 @@ class SectorDashboardTab:
                 # If not found, try forecast
                 if value is None:
                     try:
-                        fc_res = tool_system.get_financial_forecasts(
-                            ticker=ticker, years=[str(year)], statement_type='pnl', fields=['net_revenue']
+                        fc_res = tool_system.execute_tool(
+                            'get_financial_forecasts',
+                            {
+                                'ticker': ticker,
+                                'years': [str(year)],
+                                'statement_type': 'pnl',
+                                'fields': ['net_revenue']
+                            }
                         )
                         if fc_res.get('status') == 'success':
                             forecast_data = fc_res.get('forecast_data', {})
@@ -230,8 +242,14 @@ class SectorDashboardTab:
                 value = None
                 # Try historical annual first
                 try:
-                    hist_res = tool_system.get_historical_annual_financials(
-                        tickers=[ticker], metrics=['NPATMI'], years=[int(year)], unit="billions"
+                    hist_res = tool_system.execute_tool(
+                        'get_historical_annual_financials',
+                        {
+                            'tickers': [ticker],
+                            'metrics': ['NPATMI'],
+                            'years': [int(year)],
+                            'unit': 'billions'
+                        }
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
                         # The data is already pivoted when metrics are specified
@@ -252,8 +270,14 @@ class SectorDashboardTab:
                 # If not found, try forecast
                 if value is None:
                     try:
-                        fc_res = tool_system.get_financial_forecasts(
-                            ticker=ticker, years=[str(year)], statement_type='pnl', fields=['npatmi']
+                        fc_res = tool_system.execute_tool(
+                            'get_financial_forecasts',
+                            {
+                                'ticker': ticker,
+                                'years': [str(year)],
+                                'statement_type': 'pnl',
+                                'fields': ['npatmi']
+                            }
                         )
                         if fc_res.get('status') == 'success':
                             forecast_data = fc_res.get('forecast_data', {})
