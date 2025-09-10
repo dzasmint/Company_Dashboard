@@ -7,6 +7,7 @@ from utils.mongodb_utils import (
     load_companies_data,
     load_company_forecast,
 )
+from tabs.enhanced_ai_assistant import EnhancedAIToolSystem
 
 
 class SectorDashboardTab:
@@ -17,8 +18,6 @@ class SectorDashboardTab:
         "Current Price",
         "RNAV per share",
         "Total Project RNAV",
-        "2026E Revenue",
-        "2026E NPATMI",
     ]
 
     def __init__(self, parent=None):
@@ -57,14 +56,61 @@ class SectorDashboardTab:
             help="Remove metrics to hide columns; order is preserved."
         )
 
+        # Build available years from historical + forecast data
+        tool_system = EnhancedAIToolSystem()
+        hist_years = []
+        try:
+            df_hist = tool_system._load_annual_financial_statements()
+            if df_hist is not None and not df_hist.empty and 'DATE' in df_hist.columns:
+                hist_years = sorted(df_hist['DATE'].dropna().astype(int).unique().tolist())
+        except Exception:
+            hist_years = []
+
+        forecast_years = set()
+        try:
+            for ticker in base_df['Ticker'].dropna().unique().tolist():
+                doc = load_company_forecast(ticker)
+                yrs = doc.get('forecast_years', []) if isinstance(doc, dict) else []
+                for y in yrs:
+                    try:
+                        forecast_years.add(int(y))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        all_years = sorted(set(hist_years).union(forecast_years))
+
+        cols_years = st.columns(2)
+        with cols_years[0]:
+            revenue_years = st.multiselect(
+                "Revenue years",
+                options=all_years,
+                default=[],
+                help="Select any historical or forecast years to add Revenue columns (VND bn)"
+            )
+        with cols_years[1]:
+            npatmi_years = st.multiselect(
+                "NPATMI years",
+                options=all_years,
+                default=[],
+                help="Select any historical or forecast years to add NPATMI columns (VND bn)"
+            )
+
         # Build the comparable table
         df_display = base_df.copy()
-        if selected_metrics:
-            df_metrics = self._compute_metrics_for_tickers(df_display['Ticker'].tolist(), selected_metrics)
+        if selected_metrics or revenue_years or npatmi_years:
+            df_metrics = self._compute_metrics_for_tickers(
+                df_display['Ticker'].tolist(),
+                selected_metrics,
+                revenue_years,
+                npatmi_years,
+                tool_system
+            )
             if not df_metrics.empty:
                 df_display = df_display.merge(df_metrics, left_on='Ticker', right_on='Ticker', how='left')
                 # Reorder columns: Ticker, Company Name, then selected metrics in chosen order
-                col_order = ['Ticker', 'Company Name'] + selected_metrics
+                dynamic_cols = [f"Revenue ({y})" for y in revenue_years] + [f"NPATMI ({y})" for y in npatmi_years]
+                col_order = ['Ticker', 'Company Name'] + selected_metrics + dynamic_cols
                 existing = [c for c in col_order if c in df_display.columns]
                 df_display = df_display[existing]
         else:
@@ -72,7 +118,7 @@ class SectorDashboardTab:
 
         st.dataframe(df_display, use_container_width=True)
 
-    def _compute_metrics_for_tickers(self, tickers: List[str], metrics: List[str]) -> pd.DataFrame:
+    def _compute_metrics_for_tickers(self, tickers: List[str], metrics: List[str], revenue_years: List[int], npatmi_years: List[int], tool_system: EnhancedAIToolSystem) -> pd.DataFrame:
         rows: List[Dict] = []
         for ticker in tickers:
             row = {"Ticker": ticker}
@@ -97,22 +143,7 @@ class SectorDashboardTab:
                     total_rnav_b = None
                 row["Total Project RNAV"] = total_rnav_b
 
-            # 2026E metrics from forecast_data['2026'].pnl
-            if any(m.startswith("2026E") for m in metrics):
-                pnl_2026 = {}
-                try:
-                    fd = forecast_doc.get('forecast_data', {}) if isinstance(forecast_doc, dict) else {}
-                    pnl_2026 = (fd.get('2026', {}) or {}).get('pnl', {})
-                except Exception:
-                    pnl_2026 = {}
-
-                if "2026E Revenue" in metrics:
-                    val = pnl_2026.get('net_revenue')
-                    row["2026E Revenue"] = (float(val) / 1e9) if val is not None else None
-
-                if "2026E NPATMI" in metrics:
-                    val = pnl_2026.get('npatmi')
-                    row["2026E NPATMI"] = (float(val) / 1e9) if val is not None else None
+            # (Dynamic year-based metrics handled below)
 
             # Current Price from valuation_data.current_price (VND)
             if "Current Price" in metrics:
@@ -139,5 +170,82 @@ class SectorDashboardTab:
                 row["RNAV per share"] = rps
 
             rows.append(row)
+
+        # Now compute dynamic annual metrics using AI tools (billions VND)
+        for ticker in tickers:
+            # Initialize row if not present
+            match = next((r for r in rows if r.get('Ticker') == ticker), None)
+            if match is None:
+                match = {"Ticker": ticker}
+                rows.append(match)
+
+            # Revenue by selected years
+            for year in revenue_years:
+                col = f"Revenue ({year})"
+                value = None
+                # Try historical annual first
+                try:
+                    hist_res = tool_system.get_historical_annual_financials(
+                        tickers=[ticker], metrics=["revenue"], years=[int(year)], unit="billions"
+                    )
+                    if hist_res.get('status') == 'success' and hist_res.get('data'):
+                        data = hist_res['data']
+                        # Handle pivoted or raw format
+                        if isinstance(data, list) and len(data) > 0:
+                            entry = data[0]
+                            if 'VALUE' in entry:
+                                value = float(entry.get('VALUE'))
+                            elif 'Net_Revenue' in entry:
+                                value = float(entry.get('Net_Revenue'))
+                except Exception:
+                    pass
+                # If not found, try forecast
+                if value is None:
+                    try:
+                        fc_res = tool_system.get_financial_forecasts(
+                            ticker=ticker, years=[str(year)], statement_type='pnl', fields=['net_revenue']
+                        )
+                        if fc_res.get('status') == 'success':
+                            pnl = (fc_res.get('forecast_data', {}).get(str(year), {}) or {}).get('pnl', {})
+                            nv = pnl.get('net_revenue')
+                            if nv is not None:
+                                value = float(nv)
+                    except Exception:
+                        pass
+                match[col] = value
+
+            # NPATMI by selected years
+            for year in npatmi_years:
+                col = f"NPATMI ({year})"
+                value = None
+                # Try historical annual first
+                try:
+                    hist_res = tool_system.get_historical_annual_financials(
+                        tickers=[ticker], metrics=["npatmi"], years=[int(year)], unit="billions"
+                    )
+                    if hist_res.get('status') == 'success' and hist_res.get('data'):
+                        data = hist_res['data']
+                        if isinstance(data, list) and len(data) > 0:
+                            entry = data[0]
+                            if 'VALUE' in entry:
+                                value = float(entry.get('VALUE'))
+                            elif 'NPATMI' in entry:
+                                value = float(entry.get('NPATMI'))
+                except Exception:
+                    pass
+                # If not found, try forecast
+                if value is None:
+                    try:
+                        fc_res = tool_system.get_financial_forecasts(
+                            ticker=ticker, years=[str(year)], statement_type='pnl', fields=['npatmi']
+                        )
+                        if fc_res.get('status') == 'success':
+                            pnl = (fc_res.get('forecast_data', {}).get(str(year), {}) or {}).get('pnl', {})
+                            nv = pnl.get('npatmi')
+                            if nv is not None:
+                                value = float(nv)
+                    except Exception:
+                        pass
+                match[col] = value
 
         return pd.DataFrame(rows)
