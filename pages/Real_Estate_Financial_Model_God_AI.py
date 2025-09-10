@@ -34,7 +34,8 @@ if 'utils.RNAV_utils' in sys.modules:
 from utils.mongodb_utils import (
     init_mongodb_connection,
     load_projects_data,
-    save_project_to_mongodb
+    save_project_to_mongodb,
+    load_real_estate_companies_from_mongo_db
 )
 # RNAV utilities temporarily disabled
 # from utils.RNAV_utils import (
@@ -371,41 +372,10 @@ class RealEstateFinancialModel:
     
     @st.cache_data(ttl=3600)  # Cache for 1 hour
     def load_real_estate_companies(_self):
-        """Load list of all companies from FA_A_processed.parquet."""
-        try:
-            fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.parquet')
-            if not os.path.exists(fa_path):
-                return []  # Return empty list if file not found
-            
-            # Read parquet file
-            df_fa = pd.read_parquet(fa_path)
-            
-            # Get all unique tickers
-            tickers = sorted(df_fa['TICKER'].unique().tolist())
-            
-            # Try to get company names from Classification.xlsx if available
-            class_path = os.path.join(parent_dir, 'data', 'Classification.xlsx')
-            if os.path.exists(class_path):
-                try:
-                    df_class = pd.read_excel(class_path, usecols=['TICKER', 'NAME'])
-                    ticker_name_map = dict(zip(df_class['TICKER'], df_class['NAME']))
-                    
-                    # Create display names with company names if available
-                    display_names = []
-                    for ticker in tickers:
-                        if ticker in ticker_name_map:
-                            display_names.append(f"{ticker} - {ticker_name_map[ticker]}")
-                        else:
-                            display_names.append(ticker)
-                    return display_names
-                except:
-                    return tickers
-            else:
-                return tickers
-                
-        except Exception as e:
-            # Return empty list on error
-            return []
+        """Load list of companies from MongoDB 'VietnamStocks' → 'Companies'."""
+        # Prefer MongoDB Companies collection as the source of truth
+        companies = load_real_estate_companies_from_mongo_db(include_names=True)
+        return companies or []
     
     def refresh_financial_data(self):
         """Refresh financial data - now handled by HistoricalAnalysisTab"""

@@ -14,7 +14,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from .claude_project_extractor import ClaudeProjectExtractor
 from .perplexity_utils import PerplexityProjectResearcher, get_project_basic_info_perplexity
-from .mongodb_utils import MongoDBHelper, get_company_assumptions, save_project_to_mongodb
+from .mongodb_utils import MongoDBHelper, save_project_to_mongodb
 import anthropic
 import os
 from dotenv import load_dotenv

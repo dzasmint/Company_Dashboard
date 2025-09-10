@@ -91,7 +91,6 @@ except ImportError:
 from utils.mongodb_utils import (
     init_mongodb_connection,
     load_projects_data,
-    get_company_assumptions,
     save_project_to_mongodb
 )
 from utils.perplexity_utils import get_project_basic_info_perplexity

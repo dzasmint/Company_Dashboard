@@ -1187,8 +1187,58 @@ class RealEstateFinancialModel:
         """Render enhanced assumptions interface with business segment support"""
         st.header("Model Assumptions")
         
-        # Import MongoDB utilities
-        from utils.mongodb_utils import get_company_assumptions, save_company_assumptions
+        # Import MongoDB utilities (use CompanyForecast-based storage)
+        from utils.mongodb_utils import load_assumptions_from_mongodb, save_assumptions_to_mongodb
+
+        # Helper: normalize assumptions from list-of-rows to dict format
+        def _normalize_assumptions(data):
+            if isinstance(data, dict):
+                return data
+            result = {
+                'wacc': 0.12,
+                'debt_financing_pct': 0.30,
+                'tax_rate': 0.20,
+                'revenue_streams': [],
+                'custom_assumptions': []
+            }
+            try:
+                rows = data or []
+                # Build revenue streams grouped by Item (segment)
+                streams = {}
+                for row in rows:
+                    cat = row.get('Category')
+                    typ = row.get('Type')
+                    item = row.get('Item')
+                    val = row.get('Value')
+                    unit = row.get('Unit')
+                    if cat == 'Financial':
+                        if item == 'WACC' and val is not None:
+                            result['wacc'] = float(val) / 100 if unit == '%' else float(val)
+                        elif item == 'Debt Financing %' and val is not None:
+                            result['debt_financing_pct'] = float(val) / 100 if unit == '%' else float(val)
+                        elif item == 'Tax Rate' and val is not None:
+                            result['tax_rate'] = float(val) / 100 if unit == '%' else float(val)
+                        else:
+                            result['custom_assumptions'].append(row)
+                    elif cat == 'Business Segment' and item:
+                        seg = streams.setdefault(item, {})
+                        v = float(val) / 100 if unit == '%' else float(val)
+                        if typ == 'Revenue Growth':
+                            seg['revenue_growth'] = v
+                        elif typ == 'Gross Margin':
+                            seg['gross_margin'] = v
+                        elif typ == 'SG&A % of Revenue':
+                            seg['sga_percentage'] = v
+                    else:
+                        # Other categories treated as custom
+                        result['custom_assumptions'].append(row)
+                # Convert streams to list
+                result['revenue_streams'] = [
+                    {'segment_name': name, **metrics} for name, metrics in streams.items()
+                ]
+            except Exception:
+                pass
+            return result
         
         # Get ticker from sidebar selection
         selected_ticker = st.session_state.get('selected_company', None)
@@ -1229,8 +1279,10 @@ class RealEstateFinancialModel:
         
         # Initialize or load assumptions data
         if assumptions_key not in st.session_state or st.session_state.get('refresh_assumptions', False):
-            # Load from MongoDB
-            company_assumptions = get_company_assumptions(selected_ticker)
+            # Load from MongoDB (CompanyForecast collection)
+            company_assumptions = _normalize_assumptions(
+                load_assumptions_from_mongodb(selected_ticker)
+            )
             
             # Build initial assumptions data list
             assumptions_data = []
@@ -1513,7 +1565,7 @@ class RealEstateFinancialModel:
                         })
                 
                 # Save to MongoDB
-                result = save_company_assumptions(selected_ticker, save_data)
+                result = save_assumptions_to_mongodb(selected_ticker, save_data)
                 if result['success']:
                     st.success(f"✅ Saved {len(current_data)} assumptions to MongoDB")
                 else:
@@ -1522,7 +1574,9 @@ class RealEstateFinancialModel:
         with col2:
             if st.button("🔄 Reload from DB"):
                 # Force reload from MongoDB
-                company_assumptions = get_company_assumptions(selected_ticker)
+                company_assumptions = _normalize_assumptions(
+                    load_assumptions_from_mongodb(selected_ticker)
+                )
                 
                 # Rebuild assumptions data
                 reloaded_data = []
@@ -2697,11 +2751,24 @@ class RealEstateFinancialModel:
                     
                     # Calculate interest expense schedule based on debt financing
                     # Get debt financing percentage and cost of debt from assumptions
-                    from utils.mongodb_utils import get_company_assumptions
+                    from utils.mongodb_utils import load_assumptions_from_mongodb
                     # Get ticker from edited project data or session state
                     company_ticker = edited.get('company_ticker', st.session_state.get('selected_company', 'DEFAULT'))
-                    company_assumptions = get_company_assumptions(company_ticker)
-                    debt_financing_pct = company_assumptions.get('debt_financing_pct', 0.30)  # Default 30%
+                    # Resolve debt financing % from CompanyForecast assumptions (supports dict or list storage)
+                    _ass = load_assumptions_from_mongodb(company_ticker)
+                    debt_financing_pct = 0.30
+                    if isinstance(_ass, dict):
+                        debt_financing_pct = _ass.get('debt_financing_pct', 0.30)
+                    elif isinstance(_ass, list):
+                        for _row in _ass:
+                            if _row.get('Category') == 'Financial' and _row.get('Item') == 'Debt Financing %':
+                                _val = _row.get('Value')
+                                _unit = _row.get('Unit')
+                                try:
+                                    debt_financing_pct = float(_val) / 100.0 if _unit == '%' else float(_val)
+                                except Exception:
+                                    pass
+                                break
                     cost_of_debt = edited.get('cost_of_debt', 0.08)  # Default 8%
                     
                     interest_schedule = {}
@@ -2808,10 +2875,41 @@ class RealEstateFinancialModel:
             return
         
         # Import MongoDB utilities
-        from utils.mongodb_utils import get_company_assumptions
+        from utils.mongodb_utils import load_assumptions_from_mongodb
         
         # Load assumptions from MongoDB
-        company_assumptions = get_company_assumptions(selected_ticker)
+        # Normalize loaded assumptions
+        def _norm_assumptions(data):
+            if isinstance(data, dict):
+                return data
+            # Convert list-of-rows to dict format
+            res = {'wacc': 0.12, 'debt_financing_pct': 0.30, 'tax_rate': 0.20, 'revenue_streams': [], 'custom_assumptions': []}
+            streams = {}
+            try:
+                for r in (data or []):
+                    cat, typ, item, val, unit = r.get('Category'), r.get('Type'), r.get('Item'), r.get('Value'), r.get('Unit')
+                    if cat == 'Financial':
+                        if item == 'WACC' and val is not None:
+                            res['wacc'] = float(val) / 100.0 if unit == '%' else float(val)
+                        elif item == 'Debt Financing %' and val is not None:
+                            res['debt_financing_pct'] = float(val) / 100.0 if unit == '%' else float(val)
+                        elif item == 'Tax Rate' and val is not None:
+                            res['tax_rate'] = float(val) / 100.0 if unit == '%' else float(val)
+                    elif cat == 'Business Segment' and item:
+                        seg = streams.setdefault(item, {})
+                        v = float(val) / 100.0 if unit == '%' else float(val)
+                        if typ == 'Revenue Growth':
+                            seg['revenue_growth'] = v
+                        elif typ == 'Gross Margin':
+                            seg['gross_margin'] = v
+                        elif typ == 'SG&A % of Revenue':
+                            seg['sga_percentage'] = v
+                res['revenue_streams'] = [{'segment_name': n, **m} for n, m in streams.items()]
+            except Exception:
+                pass
+            return res
+
+        company_assumptions = _norm_assumptions(load_assumptions_from_mongodb(selected_ticker))
         custom_assumptions = company_assumptions.get('custom_assumptions', [])
         
         # Initialize session state for base year revenues

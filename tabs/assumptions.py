@@ -17,8 +17,8 @@ class AssumptionsTab:
         """Render enhanced assumptions interface with business segment support"""
         # st.header("Model Assumptions")
         
-        # Import MongoDB utilities
-        from utils.mongodb_utils import get_company_assumptions, save_company_assumptions
+        # Import MongoDB utilities (save handled in dedicated method)
+        # Note: get_company_assumptions removed; assumptions load via CompanyForecast
         
         # Get ticker from sidebar selection
         selected_ticker = st.session_state.get('selected_company', None)
@@ -481,8 +481,8 @@ class AssumptionsTab:
             st.rerun()
     
     def _save_assumptions_to_mongodb(self, selected_ticker, edited_df):
-        """Save assumptions to MongoDB with vectorized processing"""
-        from utils.mongodb_utils import save_company_assumptions
+        """Save assumptions to MongoDB (CompanyForecast) with vectorized processing"""
+        from utils.mongodb_utils import save_assumptions_to_mongodb
         
         try:
             # Process business segments with vectorized operations
@@ -503,8 +503,8 @@ class AssumptionsTab:
                 'custom_assumptions': custom_assumptions
             }
             
-            # Save to MongoDB
-            return save_company_assumptions(selected_ticker, assumptions_data)
+            # Save to MongoDB (CompanyForecast collection)
+            return save_assumptions_to_mongodb(selected_ticker, assumptions_data)
             
         except Exception as e:
             return {"success": False, "message": f"Error processing assumptions: {str(e)}"}

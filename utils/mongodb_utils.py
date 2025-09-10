@@ -241,6 +241,49 @@ def get_companies_list():
     
     return sorted(companies_list)
 
+def load_real_estate_companies_from_mongo_db(include_names: bool = True, filter_sector: str | None = None) -> list[str]:
+    """
+    Load tickers (and optionally names) from MongoDB 'VietnamStocks' → 'Companies'.
+    Returns a sorted list suitable for a selectbox: either "TICKER - Company Name" or just "TICKER".
+
+    Args:
+        include_names: If True, include company_name when available.
+        filter_sector: Optional sector filter (e.g., 'Real Estate'). If None, no filtering.
+
+    Notes:
+        Expects documents with at least fields: 'ticker' and (optionally) 'company_name'.
+    """
+    try:
+        client = init_mongodb_connection()
+        if client is None:
+            return []
+
+        db = client.get_database('VietnamStocks')
+        collection = db.get_collection(MONGODB_COLLECTIONS['companies'])
+
+        query = {}
+        if filter_sector:
+            query['sector'] = filter_sector
+
+        # Only fetch required fields
+        cursor = collection.find(query, {"ticker": 1, "company_name": 1, "_id": 0})
+        companies = []
+        for doc in cursor:
+            ticker = doc.get('ticker')
+            name = doc.get('company_name')
+            if not ticker:
+                continue
+            if include_names and name:
+                companies.append(f"{ticker} - {name}")
+            else:
+                companies.append(ticker)
+
+        return sorted(companies)
+    except Exception as e:
+        # Avoid raising; show error and return empty list
+        st.error(f"❌ Error loading companies from MongoDB: {str(e)}")
+        return []
+
 def get_projects_for_company(company_ticker):
     """Get projects for a specific company"""
     df_projects = load_projects_data()
@@ -253,70 +296,6 @@ def get_projects_for_company(company_ticker):
         return []
     
     return sorted(company_projects['project_name'].tolist())
-
-def get_company_assumptions(company_ticker):
-    """Get company assumptions from MongoDB Companies collection"""
-    try:
-        client = init_mongodb_connection()
-        if client is None:
-            return {}
-        
-        # Get database and collection
-        db_name = 'VietnamStocks'
-        collection_name = MONGODB_COLLECTIONS['companies']
-        
-        db = client.get_database(db_name)
-        collection = db.get_collection(collection_name)
-        
-        # Query for specific company
-        company_data = collection.find_one({"ticker": company_ticker})
-        
-        if not company_data:
-            return {}
-        
-        # Extract assumptions data
-        assumptions = {
-            'revenue_streams': company_data.get('revenue_streams', []),
-            'wacc': company_data.get('wacc', 0.12),  # Default 12%
-            'debt_financing_pct': company_data.get('debt_financing_pct', 0.30),  # Default 30%
-            'tax_rate': company_data.get('tax_rate', 0.20),  # Default 20%
-            'custom_assumptions': company_data.get('custom_assumptions', [])  # Custom user-defined assumptions
-        }
-        
-        return assumptions
-        
-    except Exception as e:
-        st.error(f"❌ Error loading assumptions for {company_ticker} from MongoDB: {str(e)}")
-        return {}
-
-def save_company_assumptions(company_ticker, assumptions_data):
-    """Save company assumptions to MongoDB Companies collection"""
-    try:
-        client = init_mongodb_connection()
-        if client is None:
-            return {"success": False, "message": "Failed to connect to MongoDB"}
-        
-        # Get database and collection
-        db_name = 'VietnamStocks'
-        collection_name = MONGODB_COLLECTIONS['companies']
-        
-        db = client.get_database(db_name)
-        collection = db.get_collection(collection_name)
-        
-        # Update company document with assumptions
-        result = collection.update_one(
-            {"ticker": company_ticker},
-            {"$set": assumptions_data},
-            upsert=True  # Create if doesn't exist
-        )
-        
-        if result.modified_count > 0 or result.upserted_id:
-            return {"success": True, "message": "Assumptions saved successfully"}
-        else:
-            return {"success": False, "message": "No changes made"}
-            
-    except Exception as e:
-        return {"success": False, "message": f"Error saving assumptions: {str(e)}"}
 
 
 def get_project_data(company_ticker, project_name):
