@@ -20,6 +20,18 @@ class SectorDashboardTab:
         "Total Project RNAV",
     ]
 
+    # Metric aliases for parsing user input
+    METRIC_ALIASES = {
+        'revenue': 'revenue',
+        'net_revenue': 'revenue',
+        'sales': 'revenue',
+        'npatmi': 'npatmi',
+        'npat': 'npatmi',
+        'net_profit': 'npatmi',
+        'profit': 'npatmi',
+        'earnings': 'npatmi',
+    }
+
     def __init__(self, parent=None):
         self.parent = parent
 
@@ -48,14 +60,6 @@ class SectorDashboardTab:
         })
         base_df = base_df.dropna(subset=['Ticker']).reset_index(drop=True)
 
-        # Metric selection controls (multiselect)
-        selected_metrics = st.multiselect(
-            "Select metrics",
-            options=self.ORDERED_METRICS,
-            default=self.ORDERED_METRICS,
-            help="Remove metrics to hide columns; order is preserved."
-        )
-
         # Build available years from historical + forecast data
         tool_system = EnhancedAIToolSystem()
         hist_years = []
@@ -80,21 +84,124 @@ class SectorDashboardTab:
             pass
         all_years = sorted(set(hist_years).union(forecast_years))
 
-        cols_years = st.columns(2)
-        with cols_years[0]:
-            revenue_years = st.multiselect(
-                "Revenue years",
-                options=all_years,
-                default=[],
-                help="Select any historical or forecast years to add Revenue columns (VND bn)"
+        # Create dynamic metric options with years
+        dynamic_metric_options = []
+        for metric in self.ORDERED_METRICS:
+            dynamic_metric_options.append(metric)
+            for year in all_years:
+                dynamic_metric_options.append(f"{metric.lower()} {year}")
+
+        # Initialize session state for metric selections
+        if 'selected_metrics' not in st.session_state:
+            st.session_state.selected_metrics = self.ORDERED_METRICS.copy()
+
+        # Add new metric section (moved to top)
+        st.subheader("➕ Add New Metric")
+
+        col1, col2, col3 = st.columns([2, 2, 1])
+
+        with col1:
+            # Metric selection dropdown - include base metrics
+            available_metrics = ["Current Price", "RNAV per share", "Total Project RNAV", "revenue", "npatmi"]
+            selected_metric = st.selectbox(
+                "Select Metric",
+                options=available_metrics,
+                help="Choose the financial metric you want to add"
             )
-        with cols_years[1]:
-            npatmi_years = st.multiselect(
-                "NPATMI years",
-                options=all_years,
-                default=[],
-                help="Select any historical or forecast years to add NPATMI columns (VND bn)"
+
+        with col2:
+            # Year selection dropdown - disable for base metrics
+            is_base_metric = selected_metric in ["Current Price", "RNAV per share", "Total Project RNAV"]
+            year_options = [str(year) for year in sorted(all_years)]
+            selected_year = st.selectbox(
+                "Select Year",
+                options=year_options,
+                help="Choose the year for the selected metric" if not is_base_metric else "Not needed for base metrics",
+                disabled=is_base_metric
             )
+
+        with col3:
+            # Add metric button
+            if st.button("Add Metric", type="primary", use_container_width=True):
+                # For base metrics, don't include year
+                if is_base_metric:
+                    new_metric = selected_metric
+                else:
+                    new_metric = f"{selected_metric} {selected_year}"
+
+                # Check if already exists
+                if new_metric not in st.session_state.selected_metrics:
+                    st.session_state.selected_metrics.append(new_metric)
+                    st.success(f"✅ Added: {new_metric}")
+                    st.rerun()  # Refresh to show the new selection
+                else:
+                    st.warning(f"⚠️ Already selected: {new_metric}")
+
+            # Clear all button
+            if st.button("Clear All", type="secondary", use_container_width=True):
+                st.session_state.selected_metrics = []
+                st.info("🗑️ Cleared all selections")
+                st.rerun()
+
+        st.markdown("---")
+
+        # Metric selection with year support (moved below)
+        selected_metrics_input = st.multiselect(
+            "Selected metrics",
+            options=st.session_state.selected_metrics,
+            default=st.session_state.selected_metrics,
+            help="Your selected metrics. Remove items by unchecking them.",
+            key="metric_selector"
+        )
+
+        # Update session state when user makes changes
+        st.session_state.selected_metrics = selected_metrics_input
+
+        # Use session state selections for processing
+        all_selected = st.session_state.selected_metrics.copy()
+
+
+        # Parse selected metrics to separate base metrics from year-specific ones
+        selected_metrics = []
+        revenue_years = []
+        npatmi_years = []
+
+        for item in all_selected:
+            if item in self.ORDERED_METRICS:
+                # Base metric
+                selected_metrics.append(item)
+            else:
+                # Check if it's a base metric that was added without year
+                if item in ["Current Price", "RNAV per share", "Total Project RNAV"]:
+                    selected_metrics.append(item)
+                else:
+                    # Parse "metric year" format
+                    parts = item.lower().split()
+                    if len(parts) == 2:
+                        metric_name = parts[0]
+                        # Use aliases for more flexible input
+                        canonical_metric = self.METRIC_ALIASES.get(metric_name, metric_name)
+
+                        try:
+                            year = int(parts[1])
+                            if canonical_metric in ['revenue']:
+                                if year not in revenue_years:
+                                    revenue_years.append(year)
+                            elif canonical_metric in ['npatmi']:
+                                if year not in npatmi_years:
+                                    npatmi_years.append(year)
+                            else:
+                                # Unknown metric, treat as base metric
+                                if item not in selected_metrics:
+                                    selected_metrics.append(item)
+                        except ValueError:
+                            # Invalid year, treat as base metric
+                            if item not in selected_metrics:
+                                selected_metrics.append(item)
+                    else:
+                        # Invalid format, treat as base metric
+                        if item not in selected_metrics:
+                            selected_metrics.append(item)
 
         # Build the comparable table
         df_display = base_df.copy()
@@ -113,10 +220,10 @@ class SectorDashboardTab:
                 col_order = ['Ticker', 'Company Name'] + selected_metrics + dynamic_cols
                 existing = [c for c in col_order if c in df_display.columns]
                 df_display = df_display[existing]
+
+            st.dataframe(df_display, use_container_width=True)
         else:
             st.info("No metrics selected. Use the selector above to choose metrics.")
-
-        st.dataframe(df_display, use_container_width=True)
 
     def _compute_metrics_for_tickers(self, tickers: List[str], metrics: List[str], revenue_years: List[int], npatmi_years: List[int], tool_system: EnhancedAIToolSystem) -> pd.DataFrame:
         """Compute metrics for multiple tickers with improved error handling"""
@@ -196,7 +303,7 @@ class SectorDashboardTab:
                         }
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
-                        # The data is already pivoted when metrics are specified
+                        # Handle both pivoted and non-pivoted formats
                         for entry in hist_res['data']:
                             # Ensure year and ticker match
                             e_ticker = str(entry.get('TICKER', '')).upper()
@@ -206,9 +313,14 @@ class SectorDashboardTab:
                                 e_year = None
                             if e_year != int(year) or (e_ticker and e_ticker != str(ticker).upper()):
                                 continue
-                            # Check for Net_Revenue in pivoted format
+
+                            # Check for Net_Revenue in pivoted format (when no metrics specified)
                             if 'Net_Revenue' in entry and entry.get('Net_Revenue') is not None:
                                 value = float(entry.get('Net_Revenue'))
+                                break
+                            # Check for Net_Revenue in non-pivoted format (when metrics specified)
+                            elif entry.get('KEYCODE') == 'Net_Revenue' and entry.get('VALUE') is not None:
+                                value = float(entry.get('VALUE'))
                                 break
                 except Exception:
                     pass
@@ -252,7 +364,7 @@ class SectorDashboardTab:
                         }
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
-                        # The data is already pivoted when metrics are specified
+                        # Handle both pivoted and non-pivoted formats
                         for entry in hist_res['data']:
                             e_ticker = str(entry.get('TICKER', '')).upper()
                             try:
@@ -261,9 +373,14 @@ class SectorDashboardTab:
                                 e_year = None
                             if e_year != int(year) or (e_ticker and e_ticker != str(ticker).upper()):
                                 continue
-                            # Check for NPATMI in pivoted format
+
+                            # Check for NPATMI in pivoted format (when no metrics specified)
                             if 'NPATMI' in entry and entry.get('NPATMI') is not None:
                                 value = float(entry.get('NPATMI'))
+                                break
+                            # Check for NPATMI in non-pivoted format (when metrics specified)
+                            elif entry.get('KEYCODE') == 'NPATMI' and entry.get('VALUE') is not None:
+                                value = float(entry.get('VALUE'))
                                 break
                 except Exception:
                     pass
