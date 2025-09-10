@@ -13,9 +13,11 @@ class SectorDashboardTab:
     """Sector-level dashboard with comparable table across tickers"""
 
     AVAILABLE_METRICS = [
-        "RNAV",
+        "Total Project RNAV",
         "2026E Revenue",
         "2026E NPATMI",
+        "Current Price",
+        "RNAV per share",
     ]
 
     def __init__(self, parent=None):
@@ -90,21 +92,23 @@ class SectorDashboardTab:
             row = {"Ticker": ticker}
             forecast_doc = load_company_forecast(ticker)
 
-            # RNAV from valuation_data.rnav_details (sum rnav_to_company) in billions VND
-            if "RNAV" in metrics:
-                rnav_b = None
+            # Total Project RNAV from valuation_data.rnav_details item 'SUB-TOTAL RNAV' in billions VND
+            if "Total Project RNAV" in metrics:
+                total_rnav_b = None
                 try:
                     vd = forecast_doc.get('valuation_data', {}) if isinstance(forecast_doc, dict) else {}
                     details = vd.get('rnav_details', []) if isinstance(vd, dict) else []
-                    total = 0.0
-                    for item in details:
-                        val = item.get('rnav_to_company')
+                    subtotal = next((d for d in details if str(d.get('item', '')).strip().upper() == 'SUB-TOTAL RNAV'), None)
+                    if subtotal:
+                        # Prefer rnav_to_company if available; fallback to rnav_value
+                        val = subtotal.get('rnav_to_company')
+                        if val is None:
+                            val = subtotal.get('rnav_value')
                         if val is not None:
-                            total += float(val)
-                    rnav_b = total / 1e9 if total else None
+                            total_rnav_b = float(val) / 1e9
                 except Exception:
-                    rnav_b = None
-                row["RNAV"] = rnav_b
+                    total_rnav_b = None
+                row["Total Project RNAV"] = total_rnav_b
 
             # 2026E metrics from forecast_data['2026'].pnl
             if any(m.startswith("2026E") for m in metrics):
@@ -123,7 +127,30 @@ class SectorDashboardTab:
                     val = pnl_2026.get('npatmi')
                     row["2026E NPATMI"] = (float(val) / 1e9) if val is not None else None
 
+            # Current Price from valuation_data.current_price (VND)
+            if "Current Price" in metrics:
+                current_price = None
+                try:
+                    vd = forecast_doc.get('valuation_data', {}) if isinstance(forecast_doc, dict) else {}
+                    cp = vd.get('current_price') if isinstance(vd, dict) else None
+                    if cp is not None:
+                        current_price = float(cp)
+                except Exception:
+                    current_price = None
+                row["Current Price"] = current_price
+
+            # RNAV per share (VND per share) from valuation_data.rnav_per_share
+            if "RNAV per share" in metrics:
+                rps = None
+                try:
+                    vd = forecast_doc.get('valuation_data', {}) if isinstance(forecast_doc, dict) else {}
+                    val = vd.get('rnav_per_share') if isinstance(vd, dict) else None
+                    if val is not None:
+                        rps = float(val)
+                except Exception:
+                    rps = None
+                row["RNAV per share"] = rps
+
             rows.append(row)
 
         return pd.DataFrame(rows)
-
