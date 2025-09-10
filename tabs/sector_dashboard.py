@@ -92,7 +92,7 @@ class SectorDashboardTab:
             row = {"Ticker": ticker}
             forecast_doc = load_company_forecast(ticker)
 
-            # Total Project RNAV from valuation_data.rnav_details item 'SUB-TOTAL RNAV' in billions VND
+            # Total Project RNAV from valuation_data.rnav_details item 'SUB-TOTAL RNAV' (already in B VND)
             if "Total Project RNAV" in metrics:
                 total_rnav_b = None
                 try:
@@ -105,7 +105,8 @@ class SectorDashboardTab:
                         if val is None:
                             val = subtotal.get('rnav_value')
                         if val is not None:
-                            total_rnav_b = float(val) / 1e9
+                            # Values in rnav_details are saved in billions VND already
+                            total_rnav_b = float(val)
                 except Exception:
                     total_rnav_b = None
                 row["Total Project RNAV"] = total_rnav_b
