@@ -119,6 +119,7 @@ class SectorDashboardTab:
         st.dataframe(df_display, use_container_width=True)
 
     def _compute_metrics_for_tickers(self, tickers: List[str], metrics: List[str], revenue_years: List[int], npatmi_years: List[int], tool_system: EnhancedAIToolSystem) -> pd.DataFrame:
+        """Compute metrics for multiple tickers with improved error handling"""
         rows: List[Dict] = []
         for ticker in tickers:
             row = {"Ticker": ticker}
@@ -186,10 +187,10 @@ class SectorDashboardTab:
                 # Try historical annual first
                 try:
                     hist_res = tool_system.get_historical_annual_financials(
-                        tickers=[ticker], metrics=None, years=[int(year)], unit="billions"
+                        tickers=[ticker], metrics=['Net_Revenue'], years=[int(year)], unit="billions"
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
-                        rev_keys = ['Net_Revenue', 'Net Revenue', 'NET_REVENUE', 'NET REVENUE']
+                        # The data is already pivoted when metrics are specified
                         for entry in hist_res['data']:
                             # Ensure year and ticker match
                             e_ticker = str(entry.get('TICKER', '')).upper()
@@ -199,17 +200,9 @@ class SectorDashboardTab:
                                 e_year = None
                             if e_year != int(year) or (e_ticker and e_ticker != str(ticker).upper()):
                                 continue
-                            # Non-pivot format: KEYCODE + VALUE
-                            if 'KEYCODE' in entry and 'VALUE' in entry and entry.get('VALUE') is not None:
-                                if str(entry.get('KEYCODE')) in rev_keys:
-                                    value = float(entry.get('VALUE'))
-                                    break
-                            # Pivot format: direct column name
-                            for k in rev_keys:
-                                if k in entry and entry.get(k) is not None:
-                                    value = float(entry.get(k))
-                                    break
-                            if value is not None:
+                            # Check for Net_Revenue in pivoted format
+                            if 'Net_Revenue' in entry and entry.get('Net_Revenue') is not None:
+                                value = float(entry.get('Net_Revenue'))
                                 break
                 except Exception:
                     pass
@@ -220,7 +213,10 @@ class SectorDashboardTab:
                             ticker=ticker, years=[str(year)], statement_type='pnl', fields=['net_revenue']
                         )
                         if fc_res.get('status') == 'success':
-                            pnl = (fc_res.get('forecast_data', {}).get(str(year), {}) or {}).get('pnl', {})
+                            forecast_data = fc_res.get('forecast_data', {})
+                            year_data = forecast_data.get(str(year), {})
+                            pnl = year_data.get('pnl', {})
+                            # The value is already in billions from get_financial_forecasts
                             nv = pnl.get('net_revenue')
                             if nv is not None:
                                 value = float(nv)
@@ -235,10 +231,10 @@ class SectorDashboardTab:
                 # Try historical annual first
                 try:
                     hist_res = tool_system.get_historical_annual_financials(
-                        tickers=[ticker], metrics=None, years=[int(year)], unit="billions"
+                        tickers=[ticker], metrics=['NPATMI'], years=[int(year)], unit="billions"
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
-                        npatmi_keys = ['NPATMI', 'npatmi', 'Npatmi']
+                        # The data is already pivoted when metrics are specified
                         for entry in hist_res['data']:
                             e_ticker = str(entry.get('TICKER', '')).upper()
                             try:
@@ -247,15 +243,9 @@ class SectorDashboardTab:
                                 e_year = None
                             if e_year != int(year) or (e_ticker and e_ticker != str(ticker).upper()):
                                 continue
-                            if 'KEYCODE' in entry and 'VALUE' in entry and entry.get('VALUE') is not None:
-                                if str(entry.get('KEYCODE')) in npatmi_keys:
-                                    value = float(entry.get('VALUE'))
-                                    break
-                            for k in npatmi_keys:
-                                if k in entry and entry.get(k) is not None:
-                                    value = float(entry.get(k))
-                                    break
-                            if value is not None:
+                            # Check for NPATMI in pivoted format
+                            if 'NPATMI' in entry and entry.get('NPATMI') is not None:
+                                value = float(entry.get('NPATMI'))
                                 break
                 except Exception:
                     pass
@@ -266,7 +256,10 @@ class SectorDashboardTab:
                             ticker=ticker, years=[str(year)], statement_type='pnl', fields=['npatmi']
                         )
                         if fc_res.get('status') == 'success':
-                            pnl = (fc_res.get('forecast_data', {}).get(str(year), {}) or {}).get('pnl', {})
+                            forecast_data = fc_res.get('forecast_data', {})
+                            year_data = forecast_data.get(str(year), {})
+                            pnl = year_data.get('pnl', {})
+                            # The value is already in billions from get_financial_forecasts
                             nv = pnl.get('npatmi')
                             if nv is not None:
                                 value = float(nv)
