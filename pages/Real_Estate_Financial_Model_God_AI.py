@@ -232,6 +232,7 @@ class RealEstateFinancialModel:
                 "Assumptions",
                 "Project Pipeline",
                 "Model Forecast",
+                "Sector Dashboard",
                 # "Valuation",  # Hidden - integrated into Model Forecast
                 # "Research Insights",  # Hidden
                 # "Export Model",  # Hidden
@@ -498,7 +499,9 @@ class RealEstateFinancialModel:
         elif selected_tab == tab_names[4]:  # Model Forecast
             model_forecast_tab = ModelForecastTab(parent_model=self)
             model_forecast_tab.render()
-        elif selected_tab == tab_names[5]:  # BDS-GPT (Enhanced AI)
+        elif selected_tab == tab_names[5]:  # Sector Dashboard
+            self.render_sector_dashboard()
+        elif selected_tab == tab_names[6]:  # BDS-GPT (Enhanced AI)
             self.render_enhanced_ai()
         # Hidden tabs - commenting out but keeping for future reference
         # elif selected_tab == "Valuation":  # Hidden - integrated into Model Forecast
@@ -532,7 +535,13 @@ class RealEstateFinancialModel:
             st.session_state.ai_discovery_tab = AIDiscoveryTab(parent=self)
         
         # Render the original AI discovery interface
-        st.session_state.ai_discovery_tab.render()
+            st.session_state.ai_discovery_tab.render()
+
+    def render_sector_dashboard(self):
+        """Render sector dashboard tab"""
+        from tabs.sector_dashboard import SectorDashboardTab
+        tab = SectorDashboardTab(parent=self)
+        tab.render()
     
     def render_claude_discovery(self):
         """Render Claude AI interface for PDF analysis"""
