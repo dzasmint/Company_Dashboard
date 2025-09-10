@@ -186,17 +186,23 @@ class SectorDashboardTab:
                 # Try historical annual first
                 try:
                     hist_res = tool_system.get_historical_annual_financials(
-                        tickers=[ticker], metrics=["revenue"], years=[int(year)], unit="billions"
+                        tickers=[ticker], metrics=["revenue"], years=None, unit="billions"
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
-                        data = hist_res['data']
-                        # Handle pivoted or raw format
-                        if isinstance(data, list) and len(data) > 0:
-                            entry = data[0]
-                            if 'VALUE' in entry:
-                                value = float(entry.get('VALUE'))
-                            elif 'Net_Revenue' in entry:
-                                value = float(entry.get('Net_Revenue'))
+                        # Find matching year and ticker from returned records
+                        for entry in hist_res['data']:
+                            try:
+                                entry_year = int(entry.get('DATE')) if entry.get('DATE') is not None else None
+                            except Exception:
+                                entry_year = None
+                            # Ensure we are looking at the correct ticker as well
+                            entry_ticker = entry.get('TICKER')
+                            if entry_year == int(year) and (entry_ticker is None or str(entry_ticker).upper() == str(ticker).upper()):
+                                if 'VALUE' in entry and entry.get('VALUE') is not None:
+                                    value = float(entry.get('VALUE'))
+                                elif 'Net_Revenue' in entry and entry.get('Net_Revenue') is not None:
+                                    value = float(entry.get('Net_Revenue'))
+                                break
                 except Exception:
                     pass
                 # If not found, try forecast
@@ -221,16 +227,21 @@ class SectorDashboardTab:
                 # Try historical annual first
                 try:
                     hist_res = tool_system.get_historical_annual_financials(
-                        tickers=[ticker], metrics=["npatmi"], years=[int(year)], unit="billions"
+                        tickers=[ticker], metrics=["npatmi"], years=None, unit="billions"
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
-                        data = hist_res['data']
-                        if isinstance(data, list) and len(data) > 0:
-                            entry = data[0]
-                            if 'VALUE' in entry:
-                                value = float(entry.get('VALUE'))
-                            elif 'NPATMI' in entry:
-                                value = float(entry.get('NPATMI'))
+                        for entry in hist_res['data']:
+                            try:
+                                entry_year = int(entry.get('DATE')) if entry.get('DATE') is not None else None
+                            except Exception:
+                                entry_year = None
+                            entry_ticker = entry.get('TICKER')
+                            if entry_year == int(year) and (entry_ticker is None or str(entry_ticker).upper() == str(ticker).upper()):
+                                if 'VALUE' in entry and entry.get('VALUE') is not None:
+                                    value = float(entry.get('VALUE'))
+                                elif 'NPATMI' in entry and entry.get('NPATMI') is not None:
+                                    value = float(entry.get('NPATMI'))
+                                break
                 except Exception:
                     pass
                 # If not found, try forecast
