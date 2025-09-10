@@ -186,22 +186,30 @@ class SectorDashboardTab:
                 # Try historical annual first
                 try:
                     hist_res = tool_system.get_historical_annual_financials(
-                        tickers=[ticker], metrics=["revenue"], years=None, unit="billions"
+                        tickers=[ticker], metrics=None, years=[int(year)], unit="billions"
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
-                        # Find matching year and ticker from returned records
+                        rev_keys = ['Net_Revenue', 'Net Revenue', 'NET_REVENUE', 'NET REVENUE']
                         for entry in hist_res['data']:
+                            # Ensure year and ticker match
+                            e_ticker = str(entry.get('TICKER', '')).upper()
                             try:
-                                entry_year = int(entry.get('DATE')) if entry.get('DATE') is not None else None
+                                e_year = int(entry.get('DATE')) if entry.get('DATE') is not None else None
                             except Exception:
-                                entry_year = None
-                            # Ensure we are looking at the correct ticker as well
-                            entry_ticker = entry.get('TICKER')
-                            if entry_year == int(year) and (entry_ticker is None or str(entry_ticker).upper() == str(ticker).upper()):
-                                if 'VALUE' in entry and entry.get('VALUE') is not None:
+                                e_year = None
+                            if e_year != int(year) or (e_ticker and e_ticker != str(ticker).upper()):
+                                continue
+                            # Non-pivot format: KEYCODE + VALUE
+                            if 'KEYCODE' in entry and 'VALUE' in entry and entry.get('VALUE') is not None:
+                                if str(entry.get('KEYCODE')) in rev_keys:
                                     value = float(entry.get('VALUE'))
-                                elif 'Net_Revenue' in entry and entry.get('Net_Revenue') is not None:
-                                    value = float(entry.get('Net_Revenue'))
+                                    break
+                            # Pivot format: direct column name
+                            for k in rev_keys:
+                                if k in entry and entry.get(k) is not None:
+                                    value = float(entry.get(k))
+                                    break
+                            if value is not None:
                                 break
                 except Exception:
                     pass
@@ -227,20 +235,27 @@ class SectorDashboardTab:
                 # Try historical annual first
                 try:
                     hist_res = tool_system.get_historical_annual_financials(
-                        tickers=[ticker], metrics=["npatmi"], years=None, unit="billions"
+                        tickers=[ticker], metrics=None, years=[int(year)], unit="billions"
                     )
                     if hist_res.get('status') == 'success' and hist_res.get('data'):
+                        npatmi_keys = ['NPATMI', 'npatmi', 'Npatmi']
                         for entry in hist_res['data']:
+                            e_ticker = str(entry.get('TICKER', '')).upper()
                             try:
-                                entry_year = int(entry.get('DATE')) if entry.get('DATE') is not None else None
+                                e_year = int(entry.get('DATE')) if entry.get('DATE') is not None else None
                             except Exception:
-                                entry_year = None
-                            entry_ticker = entry.get('TICKER')
-                            if entry_year == int(year) and (entry_ticker is None or str(entry_ticker).upper() == str(ticker).upper()):
-                                if 'VALUE' in entry and entry.get('VALUE') is not None:
+                                e_year = None
+                            if e_year != int(year) or (e_ticker and e_ticker != str(ticker).upper()):
+                                continue
+                            if 'KEYCODE' in entry and 'VALUE' in entry and entry.get('VALUE') is not None:
+                                if str(entry.get('KEYCODE')) in npatmi_keys:
                                     value = float(entry.get('VALUE'))
-                                elif 'NPATMI' in entry and entry.get('NPATMI') is not None:
-                                    value = float(entry.get('NPATMI'))
+                                    break
+                            for k in npatmi_keys:
+                                if k in entry and entry.get(k) is not None:
+                                    value = float(entry.get(k))
+                                    break
+                            if value is not None:
                                 break
                 except Exception:
                     pass
