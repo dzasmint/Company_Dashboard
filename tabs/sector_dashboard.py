@@ -30,6 +30,34 @@ class SectorDashboardTab:
         'net_profit': 'npatmi',
         'profit': 'npatmi',
         'earnings': 'npatmi',
+        # Balance Sheet aliases
+        'total_assets': 'total_assets',
+        'assets': 'total_assets',
+        'total_equity': 'total_equity',
+        'equity': 'total_equity',
+        'total_debt': 'total_debt',
+        'debt': 'total_debt',
+        'cash': 'cash_and_equivalents',
+        'cash_and_equivalents': 'cash_and_equivalents',
+        'inventory': 'inventory',
+        'account_receivable': 'account_receivable',
+        'accounts_receivable': 'account_receivable',
+        'receivables': 'account_receivable',
+        'account_payable': 'account_payable',
+        'accounts_payable': 'account_payable',
+        'payables': 'account_payable',
+        'customer_prepayment': 'customer_prepayment',
+        'advance_from_customers': 'customer_prepayment',
+        'prepayments': 'customer_prepayment',
+        # Balance Sheet Ratios
+        'net_debt_to_equity': 'net_debt_to_equity',
+        'debt_to_equity': 'net_debt_to_equity',
+        'net_debt_equity_ratio': 'net_debt_to_equity',
+        'assets_to_liabilities': 'assets_to_liabilities',
+        'asset_liability_ratio': 'assets_to_liabilities',
+        'assets_to_equity': 'assets_to_equity',
+        'asset_equity_ratio': 'assets_to_equity',
+        'equity_multiplier': 'assets_to_equity',
     }
 
     def __init__(self, parent=None):
@@ -84,12 +112,12 @@ class SectorDashboardTab:
             pass
         all_years = sorted(set(hist_years).union(forecast_years))
 
-        # Create dynamic metric options with years
-        dynamic_metric_options = []
-        for metric in self.ORDERED_METRICS:
-            dynamic_metric_options.append(metric)
-            for year in all_years:
-                dynamic_metric_options.append(f"{metric.lower()} {year}")
+        # Create dynamic metric options with years (removed - not used in current implementation)
+        # dynamic_metric_options = []
+        # for metric in self.ORDERED_METRICS:
+        #     dynamic_metric_options.append(metric)
+        #     for year in all_years:
+        #         dynamic_metric_options.append(f"{metric.lower()} {year}")
 
         # Initialize session state for metric selections
         if 'selected_metrics' not in st.session_state:
@@ -101,16 +129,27 @@ class SectorDashboardTab:
         col1, col2, col3 = st.columns([2, 2, 1])
 
         with col1:
-            # Metric selection dropdown - include base metrics
-            available_metrics = ["Current Price", "RNAV per share", "Total Project RNAV", "revenue", "npatmi"]
+            # Metric selection dropdown - separate base metrics from dynamic metrics
+            available_metrics = [
+                # Base metrics (no year needed)
+                "Current Price", "RNAV per share", "Total Project RNAV",
+                # Dynamic P&L metrics (require year)
+                "revenue", "npatmi",
+                # Dynamic Balance Sheet metrics (require year)
+                "total_assets", "total_equity", "total_debt", 
+                "cash_and_equivalents", "inventory", "account_receivable", 
+                "account_payable", "customer_prepayment",
+                # Dynamic Balance Sheet Ratios (require year)
+                "net_debt_to_equity", "assets_to_liabilities", "assets_to_equity"
+            ]
             selected_metric = st.selectbox(
                 "Select Metric",
                 options=available_metrics,
-                help="Choose the financial metric you want to add"
+                help="Choose the financial metric you want to add. Balance sheet, P&L metrics, and ratios require year selection."
             )
 
         with col2:
-            # Year selection dropdown - disable for base metrics
+            # Year selection dropdown - disable only for base metrics (Current Price, RNAV per share, Total Project RNAV)
             is_base_metric = selected_metric in ["Current Price", "RNAV per share", "Total Project RNAV"]
             year_options = [str(year) for year in sorted(all_years)]
             selected_year = st.selectbox(
@@ -165,6 +204,15 @@ class SectorDashboardTab:
         selected_metrics = []
         revenue_years = []
         npatmi_years = []
+        balance_sheet_metrics = {}
+        balance_sheet_ratios = {}
+        # Initialize balance sheet metric years
+        for bs_metric in ['total_assets', 'total_equity', 'total_debt', 'cash_and_equivalents', 
+                         'inventory', 'account_receivable', 'account_payable', 'customer_prepayment']:
+            balance_sheet_metrics[bs_metric] = []
+        # Initialize balance sheet ratio years
+        for bs_ratio in ['net_debt_to_equity', 'assets_to_liabilities', 'assets_to_equity']:
+            balance_sheet_ratios[bs_ratio] = []
 
         for item in all_selected:
             if item in self.ORDERED_METRICS:
@@ -190,6 +238,12 @@ class SectorDashboardTab:
                             elif canonical_metric in ['npatmi']:
                                 if year not in npatmi_years:
                                     npatmi_years.append(year)
+                            elif canonical_metric in balance_sheet_metrics:
+                                if year not in balance_sheet_metrics[canonical_metric]:
+                                    balance_sheet_metrics[canonical_metric].append(year)
+                            elif canonical_metric in balance_sheet_ratios:
+                                if year not in balance_sheet_ratios[canonical_metric]:
+                                    balance_sheet_ratios[canonical_metric].append(year)
                             else:
                                 # Unknown metric, treat as base metric
                                 if item not in selected_metrics:
@@ -205,18 +259,55 @@ class SectorDashboardTab:
 
         # Build the comparable table
         df_display = base_df.copy()
-        if selected_metrics or revenue_years or npatmi_years:
+        has_metrics = (selected_metrics or revenue_years or npatmi_years or 
+                      any(years for years in balance_sheet_metrics.values()) or
+                      any(years for years in balance_sheet_ratios.values()))
+        
+        if has_metrics:
             df_metrics = self._compute_metrics_for_tickers(
                 df_display['Ticker'].tolist(),
                 selected_metrics,
                 revenue_years,
                 npatmi_years,
+                balance_sheet_metrics,
+                balance_sheet_ratios,
                 tool_system
             )
             if not df_metrics.empty:
                 df_display = df_display.merge(df_metrics, left_on='Ticker', right_on='Ticker', how='left')
                 # Reorder columns: Ticker, Company Name, then selected metrics in chosen order
-                dynamic_cols = [f"Revenue ({y})" for y in revenue_years] + [f"NPATMI ({y})" for y in npatmi_years]
+                dynamic_cols = ([f"Revenue ({y})" for y in revenue_years] + 
+                               [f"NPATMI ({y})" for y in npatmi_years])
+                
+                # Add balance sheet dynamic columns
+                bs_display_names = {
+                    'total_assets': 'Total Assets',
+                    'total_equity': 'Total Equity', 
+                    'total_debt': 'Total Debt',
+                    'cash_and_equivalents': 'Cash & Equivalents',
+                    'inventory': 'Inventory',
+                    'account_receivable': 'Account Receivable',
+                    'account_payable': 'Account Payable',
+                    'customer_prepayment': 'Customer Prepayment'
+                }
+                
+                for bs_metric, years in balance_sheet_metrics.items():
+                    display_name = bs_display_names.get(bs_metric, bs_metric.replace('_', ' ').title())
+                    for year in sorted(years):
+                        dynamic_cols.append(f"{display_name} ({year})")
+                
+                # Add balance sheet ratio dynamic columns
+                bs_ratio_display_names = {
+                    'net_debt_to_equity': 'Net Debt/Equity',
+                    'assets_to_liabilities': 'Assets/Liabilities', 
+                    'assets_to_equity': 'Assets/Equity'
+                }
+                
+                for bs_ratio, years in balance_sheet_ratios.items():
+                    display_name = bs_ratio_display_names.get(bs_ratio, bs_ratio.replace('_', ' ').title())
+                    for year in sorted(years):
+                        dynamic_cols.append(f"{display_name} ({year})")
+                
                 col_order = ['Ticker', 'Company Name'] + selected_metrics + dynamic_cols
                 existing = [c for c in col_order if c in df_display.columns]
                 df_display = df_display[existing]
@@ -225,7 +316,7 @@ class SectorDashboardTab:
         else:
             st.info("No metrics selected. Use the selector above to choose metrics.")
 
-    def _compute_metrics_for_tickers(self, tickers: List[str], metrics: List[str], revenue_years: List[int], npatmi_years: List[int], tool_system: EnhancedAIToolSystem) -> pd.DataFrame:
+    def _compute_metrics_for_tickers(self, tickers: List[str], metrics: List[str], revenue_years: List[int], npatmi_years: List[int], balance_sheet_metrics: Dict[str, List[int]], balance_sheet_ratios: Dict[str, List[int]], tool_system: EnhancedAIToolSystem) -> pd.DataFrame:
         """Compute metrics for multiple tickers with improved error handling"""
         rows: List[Dict] = []
         for ticker in tickers:
@@ -407,5 +498,171 @@ class SectorDashboardTab:
                     except Exception:
                         pass
                 match[col] = value
+
+            # Balance Sheet metrics by selected years
+            bs_keycode_mapping = {
+                'total_assets': 'Total_Asset',
+                'total_equity': 'TOTAL_Equity', 
+                'total_debt': 'Total_Debt',
+                'cash_and_equivalents': 'Cash_Equivalent',
+                'inventory': 'Inventory',
+                'account_receivable': 'Account_Receivable',
+                'account_payable': 'Account_Payable',
+                'customer_prepayment': 'Advance_From_Custmers'  # Note: typo in original KEYCODE
+            }
+            
+            bs_display_names = {
+                'total_assets': 'Total Assets',
+                'total_equity': 'Total Equity', 
+                'total_debt': 'Total Debt',
+                'cash_and_equivalents': 'Cash & Equivalents',
+                'inventory': 'Inventory',
+                'account_receivable': 'Account Receivable',
+                'account_payable': 'Account Payable',
+                'customer_prepayment': 'Customer Prepayment'
+            }
+            
+            for bs_metric, years in balance_sheet_metrics.items():
+                keycode = bs_keycode_mapping.get(bs_metric)
+                display_name = bs_display_names.get(bs_metric, bs_metric.replace('_', ' ').title())
+                
+                if not keycode or not years:
+                    continue
+                    
+                for year in years:
+                    col = f"{display_name} ({year})"
+                    value = None
+                    
+                    # Try historical annual first
+                    try:
+                        hist_res = tool_system.execute_tool(
+                            'get_historical_annual_financials',
+                            {
+                                'tickers': [ticker],
+                                'metrics': [keycode],
+                                'years': [int(year)],
+                                'unit': 'billions'
+                            }
+                        )
+                        if hist_res.get('status') == 'success' and hist_res.get('data'):
+                            # Handle both pivoted and non-pivoted formats
+                            for entry in hist_res['data']:
+                                e_ticker = str(entry.get('TICKER', '')).upper()
+                                try:
+                                    e_year = int(entry.get('DATE')) if entry.get('DATE') is not None else None
+                                except Exception:
+                                    e_year = None
+                                if e_year != int(year) or (e_ticker and e_ticker != str(ticker).upper()):
+                                    continue
+
+                                # Check for metric in pivoted format
+                                if keycode in entry and entry.get(keycode) is not None:
+                                    value = float(entry.get(keycode))
+                                    break
+                                # Check for metric in non-pivoted format
+                                elif entry.get('KEYCODE') == keycode and entry.get('VALUE') is not None:
+                                    value = float(entry.get('VALUE'))
+                                    break
+                    except Exception:
+                        pass
+                    
+                    # If not found, try forecast
+                    if value is None:
+                        try:
+                            # Map to forecast field names
+                            forecast_field_mapping = {
+                                'total_assets': 'total_assets',
+                                'total_equity': 'total_equity',
+                                'total_debt': 'total_debt', 
+                                'cash_and_equivalents': 'cash_and_equivalents',
+                                'inventory': 'inventory',
+                                'account_receivable': 'account_receivable',
+                                'account_payable': 'account_payable',
+                                'customer_prepayment': 'customer_prepayment'
+                            }
+                            
+                            forecast_field = forecast_field_mapping.get(bs_metric)
+                            if forecast_field:
+                                fc_res = tool_system.execute_tool(
+                                    'get_financial_forecasts',
+                                    {
+                                        'ticker': ticker,
+                                        'years': [str(year)],
+                                        'statement_type': 'balance_sheet',
+                                        'fields': [forecast_field]
+                                    }
+                                )
+                                if fc_res.get('status') == 'success':
+                                    forecast_data = fc_res.get('forecast_data', {})
+                                    year_data = forecast_data.get(str(year), {})
+                                    bs = year_data.get('balance_sheet', {})
+                                    # The value is already in billions from get_financial_forecasts
+                                    bs_value = bs.get(forecast_field)
+                                    if bs_value is not None:
+                                        value = float(bs_value)
+                        except Exception:
+                            pass
+                    
+                    match[col] = value
+
+            # Balance Sheet Ratios by selected years - using existing calculate_balance_sheet_ratios function
+            bs_ratio_display_names = {
+                'net_debt_to_equity': 'Net Debt/Equity',
+                'assets_to_liabilities': 'Assets/Liabilities', 
+                'assets_to_equity': 'Assets/Equity'
+            }
+            
+            for bs_ratio, years in balance_sheet_ratios.items():
+                display_name = bs_ratio_display_names.get(bs_ratio, bs_ratio.replace('_', ' ').title())
+                
+                if not years:
+                    continue
+                    
+                for year in years:
+                    col = f"{display_name} ({year})"
+                    ratio_value = None
+                    
+                    # Use the existing calculate_balance_sheet_ratios function
+                    try:
+                        # Map our ratio names to the function's ratio names
+                        ratio_mapping = {
+                            'net_debt_to_equity': 'net_debt_to_equity',
+                            'assets_to_equity': 'assets_to_equity',
+                            'assets_to_liabilities': 'liabilities_to_assets'  # We'll invert this
+                        }
+                        
+                        function_ratio_name = ratio_mapping.get(bs_ratio)
+                        if function_ratio_name:
+                            # Call the calculate_balance_sheet_ratios function
+                            ratio_res = tool_system.execute_tool(
+                                'calculate_balance_sheet_ratios',
+                                {
+                                    'ticker': ticker,
+                                    'year_start': int(year),
+                                    'year_end': int(year),
+                                    'period_type': 'annual',
+                                    'ratios': [function_ratio_name]
+                                }
+                            )
+                            
+                            if ratio_res.get('status') == 'success':
+                                data = ratio_res.get('data', {})
+                                year_data = data.get(str(year), {})
+                                
+                                if function_ratio_name in year_data:
+                                    calculated_ratio = year_data[function_ratio_name]
+                                    
+                                    if calculated_ratio is not None:
+                                        if bs_ratio == 'assets_to_liabilities':
+                                            # Invert liabilities_to_assets to get assets_to_liabilities
+                                            if calculated_ratio != 0:
+                                                ratio_value = 1 / calculated_ratio
+                                        else:
+                                            ratio_value = calculated_ratio
+                    
+                    except Exception:
+                        ratio_value = None
+                    
+                    match[col] = ratio_value
 
         return pd.DataFrame(rows)
