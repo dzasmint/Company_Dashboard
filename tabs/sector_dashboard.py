@@ -646,11 +646,15 @@ class SectorDashboardTab:
                             )
                             
                             if ratio_res.get('status') == 'success':
-                                data = ratio_res.get('data', {})
-                                year_data = data.get(str(year), {})
+                                # Extract data from the nested structure
+                                # Structure: result['data']['data'][year_int]['ratios'][ratio_name]
+                                outer_data = ratio_res.get('data', {})
+                                inner_data = outer_data.get('data', {})
+                                year_data = inner_data.get(int(year), {})  # Use int(year), not str(year)
+                                ratios_data = year_data.get('ratios', {})
                                 
-                                if function_ratio_name in year_data:
-                                    calculated_ratio = year_data[function_ratio_name]
+                                if function_ratio_name in ratios_data:
+                                    calculated_ratio = ratios_data[function_ratio_name]
                                     
                                     if calculated_ratio is not None:
                                         if bs_ratio == 'assets_to_liabilities':
