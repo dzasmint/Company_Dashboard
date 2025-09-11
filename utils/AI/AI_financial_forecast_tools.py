@@ -802,6 +802,18 @@ def register_financial_forecast_tools(tool_system):
             current_price = valuation_data.get('current_price', 0)
             rnav_per_share = valuation_data.get('rnav_per_share', 0)
             
+            # Calculate total RNAV by summing individual project RNAVs
+            total_rnav = 0
+            rnav_details = valuation_data.get('rnav_details', [])
+            if rnav_details:
+                for item in rnav_details:
+                    item_name = item.get('item', '')
+                    # Sum RNAV from individual projects (indented with 2 spaces)
+                    if item_name and item_name.startswith('  '):
+                        rnav_to_company = item.get('rnav_to_company', 0)
+                        if rnav_to_company:
+                            total_rnav += rnav_to_company
+            
             # Calculate RNAV upside
             rnav_upside = ((rnav_per_share / current_price - 1) * 100) if current_price > 0 else 0
             
@@ -826,6 +838,7 @@ def register_financial_forecast_tools(tool_system):
                 "ticker": ticker,
                 "current_price": round(current_price, 0),
                 "rnav_per_share": round(rnav_per_share, 0),
+                "total_rnav": round(total_rnav, 0),
                 "rnav_upside_pct": round(rnav_upside, 1),
                 "trailing_pe": round(trailing_pe, 1) if trailing_pe else None,
                 "trailing_pb": round(trailing_pb, 1) if trailing_pb else None,
@@ -847,7 +860,7 @@ def register_financial_forecast_tools(tool_system):
                 "status": "success",
                 "guidance": {
                     "metrics_available": [
-                        "current_price", "rnav_per_share", "rnav_upside_pct",
+                        "current_price", "rnav_per_share", "total_rnav", "rnav_upside_pct",
                         "trailing_pe", "trailing_pb",
                         f"current_year_{current_year}_pe", f"current_year_{current_year}_pb",
                         f"next_year_{next_year}_pe", f"next_year_{next_year}_pb",
