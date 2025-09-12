@@ -716,6 +716,23 @@ class SectorDashboardTab:
                     st.markdown("**Land Bank vs Market Cap**")
                     landbank_scatter = self._create_landbank_scatter()
                     st.plotly_chart(landbank_scatter, use_container_width=True)
+                
+                # Add range charts section
+                st.markdown("---")
+                st.subheader("📊 P/E & P/B Range Analysis")
+                
+                # Create range charts
+                col_range1, col_range2 = st.columns([1, 1])
+                
+                with col_range1:
+                    st.markdown("**P/E Range by Ticker**")
+                    pe_range_chart = self._create_pe_range_chart(pe_pb_data_filtered)
+                    st.plotly_chart(pe_range_chart, use_container_width=True)
+                
+                with col_range2:
+                    st.markdown("**P/B Range by Ticker**")
+                    pb_range_chart = self._create_pb_range_chart(pe_pb_data_filtered)
+                    st.plotly_chart(pb_range_chart, use_container_width=True)
             else:
                 st.warning("No P/E and P/B data available for companies in the collection.")
         else:
@@ -1312,3 +1329,201 @@ class SectorDashboardTab:
         except Exception as e:
             print(f"Error getting land bank and market cap data: {str(e)}")
             return pd.DataFrame()
+    
+    def _create_pe_range_chart(self, data: pd.DataFrame) -> any:
+        """Create P/E range chart showing min, max, and current P/E for each ticker"""
+        try:
+            import plotly.graph_objects as go
+            
+            if data.empty:
+                return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5)
+            
+            # Calculate min, max, and current P/E for each ticker
+            pe_stats = []
+            
+            for ticker in data['TICKER'].unique():
+                ticker_data = data[data['TICKER'] == ticker]['P/E'].dropna()
+                
+                if not ticker_data.empty:
+                    min_pe = ticker_data.min()
+                    max_pe = ticker_data.max()
+                    current_pe = ticker_data.iloc[-1]  # Most recent value
+                    
+                    pe_stats.append({
+                        'Ticker': ticker,
+                        'Min_PE': min_pe,
+                        'Max_PE': max_pe,
+                        'Current_PE': current_pe
+                    })
+            
+            if not pe_stats:
+                return go.Figure().add_annotation(text="No P/E data available", xref="paper", yref="paper", x=0.5, y=0.5)
+            
+            pe_df = pd.DataFrame(pe_stats)
+            
+            # Create the chart
+            fig = go.Figure()
+            
+            # Add range bars (min to max)
+            fig.add_trace(go.Scatter(
+                x=pe_df['Ticker'],
+                y=pe_df['Max_PE'],
+                mode='markers',
+                marker=dict(size=8, color='lightblue', symbol='triangle-up'),
+                name='Max P/E',
+                hovertemplate='<b>%{x}</b><br>Max P/E: %{y:.2f}<extra></extra>'
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=pe_df['Ticker'],
+                y=pe_df['Min_PE'],
+                mode='markers',
+                marker=dict(size=8, color='lightcoral', symbol='triangle-down'),
+                name='Min P/E',
+                hovertemplate='<b>%{x}</b><br>Min P/E: %{y:.2f}<extra></extra>'
+            ))
+            
+            # Add current P/E as larger markers
+            fig.add_trace(go.Scatter(
+                x=pe_df['Ticker'],
+                y=pe_df['Current_PE'],
+                mode='markers',
+                marker=dict(size=12, color='darkblue', symbol='circle'),
+                name='Current P/E',
+                hovertemplate='<b>%{x}</b><br>Current P/E: %{y:.2f}<extra></extra>'
+            ))
+            
+            # Add vertical lines connecting min and max
+            for _, row in pe_df.iterrows():
+                fig.add_trace(go.Scatter(
+                    x=[row['Ticker'], row['Ticker']],
+                    y=[row['Min_PE'], row['Max_PE']],
+                    mode='lines',
+                    line=dict(color='gray', width=2),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            
+            # Update layout
+            fig.update_layout(
+                title="P/E Range Analysis by Ticker",
+                xaxis_title="Ticker",
+                yaxis_title="P/E Ratio",
+                hovermode='closest',
+                height=400,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            return fig
+            
+        except Exception as e:
+            print(f"Error creating P/E range chart: {str(e)}")
+            st.error(f"Error creating P/E range chart: {str(e)}")
+            return go.Figure().add_annotation(text="Error creating chart", xref="paper", yref="paper", x=0.5, y=0.5)
+    
+    def _create_pb_range_chart(self, data: pd.DataFrame) -> any:
+        """Create P/B range chart showing min, max, and current P/B for each ticker"""
+        try:
+            import plotly.graph_objects as go
+            
+            if data.empty:
+                return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5)
+            
+            # Calculate min, max, and current P/B for each ticker
+            pb_stats = []
+            
+            for ticker in data['TICKER'].unique():
+                ticker_data = data[data['TICKER'] == ticker]['P/B'].dropna()
+                
+                if not ticker_data.empty:
+                    min_pb = ticker_data.min()
+                    max_pb = ticker_data.max()
+                    current_pb = ticker_data.iloc[-1]  # Most recent value
+                    
+                    pb_stats.append({
+                        'Ticker': ticker,
+                        'Min_PB': min_pb,
+                        'Max_PB': max_pb,
+                        'Current_PB': current_pb
+                    })
+            
+            if not pb_stats:
+                return go.Figure().add_annotation(text="No P/B data available", xref="paper", yref="paper", x=0.5, y=0.5)
+            
+            pb_df = pd.DataFrame(pb_stats)
+            
+            # Create the chart
+            fig = go.Figure()
+            
+            # Add range bars (min to max)
+            fig.add_trace(go.Scatter(
+                x=pb_df['Ticker'],
+                y=pb_df['Max_PB'],
+                mode='markers',
+                marker=dict(size=8, color='lightgreen', symbol='triangle-up'),
+                name='Max P/B',
+                hovertemplate='<b>%{x}</b><br>Max P/B: %{y:.2f}<extra></extra>'
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=pb_df['Ticker'],
+                y=pb_df['Min_PB'],
+                mode='markers',
+                marker=dict(size=8, color='lightcoral', symbol='triangle-down'),
+                name='Min P/B',
+                hovertemplate='<b>%{x}</b><br>Min P/B: %{y:.2f}<extra></extra>'
+            ))
+            
+            # Add current P/B as larger markers
+            fig.add_trace(go.Scatter(
+                x=pb_df['Ticker'],
+                y=pb_df['Current_PB'],
+                mode='markers',
+                marker=dict(size=12, color='darkgreen', symbol='circle'),
+                name='Current P/B',
+                hovertemplate='<b>%{x}</b><br>Current P/B: %{y:.2f}<extra></extra>'
+            ))
+            
+            # Add vertical lines connecting min and max
+            for _, row in pb_df.iterrows():
+                fig.add_trace(go.Scatter(
+                    x=[row['Ticker'], row['Ticker']],
+                    y=[row['Min_PB'], row['Max_PB']],
+                    mode='lines',
+                    line=dict(color='gray', width=2),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            
+            # Update layout
+            fig.update_layout(
+                title="P/B Range Analysis by Ticker",
+                xaxis_title="Ticker",
+                yaxis_title="P/B Ratio",
+                hovermode='closest',
+                height=400,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            # Add horizontal line at P/B = 1 (book value reference)
+            fig.add_hline(y=1, line_dash="dash", line_color="gray", 
+                         annotation_text="P/B = 1", annotation_position="bottom right")
+            
+            return fig
+            
+        except Exception as e:
+            print(f"Error creating P/B range chart: {str(e)}")
+            st.error(f"Error creating P/B range chart: {str(e)}")
+            return go.Figure().add_annotation(text="Error creating chart", xref="paper", yref="paper", x=0.5, y=0.5)
