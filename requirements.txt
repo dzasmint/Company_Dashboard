@@ -3,13 +3,11 @@ pandas
 numpy
 scipy
 plotly
-typing
 openpyxl
 requests
 python-dotenv
 openai
 anthropic
-google-api-python-client
 pymongo
 certifi
 pytesseract
@@ -18,5 +16,4 @@ PyPDF2
 pillow
 reportlab
 streamlit-aggrid
-yfinance
 xlsxwriter
