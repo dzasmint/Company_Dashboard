@@ -900,20 +900,9 @@ class SectorDashboardTab:
                 st.markdown("---")
                 st.subheader("Scatter Analysis")
                 
-                # Create scatter charts
-                col_scatter1, col_scatter2 = st.columns([1, 1])
-                
-                with col_scatter1:
-                    st.markdown("**P/B vs P/E Analysis**")
-                    
-                    pb_pe_scatter = self._create_pb_pe_scatter()
-                    st.plotly_chart(pb_pe_scatter, use_container_width=True)
-                
-                with col_scatter2:
-                    st.markdown("**Land Bank vs Market Cap**")
-                    landbank_scatter = self._create_landbank_scatter()
-                    st.plotly_chart(landbank_scatter, use_container_width=True)
-                
+                pb_pe_scatter = self._create_pb_pe_scatter()
+                st.plotly_chart(pb_pe_scatter, use_container_width=True)
+
                 # Add range charts section
                 st.markdown("---")
                 st.subheader("P/E & P/B Range Analysis")
@@ -1308,55 +1297,6 @@ class SectorDashboardTab:
             print(f"Error creating P/B vs P/E scatter chart: {str(e)}")
             return go.Figure().add_annotation(text="Error creating chart", xref="paper", yref="paper", x=0.5, y=0.5)
     
-    def _create_landbank_scatter(self) -> any:
-        """Create Land Bank vs Market Cap scatter chart"""
-        try:
-            import plotly.graph_objects as go
-            
-            # Get land bank and market cap data
-            scatter_data = self._get_landbank_marketcap_data()
-            
-            if scatter_data.empty:
-                return go.Figure().add_annotation(text="No land bank data available", xref="paper", yref="paper", x=0.5, y=0.5)
-            
-            # Create scatter plot
-            fig = go.Figure()
-            
-            # Add scatter points
-            fig.add_trace(go.Scatter(
-                x=scatter_data['Land_Bank_HA'],
-                y=scatter_data['Market_Cap_TN'],
-                mode='markers+text',
-                text=scatter_data['Ticker'],
-                textposition='top center',
-                marker=dict(
-                    size=15,
-                    color=scatter_data['Market_Cap_TN'],
-                    colorscale='Blues',
-                    colorbar=dict(title="Market Cap (VND tn)"),
-                    line=dict(width=2, color='white'),
-                    opacity=0.8
-                ),
-                hovertemplate='<b>%{text}</b><br>' +
-                            'Land Bank: %{x:.1f} ha<br>' +
-                            'Market Cap: %{y:.1f} VND tn<br>' +
-                            '<extra></extra>'
-            ))
-            
-            # Update layout
-            fig.update_layout(
-                title="Land Bank vs Market Cap",
-                xaxis_title="Total Land Bank (ha)",
-                yaxis_title="Market Cap (VND tn)",
-                height=400,
-                showlegend=False
-            )
-            
-            return fig
-            
-        except Exception as e:
-            print(f"Error creating Land Bank vs Market Cap scatter chart: {str(e)}")
-            return go.Figure().add_annotation(text="Error creating chart", xref="paper", yref="paper", x=0.5, y=0.5)
     
     def _get_trailing_valuation_data(self) -> pd.DataFrame:
         """Get trailing P/B, P/E, and RNAV data for scatter chart using RNAV breakdown"""
