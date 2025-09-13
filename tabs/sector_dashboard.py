@@ -163,6 +163,24 @@ class SectorDashboardTab:
             'data_path': 'result["data"]["data"][year]["ratios"]["liabilities_to_assets"]',
             'transform': 'invert'  # 1 / value
         },
+        
+        # Valuation metrics (special handling for trailing vs forecast)
+        'pe_ratio': {
+            'category': 'valuation',
+            'source': 'custom_pe_pb_calculation',
+            'field': 'pe_ratio',
+            'display_name': 'P/E',
+            'data_path': 'calculated_value',
+            'special_years': ['Trailing']  # Special year options
+        },
+        'pb_ratio': {
+            'category': 'valuation',
+            'source': 'custom_pe_pb_calculation',
+            'field': 'pb_ratio',
+            'display_name': 'P/B',
+            'data_path': 'calculated_value',
+            'special_years': ['Trailing']  # Special year options
+        },
     }
 
     # Metric aliases for parsing user input
@@ -184,6 +202,9 @@ class SectorDashboardTab:
         'net_debt_to_equity': 'net_debt_to_equity', 'debt_to_equity': 'net_debt_to_equity', 'net_debt_equity_ratio': 'net_debt_to_equity',
         'assets_to_liabilities': 'assets_to_liabilities', 'asset_liability_ratio': 'assets_to_liabilities',
         'assets_to_equity': 'assets_to_equity', 'asset_equity_ratio': 'assets_to_equity', 'equity_multiplier': 'assets_to_equity',
+        # Valuation aliases
+        'pe_ratio': 'pe_ratio', 'pe': 'pe_ratio', 'price_earnings': 'pe_ratio', 'p/e': 'pe_ratio',
+        'pb_ratio': 'pb_ratio', 'pb': 'pb_ratio', 'price_book': 'pb_ratio', 'p/b': 'pb_ratio',
     }
 
     def __init__(self, parent=None):
@@ -194,6 +215,14 @@ class SectorDashboardTab:
         # Check if it's a display name for a base metric
         for metric_key, config in self.METRIC_CONFIG.items():
             if config['category'] == 'base' and config['display_name'] == metric_name:
+                return True
+        return False
+
+    def _is_valuation_metric(self, metric_name: str) -> bool:
+        """Check if a metric is a valuation metric (P/E, P/B) that supports Trailing option"""
+        # Check if it's a display name for a valuation metric
+        for metric_key, config in self.METRIC_CONFIG.items():
+            if config['category'] == 'valuation' and config['display_name'] == metric_name:
                 return True
         return False
 
@@ -227,22 +256,27 @@ class SectorDashboardTab:
                 metric_name = parts[0]
                 canonical_metric = self.METRIC_ALIASES.get(metric_name, metric_name)
                 
-                try:
-                    year = int(parts[1])
-                    
-                    if canonical_metric in self.METRIC_CONFIG:
-                        if canonical_metric not in parsed_metrics['dynamic_metrics']:
-                            parsed_metrics['dynamic_metrics'][canonical_metric] = {}
-                        if year not in parsed_metrics['dynamic_metrics'][canonical_metric]:
-                            parsed_metrics['dynamic_metrics'][canonical_metric][year] = []
-                        if 'absolute' not in parsed_metrics['dynamic_metrics'][canonical_metric][year]:
-                            parsed_metrics['dynamic_metrics'][canonical_metric][year].append('absolute')
-                    else:
-                        # Unknown metric, treat as base metric
+                # Handle special year "Trailing" for valuation metrics
+                if parts[1].lower() == 'trailing':
+                    year = 'Trailing'
+                else:
+                    try:
+                        year = int(parts[1])
+                    except ValueError:
+                        # Invalid year, treat as base metric
                         if item not in parsed_metrics['base_metrics']:
                             parsed_metrics['base_metrics'].append(item)
-                except ValueError:
-                    # Invalid year, treat as base metric
+                        continue
+                
+                if canonical_metric in self.METRIC_CONFIG:
+                    if canonical_metric not in parsed_metrics['dynamic_metrics']:
+                        parsed_metrics['dynamic_metrics'][canonical_metric] = {}
+                    if year not in parsed_metrics['dynamic_metrics'][canonical_metric]:
+                        parsed_metrics['dynamic_metrics'][canonical_metric][year] = []
+                    if 'absolute' not in parsed_metrics['dynamic_metrics'][canonical_metric][year]:
+                        parsed_metrics['dynamic_metrics'][canonical_metric][year].append('absolute')
+                else:
+                    # Unknown metric, treat as base metric
                     if item not in parsed_metrics['base_metrics']:
                         parsed_metrics['base_metrics'].append(item)
                         
@@ -251,22 +285,27 @@ class SectorDashboardTab:
                 metric_name = parts[0]
                 canonical_metric = self.METRIC_ALIASES.get(metric_name, metric_name)
                 
-                try:
-                    year = int(parts[1])
-                    
-                    if canonical_metric in self.METRIC_CONFIG:
-                        if canonical_metric not in parsed_metrics['dynamic_metrics']:
-                            parsed_metrics['dynamic_metrics'][canonical_metric] = {}
-                        if year not in parsed_metrics['dynamic_metrics'][canonical_metric]:
-                            parsed_metrics['dynamic_metrics'][canonical_metric][year] = []
-                        if 'yoy' not in parsed_metrics['dynamic_metrics'][canonical_metric][year]:
-                            parsed_metrics['dynamic_metrics'][canonical_metric][year].append('yoy')
-                    else:
-                        # Unknown metric, treat as base metric
+                # Handle special year "Trailing" for valuation metrics
+                if parts[1].lower() == 'trailing':
+                    year = 'Trailing'
+                else:
+                    try:
+                        year = int(parts[1])
+                    except ValueError:
+                        # Invalid year, treat as base metric
                         if item not in parsed_metrics['base_metrics']:
                             parsed_metrics['base_metrics'].append(item)
-                except ValueError:
-                    # Invalid year, treat as base metric
+                        continue
+                
+                if canonical_metric in self.METRIC_CONFIG:
+                    if canonical_metric not in parsed_metrics['dynamic_metrics']:
+                        parsed_metrics['dynamic_metrics'][canonical_metric] = {}
+                    if year not in parsed_metrics['dynamic_metrics'][canonical_metric]:
+                        parsed_metrics['dynamic_metrics'][canonical_metric][year] = []
+                    if 'yoy' not in parsed_metrics['dynamic_metrics'][canonical_metric][year]:
+                        parsed_metrics['dynamic_metrics'][canonical_metric][year].append('yoy')
+                else:
+                    # Unknown metric, treat as base metric
                     if item not in parsed_metrics['base_metrics']:
                         parsed_metrics['base_metrics'].append(item)
             else:
@@ -359,6 +398,8 @@ class SectorDashboardTab:
                 return self._get_historical_metric_value(ticker, metric_key, year, config, tool_system)
             elif config['category'] == 'ratio':
                 return self._get_ratio_metric_value(ticker, metric_key, year, config, tool_system)
+            elif config['category'] == 'valuation':
+                return self._calculate_pe_pb_ratio(ticker, metric_key, year, tool_system)
             else:
                 return None
         except Exception:
@@ -462,6 +503,120 @@ class SectorDashboardTab:
         
         return None
 
+    def _calculate_pe_pb_ratio(self, ticker: str, metric_key: str, year: int, tool_system: EnhancedAIToolSystem) -> float:
+        """Calculate P/E or P/B ratio for a ticker and year"""
+        try:
+            # Get valuation analysis which includes P/E and P/B data
+            valuation_result = tool_system.execute_tool('get_valuation_analysis', {'ticker': ticker})
+            data = {}
+            if valuation_result.get('status') == 'success':
+                data = valuation_result.get('data', {})
+            
+            if metric_key == 'pe_ratio':
+                # Get P/E ratio
+                if year == 'Trailing':
+                    # Get trailing P/E from valuation analysis or fallback to Val_processed.csv
+                    trailing_pe = data.get('trailing_pe')
+                    if trailing_pe is not None:
+                        return float(trailing_pe)
+                    else:
+                        # Fallback to Val_processed.csv
+                        return self._get_trailing_pe(ticker)
+                else:
+                    # Get forecast P/E from valuation analysis
+                    # Try different key formats
+                    year_key = f'current_year_{year}_pe'
+                    forecast_pe = data.get(year_key)
+                    if forecast_pe is not None:
+                        return float(forecast_pe)
+                    
+                    # Try next year format
+                    next_year_key = f'next_year_{year}_pe'
+                    forecast_pe = data.get(next_year_key)
+                    if forecast_pe is not None:
+                        return float(forecast_pe)
+                    
+                    # Try simple year format
+                    alt_key = f'{year}_pe'
+                    forecast_pe = data.get(alt_key)
+                    if forecast_pe is not None:
+                        return float(forecast_pe)
+            
+            elif metric_key == 'pb_ratio':
+                # Get P/B ratio
+                if year == 'Trailing':
+                    # Get trailing P/B from valuation analysis or fallback to Val_processed.csv
+                    trailing_pb = data.get('trailing_pb')
+                    if trailing_pb is not None:
+                        return float(trailing_pb)
+                    else:
+                        # Fallback to Val_processed.csv
+                        return self._get_trailing_pb(ticker)
+                else:
+                    # Get forecast P/B from valuation analysis
+                    # Try different key formats
+                    year_key = f'current_year_{year}_pb'
+                    forecast_pb = data.get(year_key)
+                    if forecast_pb is not None:
+                        return float(forecast_pb)
+                    
+                    # Try next year format
+                    next_year_key = f'next_year_{year}_pb'
+                    forecast_pb = data.get(next_year_key)
+                    if forecast_pb is not None:
+                        return float(forecast_pb)
+                    
+                    # Try simple year format
+                    alt_key = f'{year}_pb'
+                    forecast_pb = data.get(alt_key)
+                    if forecast_pb is not None:
+                        return float(forecast_pb)
+            
+        except Exception as e:
+            print(f"Error calculating {metric_key} for {ticker}: {str(e)}")
+        
+        return None
+
+    def _get_trailing_pe(self, ticker: str) -> float:
+        """Get trailing P/E from Val_processed.csv"""
+        try:
+            # Load P/E data from Val_processed.csv
+            pe_pb_data = self._load_pe_pb_data()
+            if pe_pb_data.empty:
+                return None
+            
+            # Filter for the specific ticker
+            ticker_data = pe_pb_data[pe_pb_data['TICKER'] == ticker]
+            if ticker_data.empty:
+                return None
+            
+            # Get the most recent P/E value
+            latest_pe = ticker_data['P/E'].dropna().iloc[-1] if not ticker_data['P/E'].dropna().empty else None
+            return float(latest_pe) if latest_pe is not None else None
+            
+        except Exception:
+            return None
+
+    def _get_trailing_pb(self, ticker: str) -> float:
+        """Get trailing P/B from Val_processed.csv"""
+        try:
+            # Load P/B data from Val_processed.csv
+            pe_pb_data = self._load_pe_pb_data()
+            if pe_pb_data.empty:
+                return None
+            
+            # Filter for the specific ticker
+            ticker_data = pe_pb_data[pe_pb_data['TICKER'] == ticker]
+            if ticker_data.empty:
+                return None
+            
+            # Get the most recent P/B value
+            latest_pb = ticker_data['P/B'].dropna().iloc[-1] if not ticker_data['P/B'].dropna().empty else None
+            return float(latest_pb) if latest_pb is not None else None
+            
+        except Exception:
+            return None
+
     def _compute_metrics_for_tickers_generic(self, tickers: List[str], parsed_metrics: Dict[str, Any], tool_system: EnhancedAIToolSystem) -> pd.DataFrame:
         """Compute all metrics using the generic approach"""
         # Compute base metrics
@@ -498,9 +653,16 @@ class SectorDashboardTab:
                         # Check if column contains numerical data
                         numeric_mask = pd.to_numeric(df_formatted[col], errors='coerce').notna()
                         if numeric_mask.any():
-                            df_formatted[col] = df_formatted[col].apply(
-                                lambda x: f"{x:,.0f}" if pd.notna(x) and isinstance(x, (int, float)) and not isinstance(x, bool) else x
-                            )
+                            # Special formatting for P/E and P/B columns (1 decimal place)
+                            if 'P/E' in col or 'P/B' in col:
+                                df_formatted[col] = df_formatted[col].apply(
+                                    lambda x: f"{x:,.1f}" if pd.notna(x) and isinstance(x, (int, float)) and not isinstance(x, bool) else x
+                                )
+                            else:
+                                # Default formatting for other numerical columns (0 decimal places)
+                                df_formatted[col] = df_formatted[col].apply(
+                                    lambda x: f"{x:,.0f}" if pd.notna(x) and isinstance(x, (int, float)) and not isinstance(x, bool) else x
+                                )
                     except Exception:
                         # If formatting fails, keep original values
                         pass
@@ -508,8 +670,7 @@ class SectorDashboardTab:
         return df_formatted
 
     def render(self):
-        st.subheader("Sector Comparable")
-
+        
         # Ensure MongoDB connection available
         client = init_mongodb_connection()
         if client is None:
@@ -561,8 +722,7 @@ class SectorDashboardTab:
             st.session_state.selected_metrics = []
 
         # Add new metric section
-        st.subheader("➕ Add New Metric")
-
+        
         col1, col2, col3 = st.columns([2, 1, 1])
 
         with col1:
@@ -576,8 +736,8 @@ class SectorDashboardTab:
             
             # Add dynamic metrics (year required)
             for metric_key, config in self.METRIC_CONFIG.items():
-                if config['category'] in ['historical', 'ratio']:
-                    available_metrics.append(metric_key)
+                if config['category'] in ['historical', 'ratio', 'valuation']:
+                    available_metrics.append(config['display_name'])  # Use display name for consistency
             
             selected_metric = st.selectbox(
                 "Select Metric",
@@ -588,7 +748,16 @@ class SectorDashboardTab:
         with col2:
             # Year selection dropdown - disable only for base metrics
             is_base_metric = self._is_base_metric(selected_metric)
-            year_options = [str(year) for year in sorted(all_years)]
+            
+            # Check if selected metric is P/E or P/B (valuation metrics)
+            is_valuation_metric = self._is_valuation_metric(selected_metric)
+            
+            if is_valuation_metric:
+                # For P/E and P/B, include "Trailing" option plus forecast years
+                year_options = ["Trailing"] + [str(year) for year in sorted(all_years)]
+            else:
+                year_options = [str(year) for year in sorted(all_years)]
+            
             selected_year = st.selectbox(
                 "Select Year",
                 options=year_options,
@@ -684,7 +853,7 @@ class SectorDashboardTab:
 
         # Sector Charts Section
         st.markdown("---")
-        st.subheader("📊 Sector Charts")
+        st.subheader("Sector Charts")
         
         # Load P/E and P/B data
         pe_pb_data = self._load_pe_pb_data()
@@ -729,7 +898,7 @@ class SectorDashboardTab:
                 
                 # Add scatter charts section
                 st.markdown("---")
-                st.subheader("📈 Scatter Analysis")
+                st.subheader("Scatter Analysis")
                 
                 # Create scatter charts
                 col_scatter1, col_scatter2 = st.columns([1, 1])
@@ -747,7 +916,7 @@ class SectorDashboardTab:
                 
                 # Add range charts section
                 st.markdown("---")
-                st.subheader("📊 P/E & P/B Range Analysis")
+                st.subheader("P/E & P/B Range Analysis")
                 
                 # Create range charts
                 col_range1, col_range2 = st.columns([1, 1])
