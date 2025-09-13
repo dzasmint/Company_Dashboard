@@ -482,6 +482,31 @@ class SectorDashboardTab:
         
         return result_df
 
+    def _format_dataframe_for_display(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Format numerical columns with thousand separators, except percentage columns"""
+        if df.empty:
+            return df
+        
+        df_formatted = df.copy()
+        
+        # Format numerical columns with thousand separators
+        for col in df_formatted.columns:
+            if col not in ['Ticker', 'Company Name']:
+                # Skip percentage columns (contain '%' or 'YoY')
+                if '%' not in col and 'YoY' not in col:
+                    try:
+                        # Check if column contains numerical data
+                        numeric_mask = pd.to_numeric(df_formatted[col], errors='coerce').notna()
+                        if numeric_mask.any():
+                            df_formatted[col] = df_formatted[col].apply(
+                                lambda x: f"{x:,.0f}" if pd.notna(x) and isinstance(x, (int, float)) and not isinstance(x, bool) else x
+                            )
+                    except Exception:
+                        # If formatting fails, keep original values
+                        pass
+        
+        return df_formatted
+
     def render(self):
         st.subheader("Sector Comparable")
 
@@ -649,6 +674,9 @@ class SectorDashboardTab:
                 col_order = ['Ticker', 'Company Name'] + [col for col in df_metrics.columns if col != 'Ticker']
                 existing = [c for c in col_order if c in df_display.columns]
                 df_display = df_display[existing]
+                
+                # Format the dataframe for display
+                df_display = self._format_dataframe_for_display(df_display)
 
             st.dataframe(df_display, use_container_width=True)
         else:
@@ -1075,8 +1103,7 @@ class SectorDashboardTab:
                 marker=dict(
                     size=scatter_data['RNAV_Size'],
                     sizemode='diameter',
-                    sizemin=10,
-                    sizeref=2,
+                    sizemin=8,
                     color=scatter_data['P/E'].fillna(0),  # Handle NaN values for color mapping
                     colorscale='Viridis',
                     colorbar=dict(title="P/E Ratio"),
@@ -1246,14 +1273,14 @@ class SectorDashboardTab:
             # Keep all tickers with at least one trailing multiple, regardless of RNAV
             scatter_data = scatter_data.dropna(subset=['P/E', 'P/B'], how='all')
             
-            # Normalize RNAV for bubble size (scale between 10-50)
+            # Normalize RNAV for bubble size (scale between 8-60)
             if not scatter_data.empty:
                 # Separate tickers with and without RNAV
                 has_rnav = scatter_data['Total_RNAV'] > 0
                 no_rnav = scatter_data['Total_RNAV'] == 0
                 
-                # Set default size for tickers without RNAV
-                scatter_data.loc[no_rnav, 'RNAV_Size'] = 15  # Smaller default size
+                # Set minimum size for tickers without RNAV
+                scatter_data.loc[no_rnav, 'RNAV_Size'] = 8  # Smallest size for zero RNAV
                 
                 # Scale sizes for tickers with RNAV
                 if has_rnav.any():
@@ -1261,12 +1288,13 @@ class SectorDashboardTab:
                     if len(rnav_data) > 1 and rnav_data['Total_RNAV'].max() > rnav_data['Total_RNAV'].min():
                         min_rnav = rnav_data['Total_RNAV'].min()
                         max_rnav = rnav_data['Total_RNAV'].max()
-                        scatter_data.loc[has_rnav, 'RNAV_Size'] = 20 + (scatter_data.loc[has_rnav, 'Total_RNAV'] - min_rnav) / (max_rnav - min_rnav) * 30
+                        # Scale from 15 to 60 based on RNAV value
+                        scatter_data.loc[has_rnav, 'RNAV_Size'] = 15 + (scatter_data.loc[has_rnav, 'Total_RNAV'] - min_rnav) / (max_rnav - min_rnav) * 45
                     else:
-                        scatter_data.loc[has_rnav, 'RNAV_Size'] = 25  # Default size for single RNAV ticker
+                        scatter_data.loc[has_rnav, 'RNAV_Size'] = 30  # Default size for single RNAV ticker
                 else:
                     # All tickers have no RNAV
-                    scatter_data['RNAV_Size'] = 15
+                    scatter_data['RNAV_Size'] = 8
             
             return scatter_data[['TICKER', 'P/E', 'P/B', 'Total_RNAV', 'RNAV_Size']]
             
@@ -1296,31 +1324,52 @@ class SectorDashboardTab:
             
             for ticker in company_tickers:
                 try:
-                    # Get valuation data for market cap
+                    # Get valuation data for current price
                     result = tool_system.execute_tool('get_valuation_analysis', {'ticker': ticker})
+                    current_price = 0
                     if result.get('status') == 'success':
                         data = result.get('data', {})
                         current_price = data.get('current_price', 0)
-                        
-                        # Get shares outstanding (we'll need to estimate or get from another source)
-                        # For now, let's use a placeholder - in real implementation, you'd get this from company data
-                        shares_outstanding = 1000000000  # Placeholder: 1 billion shares
+                    
+                    # Get shares outstanding from financial statements
+                    shares_result = tool_system.execute_tool('get_historical_annual_financials', {
+                        'tickers': [ticker],
+                        'metrics': ['OS'],  # Outstanding Shares
+                        'years': [2024, 2023, 2022],  # Try recent years
+                        'unit': 'millions'
+                    })
+                    
+                    shares_outstanding = 0
+                    if shares_result.get('status') == 'success':
+                        shares_data = shares_result.get('data', [])
+                        if shares_data:
+                            # Get the most recent shares outstanding data
+                            latest_shares = max(shares_data, key=lambda x: x.get('DATE', 0))
+                            # The data is already in actual shares, not millions
+                            shares_outstanding = latest_shares.get('VALUE', 0)
+                    
+                    # Calculate market cap
+                    if current_price > 0 and shares_outstanding > 0:
                         market_cap = current_price * shares_outstanding / 1000000000000  # Convert to VND tn
-                        
-                        # Get land bank data from projects - sum all project land areas for this company
-                        company_projects = projects_data[projects_data['company_ticker'] == ticker]
-                        if not company_projects.empty and 'land_area' in company_projects.columns:
-                            # Sum up all land areas for the company's projects (total land bank)
-                            land_bank_ha = company_projects['land_area'].fillna(0).sum()
-                        else:
-                            # Fallback to placeholder if no project data
-                            land_bank_ha = 0  # No land bank data available
-                        
-                        scatter_data.append({
-                            'Ticker': ticker,
-                            'Land_Bank_HA': land_bank_ha,
-                            'Market_Cap_TN': market_cap
-                        })
+                    else:
+                        market_cap = 0  # No valid data
+                    
+                    # Get land bank data from projects - sum all project land areas for this company
+                    company_projects = projects_data[projects_data['company_ticker'] == ticker]
+                    if not company_projects.empty and 'land_area' in company_projects.columns:
+                        # Sum up all land areas for the company's projects (convert from sqm to hectares)
+                        land_bank_sqm = company_projects['land_area'].fillna(0).sum()
+                        land_bank_ha = land_bank_sqm / 10000  # Convert from sqm to hectares
+                    else:
+                        # Fallback to placeholder if no project data
+                        land_bank_ha = 0  # No land bank data available
+                    
+                    # Always add the company to the results, even if market cap is 0
+                    scatter_data.append({
+                        'Ticker': ticker,
+                        'Land_Bank_HA': land_bank_ha,
+                        'Market_Cap_TN': market_cap
+                    })
                 except Exception:
                     continue
             
@@ -1361,43 +1410,51 @@ class SectorDashboardTab:
             
             pe_df = pd.DataFrame(pe_stats)
             
+            # Cap displayable P/E values at 50, but preserve original values for hover
+            pe_df['Max_PE_Display'] = pe_df['Max_PE'].clip(upper=50)
+            pe_df['Min_PE_Display'] = pe_df['Min_PE'].clip(upper=50)
+            pe_df['Current_PE_Display'] = pe_df['Current_PE'].clip(upper=50)
+            
             # Create the chart
             fig = go.Figure()
             
-            # Add range bars (min to max)
+            # Add range bars (min to max) - use display values but show original in hover
             fig.add_trace(go.Scatter(
                 x=pe_df['Ticker'],
-                y=pe_df['Max_PE'],
+                y=pe_df['Max_PE_Display'],
                 mode='markers',
                 marker=dict(size=8, color='lightblue', symbol='triangle-up'),
                 name='Max P/E',
-                hovertemplate='<b>%{x}</b><br>Max P/E: %{y:.2f}<extra></extra>'
+                hovertemplate='<b>%{x}</b><br>Max P/E: %{customdata:.2f}<extra></extra>',
+                customdata=pe_df['Max_PE']
             ))
             
             fig.add_trace(go.Scatter(
                 x=pe_df['Ticker'],
-                y=pe_df['Min_PE'],
+                y=pe_df['Min_PE_Display'],
                 mode='markers',
                 marker=dict(size=8, color='lightcoral', symbol='triangle-down'),
                 name='Min P/E',
-                hovertemplate='<b>%{x}</b><br>Min P/E: %{y:.2f}<extra></extra>'
+                hovertemplate='<b>%{x}</b><br>Min P/E: %{customdata:.2f}<extra></extra>',
+                customdata=pe_df['Min_PE']
             ))
             
             # Add current P/E as larger markers
             fig.add_trace(go.Scatter(
                 x=pe_df['Ticker'],
-                y=pe_df['Current_PE'],
+                y=pe_df['Current_PE_Display'],
                 mode='markers',
                 marker=dict(size=12, color='darkblue', symbol='circle'),
                 name='Current P/E',
-                hovertemplate='<b>%{x}</b><br>Current P/E: %{y:.2f}<extra></extra>'
+                hovertemplate='<b>%{x}</b><br>Current P/E: %{customdata:.2f}<extra></extra>',
+                customdata=pe_df['Current_PE']
             ))
             
-            # Add vertical lines connecting min and max
+            # Add vertical lines connecting min and max (use display values)
             for _, row in pe_df.iterrows():
                 fig.add_trace(go.Scatter(
                     x=[row['Ticker'], row['Ticker']],
-                    y=[row['Min_PE'], row['Max_PE']],
+                    y=[row['Min_PE_Display'], row['Max_PE_Display']],
                     mode='lines',
                     line=dict(color='gray', width=2),
                     showlegend=False,
@@ -1406,9 +1463,10 @@ class SectorDashboardTab:
             
             # Update layout
             fig.update_layout(
-                title="P/E Range Analysis by Ticker",
+                title="P/E Range Analysis by Ticker (Max P/E capped at 50 for display)",
                 xaxis_title="Ticker",
                 yaxis_title="P/E Ratio",
+                yaxis=dict(range=[0, 55]),  # Set y-axis range to accommodate capped values
                 hovermode='closest',
                 height=400,
                 legend=dict(
