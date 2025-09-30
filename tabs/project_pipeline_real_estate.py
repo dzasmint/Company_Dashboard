@@ -993,7 +993,7 @@ class ProjectPipelineRealEstateTab:
                     "Low-Rise Net Sellable Area",
                     value=f"{low_rise_nsa:,.0f} m² (calculated)",
                     disabled=True,
-                    key="low_rise_nsa_display",
+                    key=f"low_rise_nsa_display_{low_rise_nsa}",
                     label_visibility="collapsed"
                 )
             st.session_state.edited_project['low_rise_nsa'] = low_rise_nsa
@@ -1059,7 +1059,7 @@ class ProjectPipelineRealEstateTab:
                     "High-Rise Net Sellable Area",
                     value=f"{high_rise_nsa:,.0f} m² (calculated)",
                     disabled=True,
-                    key="high_rise_nsa_display",
+                    key=f"high_rise_nsa_display_{high_rise_nsa}",
                     label_visibility="collapsed"
                 )
             st.session_state.edited_project['high_rise_nsa'] = high_rise_nsa
@@ -1110,7 +1110,7 @@ class ProjectPipelineRealEstateTab:
                     "Total Units",
                     value=f"{total_units:,.0f} units",
                     disabled=True,
-                    key="total_units_display",
+                    key=f"total_units_display_{total_units}",
                     label_visibility="collapsed"
                 )
             st.session_state.edited_project['total_units'] = total_units
@@ -1123,7 +1123,7 @@ class ProjectPipelineRealEstateTab:
                     "Total Net Sellable Area",
                     value=f"{total_nsa:,.0f} m²",
                     disabled=True,
-                    key="total_nsa_display",
+                    key=f"total_nsa_display_{total_nsa}",
                     label_visibility="collapsed"
                 )
             st.session_state.edited_project['net_sellable_area'] = total_nsa
@@ -1138,7 +1138,7 @@ class ProjectPipelineRealEstateTab:
                     "Average Unit Size",
                     value=f"{avg_unit_size:.1f} m²",
                     disabled=True,
-                    key="avg_unit_size_display",
+                    key=f"avg_unit_size_display_{avg_unit_size:.0f}",
                     label_visibility="collapsed"
                 )
             
@@ -1150,7 +1150,7 @@ class ProjectPipelineRealEstateTab:
                     "Weighted Average Selling Price",
                     value=f"{weighted_asp/1_000_000:.1f}",
                     disabled=True,
-                    key="weighted_asp_display",
+                    key=f"weighted_asp_display_{weighted_asp:.0f}",
                     label_visibility="collapsed"
                 )
             st.session_state.edited_project['average_selling_price'] = weighted_asp
