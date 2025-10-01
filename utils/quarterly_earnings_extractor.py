@@ -110,7 +110,7 @@ class QuarterlyEarningsExtractor:
             prompt = prompt.replace("{{FISCAL_HALF}}", fiscal_half)
             prompt = prompt.replace("{{TARGET_CCY}}", "VND")
             prompt = prompt.replace("{{TARGET_UNITS}}", "bn")
-            prompt = prompt.replace("{{ACCOUNTING_BASIS}}", "VAS")
+            prompt = prompt.replace("{{ACCOUNTING_BASIS}}", "VAS")  # Default for Vietnam, but can detect IFRS/USGAAP
             
             # Add schema and document text at the end
             full_prompt = f"{prompt}\n\nJSON SCHEMA:\n{schema_str}\n\nDOCUMENT TEXT:\n{document_text[:50000]}"
@@ -134,7 +134,7 @@ CRITICAL RULES:
 - Capture project-level contributors with exact names
 - Normalize all amounts to VND billions
 - Set currency to "VND", units to "bn"
-- Set accounting_basis to "VAS" unless deck indicates IFRS
+- Set accounting_basis to "VAS" unless deck indicates IFRS or USGAAP
 - Return ONLY valid JSON
 
 Document text:
@@ -225,7 +225,7 @@ Document text:
             prompt = prompt.replace("{{SELL_SIDE_FIRM}}", analyst_firm or "Unknown")
             prompt = prompt.replace("{{TARGET_CCY}}", "VND")
             prompt = prompt.replace("{{TARGET_UNITS}}", "bn")
-            prompt = prompt.replace("{{ACCOUNTING_BASIS}}", "VAS")
+            prompt = prompt.replace("{{ACCOUNTING_BASIS}}", "VAS")  # Default for Vietnam, but can detect IFRS/USGAAP
             
             # Add schema and document text at the end
             full_prompt = f"{prompt}\n\nJSON SCHEMA:\n{schema_str}\n\nDOCUMENT TEXT:\n{document_text[:50000]}"

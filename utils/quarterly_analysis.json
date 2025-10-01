@@ -17,12 +17,7 @@
     },
     "currency": "VND",
     "units": "bn",
-    "accounting_basis": "VAS|IFRS|Unknown",
-    "business_model": {
-      "primary": null,
-      "segments": [],
-      "notes": null
-    },
+    "accounting_basis": "VAS|IFRS|USGAAP|Unknown",
     "headline": {
       "revenue_reported": null,
       "revenue_reported_yoy_pct": null,
@@ -90,7 +85,10 @@
         "value": null,
         "yoy_pct": null,
         "key_projects_share_pct": [
-          {"project": null, "share_pct": null}
+          {
+            "project": null,
+            "share_pct": null
+          }
         ]
       },
       "company_presales_guidance_fy": {
@@ -124,7 +122,11 @@
         "interest_coverage_x": null
       },
       "notable_movements": [
-        {"item": null, "change": null, "driver": null}
+        {
+          "item": null,
+          "change": null,
+          "driver": null
+        }
       ]
     },
     "one_offs_and_events": [
@@ -141,9 +143,110 @@
       "adjusted_revenue_target_fy": null,
       "npAT_target_fy": null,
       "project_pipeline_highlights": [
-        {"project": null, "milestone": null, "expected_launch": null}
+        {
+          "project": null,
+          "milestone": null,
+          "expected_launch": null
+        }
       ],
       "management_quotes": null
+    },
+    "management_commentary": {
+      "outlook_summary": null,
+      "guidance_update": {
+        "adjusted_revenue_target_fy": null,
+        "npAT_target_fy": null,
+        "presales_target_fy": null,
+        "guidance_change": "raise|maintain|lower|new|not_stated",
+        "evidence_quotes": [
+          {
+            "quote": null,
+            "page_hint": null
+          }
+        ]
+      },
+      "strategic_priorities": [],
+      "catalysts_and_risks": {
+        "catalysts": [],
+        "risks": [],
+        "evidence_quotes": [
+          {
+            "quote": null,
+            "page_hint": null
+          }
+        ]
+      }
+    },
+    "sell_side_commentary": {
+      "analyst_view_summary": null,
+      "result_vs_expectation": {
+        "label": "beat|in_line|miss|not_stated",
+        "basis": "company_guidance|sell_side_forecast|consensus|not_stated",
+        "evidence_quotes": [
+          {
+            "quote": null,
+            "page_hint": null
+          }
+        ]
+      },
+      "guidance_reaction": {
+        "label": "raise|maintain|lower|no_guidance|not_stated",
+        "evidence_quotes": [
+          {
+            "quote": null,
+            "page_hint": null
+          }
+        ]
+      },
+      "forecast_changes": {
+        "npATMI_change_pct": null,
+        "revenue_change_pct": null,
+        "eps_change_pct": null,
+        "notes": null,
+        "evidence_quotes": [
+          {
+            "quote": null,
+            "page_hint": null
+          }
+        ]
+      },
+      "rating_target": {
+        "rating_current": null,
+        "rating_action": "upgrade|downgrade|reiterate|initiating|not_stated",
+        "target_price_current": null,
+        "target_price_action": "raise|maintain|lower|not_stated",
+        "valuation_method": null,
+        "evidence_quotes": [
+          {
+            "quote": null,
+            "page_hint": null
+          }
+        ]
+      },
+      "model_changes": [
+        {
+          "item": null,
+          "direction": "up|down|unch|not_stated",
+          "magnitude": null,
+          "notes": null,
+          "evidence_quotes": [
+            {
+              "quote": null,
+              "page_hint": null
+            }
+          ]
+        }
+      ],
+      "catalysts_and_risks": {
+        "catalysts": [],
+        "risks": [],
+        "evidence_quotes": [
+          {
+            "quote": null,
+            "page_hint": null
+          }
+        ]
+      }
     },
     "methodology": {
       "parsing_notes": null,

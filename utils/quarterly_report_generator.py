@@ -93,12 +93,15 @@ DATA HIERARCHY:
 - Priority: 1) Management reported, 2) Management adjusted, 3) Sell-side
 - Never fabricate numbers not present in inputs
 - Include YoY/QoQ % ONLY if present in records
+- Utilize management_commentary for guidance and strategic priorities
+- Utilize sell_side_commentary for analyst views and market sentiment
 
 STYLE:
 - Audience: internal buy-side team
 - Tone: concise, decisive, institutional
 - 4-7 bullets per section
 - Reference named projects as provided
+- Quote management and analysts when impactful (with attribution)
 
 INPUT DATA:
 {json.dumps(data_summary, indent=2)}
@@ -162,6 +165,8 @@ Return ONLY the final note as Markdown (no JSON, no explanations).
             "balance_sheet": {},
             "one_offs_and_events": [],
             "outlook_and_guidance": {},
+            "management_commentary": [],  # Collect all management commentary
+            "sell_side_commentary": [],  # Collect all sell-side commentary
             "methodology_notes": []
         }
         
@@ -211,6 +216,18 @@ Return ONLY the final note as Markdown (no JSON, no explanations).
                 for event in data["one_offs_and_events"]:
                     event["_source"] = source_info["file_type"]
                     aggregated["one_offs_and_events"].append(event)
+            
+            # Collect management commentary from management presentations
+            if "management_commentary" in data and data["management_commentary"] and source_info["file_type"] == "management":
+                commentary_with_source = data["management_commentary"].copy()
+                commentary_with_source["_source"] = source_info
+                aggregated["management_commentary"].append(commentary_with_source)
+            
+            # Collect sell-side commentary from sell-side reports
+            if "sell_side_commentary" in data and data["sell_side_commentary"] and source_info["file_type"] == "sell_side":
+                commentary_with_source = data["sell_side_commentary"].copy()
+                commentary_with_source["_source"] = source_info
+                aggregated["sell_side_commentary"].append(commentary_with_source)
             
             # Merge outlook (combine guidance from all sources)
             if "outlook_and_guidance" in data and data["outlook_and_guidance"]:
