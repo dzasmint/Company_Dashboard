@@ -17,3 +17,4 @@ pillow
 reportlab
 streamlit-aggrid
 xlsxwriter
+python-docx

@@ -111,10 +111,14 @@ class QuarterlyEarningsManager:
             
             elif file_type.lower() in ['docx', 'doc']:
                 # Word documents
-                import docx
-                doc = docx.Document(file_path)
-                text = '\n'.join([para.text for para in doc.paragraphs])
-                return text
+                try:
+                    import docx
+                    doc = docx.Document(file_path)
+                    text = '\n'.join([para.text for para in doc.paragraphs])
+                    return text
+                except ImportError:
+                    st.error("python-docx library not installed. Please run: pip install python-docx")
+                    return None
             
             else:
                 st.warning(f"Unsupported file type: {file_type}. Attempting as text file.")

@@ -115,9 +115,9 @@ class QuarterlyEarningsTab:
             
             col_q, col_y = st.columns(2)
             with col_q:
-                quarter_num = st.selectbox("Quarter", options=[1, 2, 3, 4], key="qe_upload_quarter_num")
+                quarter_num = st.selectbox("Quarter", options=[1, 2, 3, 4], key="qe_upload_quarter_num_widget")
             with col_y:
-                year = st.selectbox("Year", options=years, index=years.index(current_year), key="qe_upload_year")
+                year = st.selectbox("Year", options=years, index=years.index(current_year), key="qe_upload_year_widget")
             
             quarter = f"{quarter_num}Q{str(year)[2:]}"  # e.g., "2Q25"
         
