@@ -215,7 +215,8 @@ class QuarterlyEarningsManager:
                 document_type=document_type,
                 company_name=company_name,
                 ticker=ticker,
-                quarter=quarter
+                quarter=quarter,
+                analyst_firm=analyst_firm
             )
             
             if "error" in extracted_data:

@@ -148,71 +148,100 @@ Write the complete report now:
     def _prepare_data_for_summary(self, earnings_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Aggregate and prepare data from multiple sources for summary generation
+        Now handles the unified quarterly_analysis.json schema
         
         Args:
-            earnings_data: List of extracted data from different sources
+            earnings_data: List of extracted data from different sources (each following the schema)
             
         Returns:
-            Aggregated data dictionary
+            Aggregated data dictionary combining all sources
         """
         
+        # Initialize with the schema structure
         aggregated = {
-            "financial_metrics": {},
-            "operational_metrics": {},
-            "project_highlights": [],
-            "new_launches": [],
-            "landbank_changes": {},
-            "management_outlook": {},
+            "sources": [],
+            "headline": {},
+            "recognition_drivers": {},
+            "presales": {},
             "balance_sheet": {},
-            "analyst_insights": [],
-            "user_notes": []
+            "one_offs_and_events": [],
+            "outlook_and_guidance": {},
+            "methodology_notes": []
         }
         
-        for data in earnings_data:
-            # Merge financial metrics (prefer most complete data)
-            if "financial_metrics" in data and data["financial_metrics"]:
-                if not aggregated["financial_metrics"] or self._count_non_null(data["financial_metrics"]) > self._count_non_null(aggregated["financial_metrics"]):
-                    aggregated["financial_metrics"] = data["financial_metrics"]
+        for idx, data in enumerate(earnings_data):
+            # Track data sources
+            source_info = {
+                "index": idx + 1,
+                "file_type": data.get("source", {}).get("file_type", "unknown"),
+                "publisher": data.get("source", {}).get("publisher", "unknown"),
+                "extraction_type": data.get("methodology", {}).get("extraction_metadata", {}).get("document_type", "unknown")
+            }
+            aggregated["sources"].append(source_info)
             
-            # Merge operational metrics
-            if "operational_metrics" in data and data["operational_metrics"]:
-                if not aggregated["operational_metrics"] or self._count_non_null(data["operational_metrics"]) > self._count_non_null(aggregated["operational_metrics"]):
-                    aggregated["operational_metrics"] = data["operational_metrics"]
+            # Merge headline financials (prefer management/actual data over estimates)
+            if "headline" in data and data["headline"]:
+                if not aggregated["headline"] or self._count_non_null(data["headline"]) > self._count_non_null(aggregated["headline"]):
+                    aggregated["headline"] = data["headline"]
+                    aggregated["headline"]["_source"] = source_info
             
-            # Combine project highlights (no duplicates)
-            if "project_highlights" in data and data["project_highlights"]:
-                for project in data["project_highlights"]:
-                    if project not in aggregated["project_highlights"]:
-                        aggregated["project_highlights"].append(project)
+            # Merge presales (prefer more complete data)
+            if "presales" in data and data["presales"]:
+                if not aggregated["presales"] or self._count_non_null(data["presales"]) > self._count_non_null(aggregated["presales"]):
+                    aggregated["presales"] = data["presales"]
+                    aggregated["presales"]["_source"] = source_info
             
-            # Combine new launches
-            if "new_launches" in data and data["new_launches"]:
-                for launch in data["new_launches"]:
-                    if launch not in aggregated["new_launches"]:
-                        aggregated["new_launches"].append(launch)
-            
-            # Merge land bank changes
-            if "landbank_changes" in data and data["landbank_changes"]:
-                if not aggregated["landbank_changes"]:
-                    aggregated["landbank_changes"] = data["landbank_changes"]
-            
-            # Merge management outlook
-            if "management_outlook" in data and data["management_outlook"]:
-                if not aggregated["management_outlook"]:
-                    aggregated["management_outlook"] = data["management_outlook"]
-            
-            # Merge balance sheet
+            # Merge balance sheet (prefer more complete data)
             if "balance_sheet" in data and data["balance_sheet"]:
-                if not aggregated["balance_sheet"]:
+                if not aggregated["balance_sheet"] or self._count_non_null(data["balance_sheet"]) > self._count_non_null(aggregated["balance_sheet"]):
                     aggregated["balance_sheet"] = data["balance_sheet"]
+                    aggregated["balance_sheet"]["_source"] = source_info
             
-            # Collect all analyst insights
-            if "analyst_insights" in data and data["analyst_insights"]:
-                aggregated["analyst_insights"].append(data["analyst_insights"])
+            # Merge recognition drivers
+            if "recognition_drivers" in data and data["recognition_drivers"]:
+                if not aggregated["recognition_drivers"]:
+                    aggregated["recognition_drivers"] = data["recognition_drivers"]
+                else:
+                    # Combine project lists
+                    if "projects_contributing" in data["recognition_drivers"]:
+                        if "projects_contributing" not in aggregated["recognition_drivers"]:
+                            aggregated["recognition_drivers"]["projects_contributing"] = []
+                        aggregated["recognition_drivers"]["projects_contributing"].extend(
+                            data["recognition_drivers"]["projects_contributing"]
+                        )
             
-            # Collect all user notes
-            if "user_notes" in data and data["user_notes"]:
-                aggregated["user_notes"].extend(data["user_notes"])
+            # Combine one-offs and events from all sources
+            if "one_offs_and_events" in data and data["one_offs_and_events"]:
+                for event in data["one_offs_and_events"]:
+                    event["_source"] = source_info["file_type"]
+                    aggregated["one_offs_and_events"].append(event)
+            
+            # Merge outlook (combine guidance from all sources)
+            if "outlook_and_guidance" in data and data["outlook_and_guidance"]:
+                if not aggregated["outlook_and_guidance"]:
+                    aggregated["outlook_and_guidance"] = data["outlook_and_guidance"]
+                else:
+                    # Merge project highlights
+                    if "project_pipeline_highlights" in data["outlook_and_guidance"]:
+                        if "project_pipeline_highlights" not in aggregated["outlook_and_guidance"]:
+                            aggregated["outlook_and_guidance"]["project_pipeline_highlights"] = []
+                        aggregated["outlook_and_guidance"]["project_pipeline_highlights"].extend(
+                            data["outlook_and_guidance"]["project_pipeline_highlights"]
+                        )
+                    # Append management quotes
+                    if "management_quotes" in data["outlook_and_guidance"] and data["outlook_and_guidance"]["management_quotes"]:
+                        if "management_quotes" not in aggregated["outlook_and_guidance"]:
+                            aggregated["outlook_and_guidance"]["management_quotes"] = ""
+                        aggregated["outlook_and_guidance"]["management_quotes"] += "\n\n" + data["outlook_and_guidance"]["management_quotes"]
+            
+            # Collect methodology notes
+            if "methodology" in data and data["methodology"]:
+                if "parsing_notes" in data["methodology"] and data["methodology"]["parsing_notes"]:
+                    aggregated["methodology_notes"].append({
+                        "source": source_info["file_type"],
+                        "notes": data["methodology"]["parsing_notes"],
+                        "confidence": data["methodology"].get("confidence_pct", 0)
+                    })
         
         return aggregated
     

@@ -1,0 +1,155 @@
+{
+    "company": null,
+    "ticker": null,
+    "period": {
+      "quarter": null,
+      "comparison_quarters": [],
+      "fiscal_year_half": null,
+      "as_of_date": null
+    },
+    "source": {
+      "file_name": null,
+      "file_type": "management|sell_side",
+      "publisher": null,
+      "publish_date": null,
+      "pages_covered": null,
+      "version_note": null
+    },
+    "currency": "VND",
+    "units": "bn",
+    "accounting_basis": "VAS|IFRS|Unknown",
+    "business_model": {
+      "primary": null,
+      "segments": [],
+      "notes": null
+    },
+    "headline": {
+      "revenue_reported": null,
+      "revenue_reported_yoy_pct": null,
+      "revenue_reported_qoq_pct": null,
+      "revenue_adjusted_incl_bcc_bulk": null,
+      "revenue_adjusted_yoy_pct": null,
+      "revenue_adjusted_qoq_pct": null,
+      "gross_profit": null,
+      "gross_margin_pct": null,
+      "npAT": null,
+      "npATMI": null,
+      "npATMI_yoy_pct": null,
+      "npATMI_qoq_pct": null,
+      "pbt": null,
+      "ebitda": null,
+      "ebitda_margin_pct": null
+    },
+    "recognition_drivers": {
+      "projects_contributing": [
+        {
+          "project": null,
+          "recognized_revenue": null,
+          "notes": null
+        }
+      ],
+      "bcc_contribution": {
+        "amount": null,
+        "notes": null
+      },
+      "bulk_sales_finance_income": {
+        "amount": null,
+        "notes": null
+      }
+    },
+    "presales": {
+      "contracted_sales_quarter": null,
+      "contracted_sales_quarter_yoy_pct": null,
+      "contracted_sales_quarter_qoq_pct": null,
+      "contracted_sales_1h": null,
+      "contracted_sales_1h_yoy_pct": null,
+      "presold_units_quarter": null,
+      "presold_units_1h": null,
+      "project_mix": [
+        {
+          "project": null,
+          "value": null,
+          "units": null,
+          "share_pct_of_period": null,
+          "remarks": null
+        }
+      ],
+      "new_launches": [
+        {
+          "project": null,
+          "city_province": null,
+          "product_mix": null,
+          "launch_date": null,
+          "launched_units": null,
+          "bookings_or_presold_units": null,
+          "presales_value": null,
+          "notes": null
+        }
+      ],
+      "unbilled_backlog": {
+        "value": null,
+        "yoy_pct": null,
+        "key_projects_share_pct": [
+          {"project": null, "share_pct": null}
+        ]
+      },
+      "company_presales_guidance_fy": {
+        "range_min": null,
+        "range_max": null,
+        "notes": null
+      }
+    },
+    "balance_sheet": {
+      "cash_and_equivalents": null,
+      "gross_debt": null,
+      "net_debt": null,
+      "inventories": null,
+      "total_assets": null,
+      "total_equity": null,
+      "debt_mix": {
+        "bank_loans_pct": null,
+        "domestic_bonds_pct": null,
+        "other_pct": null,
+        "vnd_pct": null,
+        "usd_pct": null,
+        "fixed_rate_pct": null,
+        "avg_cost_of_debt_pct": null,
+        "avg_maturity_years": null,
+        "short_term_debt_pct": null
+      },
+      "leverage_metrics": {
+        "net_debt_to_equity_pct": null,
+        "net_debt_to_assets_ex_cash_pct": null,
+        "total_debt_to_total_assets_pct": null,
+        "interest_coverage_x": null
+      },
+      "notable_movements": [
+        {"item": null, "change": null, "driver": null}
+      ]
+    },
+    "one_offs_and_events": [
+      {
+        "type": "one_off|corporate|policy|legal|other",
+        "description": null,
+        "amount": null,
+        "timing": null,
+        "impact": "positive|negative|neutral",
+        "recurrence": "non_recurring|recurring|unknown"
+      }
+    ],
+    "outlook_and_guidance": {
+      "adjusted_revenue_target_fy": null,
+      "npAT_target_fy": null,
+      "project_pipeline_highlights": [
+        {"project": null, "milestone": null, "expected_launch": null}
+      ],
+      "management_quotes": null
+    },
+    "methodology": {
+      "parsing_notes": null,
+      "assumptions": null,
+      "omissions": null,
+      "confidence_pct": null
+    }
+  }
+  
