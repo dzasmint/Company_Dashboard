@@ -233,6 +233,7 @@ class RealEstateFinancialModel:
                 "Project Pipeline",
                 "Model Forecast",
                 "Sector Dashboard",
+                "Quarterly Earnings",
                 # "Valuation",  # Hidden - integrated into Model Forecast
                 # "Research Insights",  # Hidden
                 # "Export Model",  # Hidden
@@ -501,7 +502,9 @@ class RealEstateFinancialModel:
             model_forecast_tab.render()
         elif selected_tab == tab_names[5]:  # Sector Dashboard
             self.render_sector_dashboard()
-        elif selected_tab == tab_names[6]:  # BDS-GPT (Enhanced AI)
+        elif selected_tab == tab_names[6]:  # Quarterly Earnings
+            self.render_quarterly_earnings()
+        elif selected_tab == tab_names[7]:  # BDS-GPT (Enhanced AI)
             self.render_enhanced_ai()
         # Hidden tabs - commenting out but keeping for future reference
         # elif selected_tab == "Valuation":  # Hidden - integrated into Model Forecast
@@ -1365,6 +1368,17 @@ class RealEstateFinancialModel:
         """Render the Enhanced AI Assistant interface"""
         from tabs.enhanced_ai_assistant import render_enhanced_ai_interface
         render_enhanced_ai_interface()
+    
+    def render_quarterly_earnings(self):
+        """Render the Quarterly Earnings Analysis interface"""
+        from tabs.quarterly_earnings import QuarterlyEarningsTab
+        
+        # Initialize the quarterly earnings tab if not already done
+        if 'quarterly_earnings_tab' not in st.session_state:
+            st.session_state.quarterly_earnings_tab = QuarterlyEarningsTab(parent=self)
+        
+        # Render the tab
+        st.session_state.quarterly_earnings_tab.render()
 
 def main():
     """Main function to run the application"""

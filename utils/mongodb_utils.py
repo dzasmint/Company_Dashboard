@@ -629,10 +629,17 @@ class MongoDBHelper:
             self.db = self.client.get_database('VietnamStocks')
             self.projects_collection = self.db.get_collection('RealEstateProjects')
             self.discovery_collection = self.db.get_collection('ProjectDiscovery')
+            # Quarterly earnings collections
+            self.quarterly_documents_collection = self.db.get_collection('QuarterlyEarningsDocuments')
+            self.quarterly_data_collection = self.db.get_collection('QuarterlyEarningsData')
+            self.quarterly_summaries_collection = self.db.get_collection('QuarterlySummaries')
         else:
             self.db = None
             self.projects_collection = None
             self.discovery_collection = None
+            self.quarterly_documents_collection = None
+            self.quarterly_data_collection = None
+            self.quarterly_summaries_collection = None
     
     def get_real_estate_projects(self, ticker: str) -> list:
         """Get all real estate projects for a company"""
@@ -791,6 +798,227 @@ class MongoDBHelper:
             return versions
         except Exception as e:
             st.error(f"Error loading project versions: {str(e)}")
+            return []
+    
+    # ========== Quarterly Earnings Methods ==========
+    
+    def save_quarterly_document(self, document_metadata: dict) -> str:
+        """Save quarterly earnings document metadata"""
+        if self.quarterly_documents_collection is None:
+            return None
+        
+        try:
+            result = self.quarterly_documents_collection.insert_one(document_metadata)
+            return str(result.inserted_id)
+        except Exception as e:
+            st.error(f"Error saving document metadata: {str(e)}")
+            return None
+    
+    def update_quarterly_document_status(self, document_id: str, status: str, 
+                                        extraction_id: str = None, 
+                                        error_message: str = None) -> bool:
+        """Update document processing status"""
+        if self.quarterly_documents_collection is None:
+            return False
+        
+        try:
+            from bson import ObjectId
+            update_data = {
+                "processing_status": status,
+                "processing_date": datetime.datetime.now()
+            }
+            if extraction_id:
+                update_data["extraction_id"] = extraction_id
+            if error_message:
+                update_data["error_message"] = error_message
+            
+            self.quarterly_documents_collection.update_one(
+                {"_id": ObjectId(document_id)},
+                {"$set": update_data}
+            )
+            return True
+        except Exception as e:
+            st.error(f"Error updating document status: {str(e)}")
+            return False
+    
+    def get_quarterly_documents(self, ticker: str, quarter: str) -> list:
+        """Get all documents for a specific quarter"""
+        if self.quarterly_documents_collection is None:
+            return []
+        
+        try:
+            documents = list(self.quarterly_documents_collection.find({
+                "ticker": ticker.upper(),
+                "quarter": quarter.upper()
+            }).sort("upload_date", -1))
+            
+            # Convert ObjectId to string
+            for doc in documents:
+                if '_id' in doc:
+                    doc['_id'] = str(doc['_id'])
+            
+            return documents
+        except Exception as e:
+            st.error(f"Error loading documents: {str(e)}")
+            return []
+    
+    def get_quarterly_document_by_id(self, document_id: str) -> dict:
+        """Get document by ID"""
+        if self.quarterly_documents_collection is None:
+            return None
+        
+        try:
+            from bson import ObjectId
+            doc = self.quarterly_documents_collection.find_one({"_id": ObjectId(document_id)})
+            if doc and '_id' in doc:
+                doc['_id'] = str(doc['_id'])
+            return doc
+        except Exception as e:
+            st.error(f"Error loading document: {str(e)}")
+            return None
+    
+    def delete_quarterly_document(self, document_id: str) -> bool:
+        """Delete a document"""
+        if self.quarterly_documents_collection is None:
+            return False
+        
+        try:
+            from bson import ObjectId
+            self.quarterly_documents_collection.delete_one({"_id": ObjectId(document_id)})
+            return True
+        except Exception as e:
+            st.error(f"Error deleting document: {str(e)}")
+            return False
+    
+    def save_quarterly_earnings_data(self, earnings_data: dict) -> str:
+        """Save or update quarterly earnings data (upsert by ticker and quarter)"""
+        if self.quarterly_data_collection is None:
+            return None
+        
+        try:
+            # Upsert based on ticker and quarter
+            result = self.quarterly_data_collection.update_one(
+                {
+                    "ticker": earnings_data.get("ticker"),
+                    "quarter": earnings_data.get("quarter")
+                },
+                {"$set": earnings_data},
+                upsert=True
+            )
+            
+            if result.upserted_id:
+                return str(result.upserted_id)
+            else:
+                # Get the existing document ID
+                doc = self.quarterly_data_collection.find_one({
+                    "ticker": earnings_data.get("ticker"),
+                    "quarter": earnings_data.get("quarter")
+                })
+                return str(doc['_id']) if doc else None
+        except Exception as e:
+            st.error(f"Error saving earnings data: {str(e)}")
+            return None
+    
+    def get_quarterly_earnings_data(self, ticker: str, quarter: str) -> list:
+        """Get all earnings data for a specific quarter"""
+        if self.quarterly_data_collection is None:
+            return []
+        
+        try:
+            # Return as list even though typically one document per quarter
+            data = list(self.quarterly_data_collection.find({
+                "ticker": ticker.upper(),
+                "quarter": quarter.upper()
+            }))
+            
+            # Remove _id field
+            for doc in data:
+                if '_id' in doc:
+                    del doc['_id']
+            
+            return data
+        except Exception as e:
+            st.error(f"Error loading earnings data: {str(e)}")
+            return []
+    
+    def save_quarterly_summary(self, summary_data: dict) -> str:
+        """Save quarterly summary report"""
+        if self.quarterly_summaries_collection is None:
+            return None
+        
+        try:
+            # Upsert based on ticker and quarter
+            result = self.quarterly_summaries_collection.update_one(
+                {
+                    "ticker": summary_data.get("ticker"),
+                    "quarter": summary_data.get("quarter")
+                },
+                {"$set": summary_data},
+                upsert=True
+            )
+            
+            if result.upserted_id:
+                return str(result.upserted_id)
+            else:
+                doc = self.quarterly_summaries_collection.find_one({
+                    "ticker": summary_data.get("ticker"),
+                    "quarter": summary_data.get("quarter")
+                })
+                return str(doc['_id']) if doc else None
+        except Exception as e:
+            st.error(f"Error saving summary: {str(e)}")
+            return None
+    
+    def get_quarterly_summary(self, ticker: str, quarter: str) -> dict:
+        """Get quarterly summary report"""
+        if self.quarterly_summaries_collection is None:
+            return None
+        
+        try:
+            summary = self.quarterly_summaries_collection.find_one({
+                "ticker": ticker.upper(),
+                "quarter": quarter.upper()
+            })
+            
+            if summary and '_id' in summary:
+                del summary['_id']
+            
+            return summary
+        except Exception as e:
+            st.error(f"Error loading summary: {str(e)}")
+            return None
+    
+    def invalidate_quarterly_summary(self, ticker: str, quarter: str) -> bool:
+        """Invalidate cached summary (mark for regeneration)"""
+        if self.quarterly_summaries_collection is None:
+            return False
+        
+        try:
+            self.quarterly_summaries_collection.update_one(
+                {
+                    "ticker": ticker.upper(),
+                    "quarter": quarter.upper()
+                },
+                {"$set": {"cache_valid": False}}
+            )
+            return True
+        except Exception as e:
+            return False
+    
+    def get_company_quarters(self, ticker: str) -> list:
+        """Get list of quarters with data for a company"""
+        if self.quarterly_data_collection is None:
+            return []
+        
+        try:
+            # Get distinct quarters
+            quarters = self.quarterly_data_collection.distinct(
+                "quarter",
+                {"ticker": ticker.upper()}
+            )
+            return sorted(quarters, reverse=True)
+        except Exception as e:
+            st.error(f"Error loading quarters: {str(e)}")
             return []
 
 
