@@ -137,23 +137,36 @@ class QuarterlyEarningsManager:
                         year: int,
                         quarter_num: int,
                         document_type: str,
-                        analyst_firm: Optional[str] = None) -> Dict[str, Any]:
+                        analyst_firm: Optional[str] = None,
+                        buyside_text: Optional[str] = None) -> Dict[str, Any]:
         """
         Complete workflow: save file, extract text, analyze with AI, save to MongoDB
         
         Args:
-            uploaded_file: Streamlit uploaded file
+            uploaded_file: Streamlit uploaded file (None for buy-side commentary)
             ticker: Stock ticker
             company_name: Company name
             quarter: Quarter (e.g., "2Q25")
             year: Year
             quarter_num: Quarter number (1-4)
             document_type: Type of document
-            analyst_firm: Analyst firm name (optional)
+            analyst_firm: Analyst firm name (optional, for sell-side)
+            buyside_text: Buy-side commentary text (optional, for buy-side)
             
         Returns:
             Dictionary with processing results
         """
+        
+        # Handle buy-side commentary (no file upload)
+        if document_type == "buyside_commentary" and buyside_text:
+            return self._process_buyside_commentary(
+                buyside_text=buyside_text,
+                ticker=ticker,
+                company_name=company_name,
+                quarter=quarter,
+                year=year,
+                quarter_num=quarter_num
+            )
         
         # Step 1: Save file
         with st.spinner("💾 Saving file..."):
@@ -237,6 +250,84 @@ class QuarterlyEarningsManager:
             "extracted_data": extracted_data,
             "document_metadata": document_metadata
         }
+    
+    def _process_buyside_commentary(self,
+                                    buyside_text: str,
+                                    ticker: str,
+                                    company_name: str,
+                                    quarter: str,
+                                    year: int,
+                                    quarter_num: int) -> Dict[str, Any]:
+        """
+        Process buy-side commentary text input
+        
+        Args:
+            buyside_text: Free-form buy-side commentary text
+            ticker: Stock ticker
+            company_name: Company name
+            quarter: Quarter
+            year: Year
+            quarter_num: Quarter number
+            
+        Returns:
+            Processing result dictionary
+        """
+        try:
+            # Step 1: Create document metadata in MongoDB
+            document_metadata = {
+                "file_name": f"buyside_commentary_{ticker}_{quarter}.txt",
+                "ticker": ticker.upper(),
+                "company_name": company_name,
+                "quarter": quarter.upper(),
+                "year": year,
+                "quarter_num": quarter_num,
+                "document_type": "buyside_commentary",
+                "upload_date": datetime.now(),
+                "processing_status": "pending",
+                "source": "buyside",
+                "analyst_firm": None,
+                "report_date": datetime.now(),
+                "metadata": {
+                    "file_extension": "txt",
+                    "word_count": len(buyside_text.strip().split())
+                }
+            }
+            
+            doc_id = self.mongo_helper.save_quarterly_document(document_metadata)
+            
+            # Step 2: Extract data with ChatGPT
+            with st.spinner("🤖 Analyzing buy-side commentary with ChatGPT..."):
+                self.mongo_helper.update_quarterly_document_status(doc_id, "processing")
+                
+                extracted_data = self.extractor.extract_from_buyside_commentary(
+                    commentary_text=buyside_text,
+                    company_name=company_name,
+                    ticker=ticker,
+                    quarter=quarter
+                )
+                
+                if "error" in extracted_data:
+                    self.mongo_helper.update_quarterly_document_status(
+                        doc_id, "error", error_message=extracted_data["error"]
+                    )
+                    return {
+                        "error": extracted_data["error"],
+                        "document_id": doc_id,
+                        "file_path": None
+                    }
+            
+            # Return for user review
+            return {
+                "success": True,
+                "document_id": doc_id,
+                "file_path": None,
+                "extracted_data": extracted_data,
+                "document_metadata": document_metadata
+            }
+            
+        except Exception as e:
+            st.error(f"Error processing buy-side commentary: {str(e)}")
+            return {"error": str(e)}
     
     def save_extracted_data_to_mongodb(self,
                                       extracted_data: Dict[str, Any],

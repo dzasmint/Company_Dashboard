@@ -128,12 +128,12 @@ class QuarterlyEarningsTab:
                 options=[
                     "earnings_presentation",
                     "sellside_report",
-                    "user_commentary"
+                    "buyside_commentary"
                 ],
                 format_func=lambda x: {
                     "earnings_presentation": "📊 Company Earnings Presentation",
                     "sellside_report": "📈 Sell-Side Research Report",
-                    "user_commentary": "📝 User Commentary/Notes"
+                    "buyside_commentary": "💼 Buy-Side Commentary"
                 }.get(x, x),
                 help="Select the type of document you're uploading",
                 key="qe_upload_doc_type"
@@ -148,20 +148,54 @@ class QuarterlyEarningsTab:
                     help="Name of the research firm",
                     key="qe_upload_analyst_firm"
                 )
+        
+        # Buy-side commentary: Text input instead of file upload
+        if document_type == "buyside_commentary":
+            st.markdown("---")
+            st.subheader("💼 Buy-Side Commentary")
+            st.markdown("""
+            Enter your buy-side analysis, investment thesis, or key observations.  
+            Include any valuation analysis, catalysts, risks, or key takeaways.
+            """)
             
-            # File upload
+            buyside_text = st.text_area(
+                "Buy-Side Commentary",
+                height=400,
+                placeholder="""Example:
+• Valuation: RNAV at VND 45,000/share implies 35% discount to current price
+• Key catalyst: Expected VHM02 presales acceleration in Q3-Q4
+• Risk: Potential margin pressure from increased land costs
+• Investment view: Accumulate on dips below VND 30,000
+
+Add your bullet points, valuation analysis, and key observations here...""",
+                help="Enter your buy-side analysis in free-form text",
+                key="qe_buyside_text_input"
+            )
+            uploaded_file = None  # No file upload for buy-side commentary
+        else:
+            # File upload for other document types
             uploaded_file = st.file_uploader(
                 "Upload Document",
                 type=['pdf', 'xlsx', 'xls', 'docx', 'txt', 'md'],
                 help="Supported formats: PDF, Excel, Word, Text",
                 key="qe_upload_file"
             )
+            buyside_text = None
         
         # Upload and process button
-        if uploaded_file:
-            st.info(f"📄 File selected: **{uploaded_file.name}** ({uploaded_file.size / 1024:.1f} KB)")
+        # Show button if file is uploaded OR buy-side text is entered
+        has_input = uploaded_file or (document_type == "buyside_commentary" and buyside_text and buyside_text.strip())
+        
+        if has_input:
+            if uploaded_file:
+                st.info(f"📄 File selected: **{uploaded_file.name}** ({uploaded_file.size / 1024:.1f} KB)")
+            elif buyside_text:
+                word_count = len(buyside_text.strip().split())
+                st.info(f"💼 Buy-side commentary: **{word_count} words** entered")
             
-            if st.button("🚀 Upload and Analyze Document", type="primary", use_container_width=True, key="qe_upload_analyze_btn"):
+            button_label = "🚀 Process Buy-Side Commentary" if document_type == "buyside_commentary" else "🚀 Upload and Analyze Document"
+            
+            if st.button(button_label, type="primary", use_container_width=True, key="qe_upload_analyze_btn"):
                 # Store metadata in session state
                 st.session_state.qe_upload_ticker = ticker_only
                 st.session_state.qe_upload_company = company_name
@@ -169,7 +203,7 @@ class QuarterlyEarningsTab:
                 st.session_state.qe_upload_year = year
                 st.session_state.qe_upload_quarter_num = quarter_num
                 
-                # Process document
+                # Process document or buy-side commentary
                 result = self.manager.process_document(
                     uploaded_file=uploaded_file,
                     ticker=ticker_only,
@@ -178,11 +212,12 @@ class QuarterlyEarningsTab:
                     year=year,
                     quarter_num=quarter_num,
                     document_type=document_type,
-                    analyst_firm=analyst_firm
+                    analyst_firm=analyst_firm,
+                    buyside_text=buyside_text if document_type == "buyside_commentary" else None
                 )
                 
                 if result.get('success'):
-                    st.success(f"✅ Document processed successfully!")
+                    st.success(f"✅ {'Buy-side commentary' if document_type == 'buyside_commentary' else 'Document'} processed successfully!")
                     
                     # Store in session state for review
                     st.session_state.qe_processed_data = result['extracted_data']

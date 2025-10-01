@@ -385,6 +385,107 @@ User commentary:
             st.error(f"Error extracting from user commentary: {str(e)}")
             return {"error": str(e)}
     
+    def extract_from_buyside_commentary(self, 
+                                       commentary_text: str,
+                                       company_name: str,
+                                       ticker: str,
+                                       quarter: str) -> Dict[str, Any]:
+        """
+        Extract data from buy-side commentary using custom prompt template
+        
+        Args:
+            commentary_text: Buy-side analyst commentary text
+            company_name: Company name
+            ticker: Stock ticker
+            quarter: Quarter (e.g., "2Q25")
+            
+        Returns:
+            Dictionary with buy-side insights following the schema
+        """
+        
+        # Load the custom prompt template
+        buyside_prompt = self._load_buyside_prompt()
+        
+        # Format the schema for the prompt
+        schema_str = json.dumps(self.schema, indent=2)
+        
+        # If custom prompt loaded, use it; otherwise use default
+        if buyside_prompt:
+            # Replace template variables with actual values
+            prompt = buyside_prompt.replace("{{COMPANY_NAME}}", company_name)
+            prompt = prompt.replace("{{TICKER}}", ticker)
+            prompt = prompt.replace("{{QUARTER}}", quarter)
+            prompt = prompt.replace("{{YOUR_NAME_OR_TEAM}}", "Internal Buy-Side Team")
+            
+            # Add schema and commentary text at the end
+            full_prompt = f"{prompt}\n\nJSON SCHEMA:\n{schema_str}\n\nBUY-SIDE COMMENTARY TEXT:\n{commentary_text}"
+        else:
+            # Fallback to inline prompt if file not found
+            full_prompt = f"""
+You are a meticulous note organizer processing buy-side analyst commentary.
+
+Company: {company_name} ({ticker})
+Quarter: {quarter}
+
+Extract and organize the buy-side commentary according to the schema.
+
+JSON SCHEMA:
+{schema_str}
+
+CRITICAL RULES:
+- Capture each bullet exactly as written in raw_bullets
+- Classify each point by category (earnings, presales, balance_sheet, etc.)
+- Extract valuation analysis if present (RNAV, target price, upside/downside)
+- Determine sentiment: positive/neutral/negative/mixed/not_stated
+- Do not invent metrics or sentiment
+- Return ONLY valid JSON
+
+Buy-side commentary:
+{commentary_text}
+"""
+
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a meticulous note organizer specializing in buy-side investment analysis. Extract and structure commentary without losing nuance or inventing details."},
+                    {"role": "user", "content": full_prompt}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            
+            # Add extraction metadata
+            if 'methodology' not in result:
+                result['methodology'] = {}
+            
+            result['methodology'].update({
+                "extraction_metadata": {
+                    "source_type": "buyside_commentary",
+                    "document_type": "buyside_commentary",
+                    "extraction_timestamp": datetime.now().isoformat(),
+                    "word_count": len(commentary_text.split())
+                }
+            })
+            
+            return result
+            
+        except Exception as e:
+            st.error(f"Error extracting from buy-side commentary: {str(e)}")
+            return {"error": str(e)}
+    
+    def _load_buyside_prompt(self) -> str:
+        """Load the buy-side commentary prompt template"""
+        try:
+            prompt_path = Path(__file__).parent / "quarterly_earnings_buy_side_commentary_prompt.txt"
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            st.warning(f"Could not load buy-side prompt file: {e}. Using default prompt.")
+            return None
+    
     def extract_by_document_type(self,
                                  document_text: str,
                                  document_type: str,
@@ -415,8 +516,8 @@ User commentary:
             return self.extract_from_sellside_report(
                 document_text, company_name, ticker, quarter, analyst_firm
             )
-        elif document_type == "user_commentary":
-            return self.extract_from_user_commentary(
+        elif document_type == "buyside_commentary":
+            return self.extract_from_buyside_commentary(
                 document_text, company_name, ticker, quarter
             )
         else:

@@ -67,53 +67,72 @@ class QuarterlyReportGenerator:
             next_year_short = str(int(year_short) + 1).zfill(2)
             next_period = f"1H{next_year_short}"
         
+        # Calculate comparison quarters for the new prompt
+        if quarter_num > 1:
+            qoq_quarter = f"{quarter_num-1}Q{year_short}"
+        else:
+            qoq_quarter = f"4Q{str(int(year_short)-1).zfill(2)}"
+        
+        yoy_quarter = f"{quarter_num}Q{str(int(year_short)-1).zfill(2)}"
+        comparison_quarters_str = f"{qoq_quarter} and {yoy_quarter}"
+        
+        # Extract publisher info from sell-side sources
+        sell_side_publisher = "Consensus"
+        for data in earnings_data:
+            if data.get("source", {}).get("file_type") == "sell_side":
+                sell_side_publisher = data.get("source", {}).get("publisher", "Unknown Analyst")
+                break
+        
         # If custom prompt loaded, use it; otherwise use default
         if prompt_template:
             # Replace all template variables with actual values
             prompt = prompt_template.replace("{{COMPANY_NAME}}", company_name)
             prompt = prompt.replace("{{TICKER}}", ticker)
             prompt = prompt.replace("{{QUARTER}}", quarter)
-            prompt = prompt.replace("{{NEXT_HALF_OR_PERIOD}}", next_period)
+            prompt = prompt.replace("{{COMPARISON_QUARTERS}}", comparison_quarters_str)
+            prompt = prompt.replace("{{TARGET_CCY}}", "VND")
+            prompt = prompt.replace("{{TARGET_UNITS}}", "bn")
+            prompt = prompt.replace("{{publisher}}", sell_side_publisher)
             
-            # Add the records data at the end
-            full_prompt = f"{prompt}\n\nINPUT DATA:\nrecords = {json.dumps(data_summary, indent=2)}"
+            # Add the JSON data at the end
+            full_prompt = f"{prompt}\n\nINPUT DATA:\n{json.dumps(data_summary, indent=2)}"
         else:
-            # Fallback to inline prompt if file not found
+            # Fallback to inline prompt if file not found (updated for buy-side focus)
             full_prompt = f"""
-You are a senior buy-side analyst writing a quarterly earnings summary for {company_name} ({ticker}) - {quarter}.
+You are a senior buy-side analyst writing a professional quarterly report for {company_name} ({ticker}) - {quarter}.
 
-Generate a comprehensive "Results Review — {quarter}" note with these sections:
-1) Earnings ({quarter} vs prior quarter(s) & prior-year quarter)
-2) Presales & Backlog
-3) Balance Sheet & Leverage
-4) One-offs & Corporate
-5) Watch items for {next_period}
+PRIORITY OF SOURCES:
+1) Buy-side commentary (our primary view)
+2) Management (factual numbers and guidance)  
+3) Sell-side (market consensus and expectations)
 
-DATA HIERARCHY:
-- Priority: 1) Management reported, 2) Management adjusted, 3) Sell-side
-- Never fabricate numbers not present in inputs
-- Include YoY/QoQ % ONLY if present in records
-- Utilize management_commentary for guidance and strategic priorities
-- Utilize sell_side_commentary for analyst views and market sentiment
+Generate a buy-side focused report with these sections:
+1) Headline Summary
+2) Earnings Review ({quarter} vs {comparison_quarters_str})
+3) Presales & Sales Pipeline
+4) Balance Sheet & Leverage
+5) Guidance & Outlook
+6) Valuation & Recommendation
+7) Catalysts & Risks
 
-STYLE:
-- Audience: internal buy-side team
-- Tone: concise, decisive, institutional
-- 4-7 bullets per section
-- Reference named projects as provided
-- Quote management and analysts when impactful (with attribution)
+CRITICAL RULES:
+- Buy-side commentary drives the narrative
+- Attribute management and sell-side sources explicitly [Management] / [Sell-side]
+- Highlight where our view differs from sell-side consensus
+- Professional buy-side tone and language
+- Currency: VND billions
 
 INPUT DATA:
 {json.dumps(data_summary, indent=2)}
 
-Return ONLY the final note as Markdown (no JSON, no explanations).
+Return ONLY the final Markdown report.
 """
 
         try:
             response = openai.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a senior buy-side analyst specializing in Vietnamese real estate companies. Write crisp, data-driven quarterly results reviews."},
+                    {"role": "system", "content": "You are a senior buy-side equity analyst specializing in Vietnamese real estate companies. Write professional investment reports that prioritize internal buy-side analysis while incorporating management and sell-side perspectives with proper attribution."},
                     {"role": "user", "content": full_prompt}
                 ],
                 temperature=0.2,
@@ -167,6 +186,7 @@ Return ONLY the final note as Markdown (no JSON, no explanations).
             "outlook_and_guidance": {},
             "management_commentary": [],  # Collect all management commentary
             "sell_side_commentary": [],  # Collect all sell-side commentary
+            "buy_side_commentary": [],   # Collect all buy-side commentary
             "methodology_notes": []
         }
         
@@ -229,6 +249,12 @@ Return ONLY the final note as Markdown (no JSON, no explanations).
                 commentary_with_source["_source"] = source_info
                 aggregated["sell_side_commentary"].append(commentary_with_source)
             
+            # Collect buy-side commentary from buy-side analyses
+            if "buy_side_commentary" in data and data["buy_side_commentary"] and source_info["file_type"] == "buy_side":
+                commentary_with_source = data["buy_side_commentary"].copy()
+                commentary_with_source["_source"] = source_info
+                aggregated["buy_side_commentary"].append(commentary_with_source)
+            
             # Merge outlook (combine guidance from all sources)
             if "outlook_and_guidance" in data and data["outlook_and_guidance"]:
                 if not aggregated["outlook_and_guidance"]:
@@ -266,7 +292,7 @@ Return ONLY the final note as Markdown (no JSON, no explanations).
     
     def _parse_custom_report_sections(self, full_report: str) -> Dict[str, str]:
         """
-        Parse the full report into named sections based on custom format
+        Parse the full report into named sections based on buy-side format
         
         Args:
             full_report: Full report text from custom prompt template
@@ -277,13 +303,15 @@ Return ONLY the final note as Markdown (no JSON, no explanations).
         
         sections = {}
         
-        # Define section markers based on your custom prompt template
+        # Define section markers based on your buy-side prompt template
         section_markers = [
-            "Earnings",  # Section 1
-            "Presales & Backlog",  # Section 2
-            "Balance Sheet & Leverage",  # Section 3
-            "One-offs & Corporate",  # Section 4
-            "Watch items"  # Section 5
+            "Headline Summary",           # Section 1
+            "Earnings Review",            # Section 2 
+            "Presales & Sales Pipeline",  # Section 3
+            "Balance Sheet & Leverage",   # Section 4
+            "Guidance & Outlook",         # Section 5
+            "Valuation & Recommendation", # Section 6
+            "Catalysts & Risks"           # Section 7
         ]
         
         # Try to split by sections
@@ -296,8 +324,8 @@ Return ONLY the final note as Markdown (no JSON, no explanations).
             for marker in section_markers:
                 # Look for section headers (allowing for variations in formatting)
                 if (marker.lower() in line.lower() and 
-                    (line.startswith("#") or line.endswith(")") or ":" in line) and 
-                    len(line.strip()) < 100):
+                    (line.startswith("#") or line.endswith(")") or ":" in line or line.startswith("**")) and 
+                    len(line.strip()) < 150):
                     # Save previous section
                     if current_content:
                         sections[current_section] = '\n'.join(current_content).strip()
