@@ -7,6 +7,7 @@ import json
 from typing import Dict, List, Any, Optional
 import os
 from datetime import datetime
+from pathlib import Path
 import streamlit as st
 
 
@@ -19,6 +20,16 @@ class QuarterlyReportGenerator:
         if self.api_key:
             openai.api_key = self.api_key
     
+    def _load_report_prompt(self) -> str:
+        """Load the report generation prompt template"""
+        try:
+            prompt_path = Path(__file__).parent / "quarterly_earnings_generate_report_prompt.txt"
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            st.warning(f"Could not load report prompt file: {e}. Using default prompt.")
+            return None
+    
     def generate_summary_report(self,
                                earnings_data: List[Dict[str, Any]],
                                company_name: str,
@@ -26,7 +37,7 @@ class QuarterlyReportGenerator:
                                quarter: str,
                                year: int) -> Dict[str, Any]:
         """
-        Generate comprehensive quarterly summary report from extracted data
+        Generate comprehensive quarterly summary report from extracted data using custom prompt template
         
         Args:
             earnings_data: List of extracted data dictionaries from all sources
@@ -42,90 +53,74 @@ class QuarterlyReportGenerator:
         # Prepare data summary for ChatGPT
         data_summary = self._prepare_data_for_summary(earnings_data)
         
-        prompt = f"""
-You are a senior equity research analyst writing a comprehensive quarterly earnings summary for {company_name} ({ticker}) - {quarter} {year}.
+        # Load the custom prompt template
+        prompt_template = self._load_report_prompt()
+        
+        # Calculate next half/period for template
+        quarter_num = int(quarter[0])
+        year_short = quarter[-2:]
+        
+        # Determine next reporting period
+        if quarter_num <= 2:
+            next_period = f"2H{year_short}"
+        else:
+            next_year_short = str(int(year_short) + 1).zfill(2)
+            next_period = f"1H{next_year_short}"
+        
+        # If custom prompt loaded, use it; otherwise use default
+        if prompt_template:
+            # Replace all template variables with actual values
+            prompt = prompt_template.replace("{{COMPANY_NAME}}", company_name)
+            prompt = prompt.replace("{{TICKER}}", ticker)
+            prompt = prompt.replace("{{QUARTER}}", quarter)
+            prompt = prompt.replace("{{NEXT_HALF_OR_PERIOD}}", next_period)
+            
+            # Add the records data at the end
+            full_prompt = f"{prompt}\n\nINPUT DATA:\nrecords = {json.dumps(data_summary, indent=2)}"
+        else:
+            # Fallback to inline prompt if file not found
+            full_prompt = f"""
+You are a senior buy-side analyst writing a quarterly earnings summary for {company_name} ({ticker}) - {quarter}.
 
-You have access to data from {len(earnings_data)} source documents including earnings presentations, analyst reports, and commentary.
+Generate a comprehensive "Results Review — {quarter}" note with these sections:
+1) Earnings ({quarter} vs prior quarter(s) & prior-year quarter)
+2) Presales & Backlog
+3) Balance Sheet & Leverage
+4) One-offs & Corporate
+5) Watch items for {next_period}
 
-Based on the following aggregated data, write a professional, detailed, and data-driven quarterly earnings summary.
+DATA HIERARCHY:
+- Priority: 1) Management reported, 2) Management adjusted, 3) Sell-side
+- Never fabricate numbers not present in inputs
+- Include YoY/QoQ % ONLY if present in records
 
-DATA:
+STYLE:
+- Audience: internal buy-side team
+- Tone: concise, decisive, institutional
+- 4-7 bullets per section
+- Reference named projects as provided
+
+INPUT DATA:
 {json.dumps(data_summary, indent=2)}
 
-Generate a comprehensive report with the following sections:
-
-1. EXECUTIVE SUMMARY (3-4 sentences capturing the key story of the quarter)
-
-2. FINANCIAL PERFORMANCE
-   - Revenue analysis with YoY and QoQ comparisons
-   - Profitability metrics (gross profit, EBITDA, net profit, margins)
-   - EPS and book value per share
-   - Key drivers of performance
-
-3. OPERATIONAL HIGHLIGHTS
-   - Units sold and handed over
-   - Average selling prices and trends
-   - Contracted sales vs recognized revenue
-   - Inventory position
-
-4. PROJECT UPDATES & HIGHLIGHTS
-   - Performance of key projects
-   - Sales rates and revenue contributions
-   - Notable achievements or issues
-
-5. NEW PROJECT LAUNCHES
-   - New launches during the quarter
-   - Pipeline and upcoming launches
-   - Strategic rationale
-
-6. LAND BANK & EXPANSION
-   - New land acquisitions
-   - Total land bank position
-   - Future development potential
-
-7. MANAGEMENT OUTLOOK & GUIDANCE
-   - Full year guidance and targets
-   - Strategic priorities and focus areas
-   - Management commentary on market conditions
-   - Risks and opportunities mentioned
-
-8. ANALYST VIEWS & MARKET SENTIMENT
-   - Sell-side recommendations and target prices
-   - Key catalysts identified by analysts
-   - Concerns and risks highlighted
-   - Valuation metrics
-
-9. KEY TAKEAWAYS (5-7 bullet points)
-   - Most important insights from the quarter
-   - What investors should focus on
-
-Format guidelines:
-- Be specific with numbers and percentages
-- Provide context for all metrics (YoY, QoQ comparisons)
-- Professional tone, suitable for investment reports
-- Clear section headers
-- Use bullet points for lists
-- Highlight significant changes or trends
-- If data is missing for a section, note it briefly and move on
-
-Write the complete report now:
+Return ONLY the final note as Markdown (no JSON, no explanations).
 """
 
         try:
             response = openai.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a senior equity research analyst writing professional quarterly earnings summaries."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": "You are a senior buy-side analyst specializing in Vietnamese real estate companies. Write crisp, data-driven quarterly results reviews."},
+                    {"role": "user", "content": full_prompt}
                 ],
-                temperature=0.3,
+                temperature=0.2,
                 max_tokens=4000
             )
             
             full_report = response.choices[0].message.content
             
-            # Parse report into sections
-            sections = self._parse_report_sections(full_report)
+            # Parse report into sections based on your custom format
+            sections = self._parse_custom_report_sections(full_report)
             
             result = {
                 "summary_text": full_report,
@@ -136,7 +131,8 @@ Write the complete report now:
                 "company_name": company_name,
                 "ticker": ticker,
                 "quarter": quarter,
-                "year": year
+                "year": year,
+                "next_period": next_period
             }
             
             return result
@@ -251,12 +247,12 @@ Write the complete report now:
             return sum(1 for v in obj.values() if v is not None and v != {} and v != [])
         return 0
     
-    def _parse_report_sections(self, full_report: str) -> Dict[str, str]:
+    def _parse_custom_report_sections(self, full_report: str) -> Dict[str, str]:
         """
-        Parse the full report into named sections
+        Parse the full report into named sections based on custom format
         
         Args:
-            full_report: Full report text
+            full_report: Full report text from custom prompt template
             
         Returns:
             Dictionary with section names and content
@@ -264,17 +260,13 @@ Write the complete report now:
         
         sections = {}
         
-        # Define section markers
+        # Define section markers based on your custom prompt template
         section_markers = [
-            "EXECUTIVE SUMMARY",
-            "FINANCIAL PERFORMANCE",
-            "OPERATIONAL HIGHLIGHTS",
-            "PROJECT UPDATES",
-            "NEW PROJECT LAUNCHES",
-            "LAND BANK",
-            "MANAGEMENT OUTLOOK",
-            "ANALYST VIEWS",
-            "KEY TAKEAWAYS"
+            "Earnings",  # Section 1
+            "Presales & Backlog",  # Section 2
+            "Balance Sheet & Leverage",  # Section 3
+            "One-offs & Corporate",  # Section 4
+            "Watch items"  # Section 5
         ]
         
         # Try to split by sections
@@ -285,12 +277,15 @@ Write the complete report now:
             # Check if this line is a section header
             is_header = False
             for marker in section_markers:
-                if marker.upper() in line.upper() and len(line.strip()) < 100:
+                # Look for section headers (allowing for variations in formatting)
+                if (marker.lower() in line.lower() and 
+                    (line.startswith("#") or line.endswith(")") or ":" in line) and 
+                    len(line.strip()) < 100):
                     # Save previous section
                     if current_content:
                         sections[current_section] = '\n'.join(current_content).strip()
                     # Start new section
-                    current_section = marker.lower().replace(' ', '_')
+                    current_section = marker.lower().replace(' ', '_').replace('&', 'and')
                     current_content = []
                     is_header = True
                     break

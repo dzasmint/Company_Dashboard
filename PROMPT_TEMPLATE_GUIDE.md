@@ -5,7 +5,8 @@
 The system now uses your custom prompt files:
 1. **Management presentations:** `quarterly_earnings_management_presentation_prompt.txt`
 2. **Sell-side reports:** `quarterly_earnings_sell_side_report_prompt.txt`
-3. **User commentary:** Uses inline prompt (can be templated if needed)
+3. **Report generation:** `quarterly_earnings_generate_report_prompt.txt` ⭐ **NEW!**
+4. **User commentary:** Uses inline prompt (can be templated if needed)
 
 ---
 
@@ -37,6 +38,15 @@ The system now uses your custom prompt files:
 | `{{TARGET_CCY}}` | Hardcoded | `"VND"` | Target currency (Vietnamese Dong) |
 | `{{TARGET_UNITS}}` | Hardcoded | `"bn"` | Units (billions) |
 | `{{ACCOUNTING_BASIS}}` | Hardcoded | `"VAS"` | Default accounting standard |
+
+### For Report Generation:
+
+| Template Variable | Populated From | Example Value | Description |
+|-------------------|----------------|---------------|-------------|
+| `{{COMPANY_NAME}}` | Function parameter | `"Vinhomes JSC"` | Full company name |
+| `{{TICKER}}` | Function parameter | `"VHM"` | Stock ticker symbol |
+| `{{QUARTER}}` | Function parameter | `"2Q25"` | Quarter being analyzed |
+| `{{NEXT_HALF_OR_PERIOD}}` | Auto-calculated | `"2H25"` | **Next reporting period** |
 
 ---
 

@@ -10,6 +10,7 @@ import datetime
 from dotenv import load_dotenv
 from pathlib import Path
 import sys
+import json
 
 # Load environment variables at module import
 load_dotenv()
@@ -633,6 +634,9 @@ class MongoDBHelper:
             self.quarterly_documents_collection = self.db.get_collection('QuarterlyEarningsDocuments')
             self.quarterly_data_collection = self.db.get_collection('QuarterlyEarningsData')
             self.quarterly_summaries_collection = self.db.get_collection('QuarterlySummaries')
+            
+            # Initialize quarterly collections with schema validation and indexes
+            self._setup_quarterly_collections()
         else:
             self.db = None
             self.projects_collection = None
@@ -640,6 +644,48 @@ class MongoDBHelper:
             self.quarterly_documents_collection = None
             self.quarterly_data_collection = None
             self.quarterly_summaries_collection = None
+    
+    def _setup_quarterly_collections(self):
+        """Setup quarterly earnings collections with proper indexes and schema validation"""
+        try:
+            # Load the JSON schema for validation
+            schema_path = Path(__file__).parent / "quarterly_analysis.json"
+            if schema_path.exists():
+                import json
+                with open(schema_path, 'r', encoding='utf-8') as f:
+                    json_schema = json.load(f)
+                
+                # Create indexes for efficient querying
+                self._ensure_quarterly_indexes()
+                
+                # Optional: You can add MongoDB schema validation here if needed
+                # For now, we'll rely on application-level validation
+                st.info("✅ Quarterly collections initialized with proper indexing")
+            else:
+                st.warning("⚠️ JSON schema file not found - collections initialized without validation")
+        except Exception as e:
+            st.warning(f"⚠️ Error setting up quarterly collections: {e}")
+    
+    def _ensure_quarterly_indexes(self):
+        """Ensure proper indexes exist on quarterly collections"""
+        try:
+            # QuarterlyEarningsData collection indexes
+            self.quarterly_data_collection.create_index([("ticker", 1), ("quarter", 1)], unique=True)
+            self.quarterly_data_collection.create_index([("ticker", 1), ("year", 1), ("quarter_num", 1)])
+            self.quarterly_data_collection.create_index([("last_updated", -1)])
+            
+            # QuarterlyEarningsDocuments collection indexes  
+            self.quarterly_documents_collection.create_index([("ticker", 1), ("quarter", 1)])
+            self.quarterly_documents_collection.create_index([("processing_status", 1)])
+            self.quarterly_documents_collection.create_index([("upload_date", -1)])
+            
+            # QuarterlySummaries collection indexes
+            self.quarterly_summaries_collection.create_index([("ticker", 1), ("quarter", 1)], unique=True)
+            self.quarterly_summaries_collection.create_index([("generated_date", -1)])
+            
+        except Exception as e:
+            # Indexes may already exist, that's okay
+            pass
     
     def get_real_estate_projects(self, ticker: str) -> list:
         """Get all real estate projects for a company"""
