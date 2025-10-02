@@ -147,7 +147,7 @@ Return ONLY the final Markdown report.
                 response = self.client.chat.completions.create(
                     model=model_used,
                     messages=messages,
-                    max_completion_tokens=3500
+                    max_completion_tokens=16000  # Increased for comprehensive reports
                 )
             else:
                 # Legacy fallback
@@ -429,7 +429,7 @@ Be specific with numbers and highlight significant changes.
                 response = self.client.chat.completions.create(
                     model="gpt-5",
                     messages=messages,
-                    max_completion_tokens=3000
+                    max_completion_tokens=16000  # Increased for comprehensive comparison reports
                 )
             else:
                 response = openai.chat.completions.create(
