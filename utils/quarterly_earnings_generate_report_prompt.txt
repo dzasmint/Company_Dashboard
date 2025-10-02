@@ -19,7 +19,7 @@ When you use information from management or sell-side, **explicitly attribute** 
 When your buy-side view differs from sell-side consensus, **highlight the difference** (e.g., "Our view: … differs from sell-side consensus (Vietcap: …)").
 
 PRESENTATION STRUCTURE
-Produce a **PowerPoint-ready markdown presentation** with exactly 7 slides:
+Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 
 ## Slide 1: Executive Summary
 ### {{COMPANY_NAME}} ({{TICKER}}) - {{QUARTER}} Results Overview
@@ -125,7 +125,63 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 7 slides:
 - Show % changes with + or - sign
 - Add brief commentary on leverage trends from management/buy-side
 
-## Slide 6: Guidance & Outlook
+## Slide 6: Independent Financial Analysis
+### Objective Assessment Based on Financial Data
+
+**CRITICAL INSTRUCTION:** 
+Conduct this analysis ONLY using the `financial_data` section. Do NOT reference management commentary, sell-side views, or buy-side commentary. This is your independent, objective assessment as a financial analyst looking at the raw numbers.
+
+**Income Statement Analysis:**
+Analyze trends from `financial_data.current_quarter.income_statement` vs comparisons:
+- **Revenue Quality:** Assess revenue growth trajectory (QoQ and YoY). Is growth accelerating or decelerating?
+- **Profitability Trends:** Analyze margin progression:
+  - Gross Margin: `gross_margin_pct` trend
+  - EBITDA Margin: `ebitda_margin_pct` trend
+  - NPAT Margin: `npat_margin_pct` trend
+- **Operating Leverage:** Are margins expanding with revenue growth?
+- **Cost Structure:** Trends in COGS, GA expenses, selling expenses relative to revenue
+- **Below-the-line Items:** Financial income/expense trends, tax rate changes
+
+**Balance Sheet Health:**
+Analyze from `financial_data.*.balance_sheet`:
+- **Asset Quality:**
+  - Inventory trend and % of total assets - is it growing faster than revenue?
+  - Receivables trend - any deterioration in collection?
+  - Cash position - adequate liquidity?
+- **Capital Structure:**
+  - Debt levels and trends (ST vs LT mix)
+  - Equity growth trajectory
+  - ROE implied by NPATMI / Average Equity
+- **Working Capital:** Net working capital trend and efficiency
+
+**Cash Flow Assessment:**
+Analyze from `financial_data.current_quarter.cash_flow`:
+- **Operating Cash Flow:** Is it positive? Growing? Matching NPAT?
+- **Cash Conversion:** Operating CF vs NPAT ratio
+- **Investment Activity:** Capex trends, level relative to depreciation
+- **Financing Activity:** Debt repayment vs new borrowing
+- **Free Cash Flow:** Is it positive? Can it cover dividend/debt service?
+
+**Key Financial Ratios:**
+Calculate and assess:
+- **Profitability:** EBITDA margin, NPAT margin, implied ROE
+- **Leverage:** Net Debt/Equity, Net Debt/EBITDA
+- **Efficiency:** Asset turnover (Revenue / Avg Total Assets)
+- **Growth:** Revenue CAGR (if YoY data available)
+
+**Red Flags & Positive Signals:**
+Based purely on the numbers:
+- 🚩 **Concerns:** Margin compression, rising inventory, weak cash conversion, increasing leverage, etc.
+- ✅ **Strengths:** Margin expansion, deleveraging, strong FCF, revenue acceleration, etc.
+
+**Quarter-over-Quarter Assessment:**
+- Overall trajectory: Improving / Stable / Deteriorating
+- Financial health score: Strong / Moderate / Weak
+- Key metric to watch next quarter
+
+**TONE:** Professional, objective, data-driven. Only reference specific numbers from `financial_data`. No speculation beyond what the numbers show.
+
+## Slide 7: Guidance & Outlook
 ### Management Guidance and Market Outlook
 
 **Management Guidance:**
@@ -141,7 +197,7 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 7 slides:
 - Key risks and opportunities
 - Where we differ from consensus
 
-## Slide 7: Valuation Analysis
+## Slide 8: Valuation Analysis
 ### Investment Recommendation and Target Price
 
 **Buy-Side Valuation:**
@@ -190,7 +246,8 @@ INPUT
 - All documents share the same schema structure for consistency
 
 OUTPUT
-- A **PowerPoint-ready markdown presentation** with exactly 7 slides following the above structure
+- A **PowerPoint-ready markdown presentation** with exactly 8 slides following the above structure
 - Each slide should be clearly marked with ## Slide X: headers
+- Slide 6 must be independent analysis using ONLY financial_data (no management/sell-side/buy-side references)
 - Professional formatting suitable for direct conversion to PowerPoint
 - No raw JSON. No extra explanations about your process.
