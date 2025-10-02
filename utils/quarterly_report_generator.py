@@ -187,6 +187,7 @@ Return ONLY the final Markdown report.
             "management_commentary": [],  # Collect all management commentary
             "sell_side_commentary": [],  # Collect all sell-side commentary
             "buy_side_commentary": [],   # Collect all buy-side commentary
+            "financial_data": None,      # Financial data from internal database
             "methodology_notes": []
         }
         
@@ -254,6 +255,12 @@ Return ONLY the final Markdown report.
                 commentary_with_source = data["buy_side_commentary"].copy()
                 commentary_with_source["_source"] = source_info
                 aggregated["buy_side_commentary"].append(commentary_with_source)
+            
+            # Collect financial data from internal database (priority: use this as ground truth)
+            if "financial_data" in data and data["financial_data"] and source_info["file_type"] == "financial_data":
+                # Financial data takes precedence as ground truth
+                aggregated["financial_data"] = data["financial_data"].copy()
+                aggregated["financial_data"]["_source"] = source_info
             
             # Merge outlook (combine guidance from all sources)
             if "outlook_and_guidance" in data and data["outlook_and_guidance"]:

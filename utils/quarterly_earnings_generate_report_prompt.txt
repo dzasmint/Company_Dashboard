@@ -43,13 +43,22 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 7 slides:
 ## Slide 2: Income Statement Analysis
 ### Quarterly Financial Performance
 
+**CRITICAL:** Extract ALL data from `financial_data` section. Do NOT leave placeholders.
+
 | Field | Current Quarter | Previous Quarter | Last Year Quarter | QoQ Growth | YoY Growth | Comments |
 |-------|----------------|------------------|-------------------|------------|------------|----------|
-| Revenue | [from financial_data.current_quarter.income_statement.revenue] | [from financial_data.qoq_comparison.income_statement.revenue] | [from financial_data.yoy_comparison.income_statement.revenue] | [from financial_data.calculated_changes.qoq.revenue_pct] | [from financial_data.calculated_changes.yoy.revenue_pct] | [Key drivers/commentary] |
-| Gross Profit | [current] | [previous] | [last year] | [QoQ %] | [YoY %] | [Commentary] |
-| EBITDA | [current] | [previous] | [last year] | [QoQ %] | [YoY %] | [Commentary] |
-| NPAT | [current] | [previous] | [last year] | [QoQ %] | [YoY %] | [Commentary] |
-| NPATMI | [current] | [previous] | [last year] | [QoQ %] | [YoY %] | [Commentary] |
+| Revenue | `financial_data.current_quarter.income_statement.net_revenue` | `financial_data.qoq_comparison.income_statement.net_revenue` | `financial_data.yoy_comparison.income_statement.net_revenue` | `financial_data.calculated_changes.qoq.net_revenue_pct%` | `financial_data.calculated_changes.yoy.net_revenue_pct%` | Key drivers from management/buy-side |
+| Gross Profit | `financial_data.current_quarter.income_statement.gross_profit` | `financial_data.qoq_comparison.income_statement.gross_profit` | `financial_data.yoy_comparison.income_statement.gross_profit` | `financial_data.calculated_changes.qoq.gross_profit_pct%` | `financial_data.calculated_changes.yoy.gross_profit_pct%` | Margin trends |
+| EBITDA | `financial_data.current_quarter.income_statement.ebitda` | `financial_data.qoq_comparison.income_statement.ebitda` | `financial_data.yoy_comparison.income_statement.ebitda` | `financial_data.calculated_changes.qoq.ebitda_pct%` | `financial_data.calculated_changes.yoy.ebitda_pct%` | Operational efficiency |
+| NPAT | `financial_data.current_quarter.income_statement.npat` | `financial_data.qoq_comparison.income_statement.npat` | `financial_data.yoy_comparison.income_statement.npat` | `financial_data.calculated_changes.qoq.npat_pct%` | `financial_data.calculated_changes.yoy.npat_pct%` | Bottom line performance |
+| NPATMI | `financial_data.current_quarter.income_statement.npatmi` | `financial_data.qoq_comparison.income_statement.npatmi` | `financial_data.yoy_comparison.income_statement.npatmi` | `financial_data.calculated_changes.qoq.npatmi_pct%` | `financial_data.calculated_changes.yoy.npatmi_pct%` | Attributable to shareholders |
+
+**INSTRUCTIONS:**
+- Replace backtick paths with ACTUAL NUMBERS from the `financial_data` JSON
+- Format numbers with commas (e.g., 15,234.56)
+- Show % changes with + or - sign (e.g., +8.5%, -3.2%)
+- If a value is null, show "N/A"
+- Comments column: add brief qualitative insight from management/buy-side commentary
 
 *All figures in {{TARGET_CCY}} {{TARGET_UNITS}}*
 
@@ -91,19 +100,30 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 7 slides:
 ## Slide 5: Balance Sheet & Leverage Analysis
 ### Debt and Capital Structure
 
+**CRITICAL:** Extract ALL data from `financial_data.*.balance_sheet` sections. Calculate net debt and ratios.
+
 **Net Debt to Equity Trend:**
 | Quarter | Net Debt | Total Equity | Net Debt/Equity Ratio | QoQ Change | YoY Change |
 |---------|----------|--------------|----------------------|------------|------------|
-| Current | [ST_debt + LT_debt - cash - cash_equivalent] | [from balance_sheet.equity] | [calculated ratio] | [QoQ %] | [YoY %] |
-| Previous | [previous quarter data] | [previous equity] | [previous ratio] | - | - |
-| Last Year | [last year data] | [last year equity] | [last year ratio] | - | - |
+| {{QUARTER}} | `ST_debt + LT_debt - cash - cash_equivalent` from `current_quarter.balance_sheet` | `current_quarter.balance_sheet.total_equity` | Calculate: `Net Debt / Equity * 100%` | Calculate vs QoQ | Calculate vs YoY |
+| Previous | Calculate from `qoq_comparison.balance_sheet` | `qoq_comparison.balance_sheet.total_equity` | Calculate ratio | - | - |
+| Last Year | Calculate from `yoy_comparison.balance_sheet` | `yoy_comparison.balance_sheet.total_equity` | Calculate ratio | - | - |
 
 **Total Debt Composition:**
 | Debt Type | Current Quarter | Previous Quarter | Last Year Quarter | QoQ Change | YoY Change |
 |-----------|----------------|------------------|-------------------|------------|------------|
-| Short-term Debt | [ST_debt] | [previous ST_debt] | [last year ST_debt] | [QoQ %] | [YoY %] |
-| Long-term Debt | [LT_debt] | [previous LT_debt] | [last year LT_debt] | [QoQ %] | [YoY %] |
-| **Total Debt** | [ST_debt + LT_debt] | [previous total] | [last year total] | [QoQ %] | [YoY %] |
+| Short-term Debt | `current_quarter.balance_sheet.st_debt` | `qoq_comparison.balance_sheet.st_debt` | `yoy_comparison.balance_sheet.st_debt` | `calculated_changes.qoq.st_debt_pct%` | `calculated_changes.yoy.st_debt_pct%` |
+| Long-term Debt | `current_quarter.balance_sheet.lt_debt` | `qoq_comparison.balance_sheet.lt_debt` | `yoy_comparison.balance_sheet.lt_debt` | `calculated_changes.qoq.lt_debt_pct%` | `calculated_changes.yoy.lt_debt_pct%` |
+| **Total Debt** | `ST_debt + LT_debt (current)` | `ST_debt + LT_debt (previous)` | `ST_debt + LT_debt (last year)` | Calculate % change | Calculate % change |
+| Cash & Equiv. | `cash + cash_equivalent (current)` | `cash + cash_equivalent (previous)` | `cash + cash_equivalent (last year)` | `calculated_changes.qoq.cash_pct%` | `calculated_changes.yoy.cash_pct%` |
+
+**INSTRUCTIONS:**
+- Replace backtick paths with ACTUAL NUMBERS from `financial_data` JSON
+- **Calculate Net Debt** = ST_debt + LT_debt - cash - cash_equivalent for each quarter
+- **Calculate Net Debt/Equity Ratio** = (Net Debt / Total Equity) × 100%
+- Format numbers with commas (e.g., 45,000.00)
+- Show % changes with + or - sign
+- Add brief commentary on leverage trends from management/buy-side
 
 ## Slide 6: Guidance & Outlook
 ### Management Guidance and Market Outlook
