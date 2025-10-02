@@ -158,9 +158,20 @@ Return ONLY the final Markdown report.
 
             full_report = response.choices[0].message.content if response and response.choices else None
 
+            # Debug: Log response details
+            if response:
+                st.info(f"GPT-5 Response - Choices: {len(response.choices) if response.choices else 0}")
+                if response.choices and len(response.choices) > 0:
+                    st.info(f"GPT-5 Message content length: {len(response.choices[0].message.content) if response.choices[0].message.content else 0}")
+                    st.info(f"GPT-5 Finish reason: {response.choices[0].finish_reason if hasattr(response.choices[0], 'finish_reason') else 'N/A'}")
+            
             # If GPT-5 returns empty content, surface an explicit error (no model fallback)
             if not full_report or not full_report.strip():
-                raise ValueError("Empty response from gpt-5 during summary generation")
+                error_msg = f"Empty response from gpt-5. Response object: {response is not None}, Choices: {len(response.choices) if response and response.choices else 0}"
+                if response and response.choices and len(response.choices) > 0:
+                    error_msg += f", Finish reason: {response.choices[0].finish_reason if hasattr(response.choices[0], 'finish_reason') else 'N/A'}"
+                st.error(error_msg)
+                raise ValueError(error_msg)
             
             # Parse report into sections based on your custom format
             sections = self._parse_custom_report_sections(full_report)
