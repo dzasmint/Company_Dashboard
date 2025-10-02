@@ -145,7 +145,7 @@ class QuarterlyEarningsManager:
         Complete workflow: save file, extract text, analyze with AI, save to MongoDB
         
         Args:
-            uploaded_file: Streamlit uploaded file (None for buy-side commentary)
+            uploaded_file: Streamlit uploaded file (None for text-based input)
             ticker: Stock ticker
             company_name: Company name
             quarter: Quarter (e.g., "2Q25")
@@ -153,22 +153,42 @@ class QuarterlyEarningsManager:
             quarter_num: Quarter number (1-4)
             document_type: Type of document
             analyst_firm: Analyst firm name (optional, for sell-side)
-            buyside_text: Buy-side commentary text (optional, for buy-side)
+            buyside_text: Text input for buy-side commentary, earnings presentation, or sell-side report (optional)
             
         Returns:
             Dictionary with processing results
         """
         
-        # Handle buy-side commentary (no file upload)
-        if document_type == "buyside_commentary" and buyside_text:
-            return self._process_buyside_commentary(
-                buyside_text=buyside_text,
-                ticker=ticker,
-                company_name=company_name,
-                quarter=quarter,
-                year=year,
-                quarter_num=quarter_num
-            )
+        # Handle text input (no file upload) - for buy-side, earnings presentations, or sell-side reports
+        if buyside_text and not uploaded_file:
+            if document_type == "buyside_commentary":
+                return self._process_buyside_commentary(
+                    buyside_text=buyside_text,
+                    ticker=ticker,
+                    company_name=company_name,
+                    quarter=quarter,
+                    year=year,
+                    quarter_num=quarter_num
+                )
+            elif document_type == "earnings_presentation":
+                return self._process_text_earnings_presentation(
+                    document_text=buyside_text,
+                    ticker=ticker,
+                    company_name=company_name,
+                    quarter=quarter,
+                    year=year,
+                    quarter_num=quarter_num
+                )
+            elif document_type == "sellside_report":
+                return self._process_text_sellside_report(
+                    document_text=buyside_text,
+                    ticker=ticker,
+                    company_name=company_name,
+                    quarter=quarter,
+                    year=year,
+                    quarter_num=quarter_num,
+                    analyst_firm=analyst_firm
+                )
         
         # Step 1: Save file
         with st.spinner("💾 Saving file..."):
@@ -329,6 +349,167 @@ class QuarterlyEarningsManager:
             
         except Exception as e:
             st.error(f"Error processing buy-side commentary: {str(e)}")
+            return {"error": str(e)}
+    
+    def _process_text_earnings_presentation(self,
+                                           document_text: str,
+                                           ticker: str,
+                                           company_name: str,
+                                           quarter: str,
+                                           year: int,
+                                           quarter_num: int) -> Dict[str, Any]:
+        """
+        Process earnings presentation from pasted text
+        
+        Args:
+            document_text: Pasted earnings presentation text
+            ticker: Stock ticker
+            company_name: Company name
+            quarter: Quarter
+            year: Year
+            quarter_num: Quarter number
+            
+        Returns:
+            Processing result dictionary
+        """
+        try:
+            # Step 1: Create document metadata in MongoDB
+            document_metadata = {
+                "file_name": f"earnings_presentation_{ticker}_{quarter}_pasted.txt",
+                "ticker": ticker.upper(),
+                "company_name": company_name,
+                "quarter": quarter.upper(),
+                "year": year,
+                "quarter_num": quarter_num,
+                "document_type": "earnings_presentation",
+                "upload_date": datetime.now(),
+                "processing_status": "pending",
+                "source": "management",
+                "analyst_firm": None,
+                "report_date": datetime.now(),
+                "metadata": {
+                    "file_extension": "txt",
+                    "word_count": len(document_text.strip().split()),
+                    "input_method": "text_paste"
+                }
+            }
+            
+            doc_id = self.mongo_helper.save_quarterly_document(document_metadata)
+            
+            # Step 2: Extract data with ChatGPT
+            with st.spinner("🤖 Analyzing earnings presentation with ChatGPT..."):
+                self.mongo_helper.update_quarterly_document_status(doc_id, "processing")
+                
+                extracted_data = self.extractor.extract_from_earnings_presentation(
+                    document_text=document_text,
+                    company_name=company_name,
+                    ticker=ticker,
+                    quarter=quarter
+                )
+                
+                if "error" in extracted_data:
+                    self.mongo_helper.update_quarterly_document_status(
+                        doc_id, "error", error_message=extracted_data["error"]
+                    )
+                    return {
+                        "error": extracted_data["error"],
+                        "document_id": doc_id,
+                        "file_path": None
+                    }
+            
+            # Return for user review
+            return {
+                "success": True,
+                "document_id": doc_id,
+                "file_path": None,
+                "extracted_data": extracted_data,
+                "document_metadata": document_metadata
+            }
+            
+        except Exception as e:
+            st.error(f"Error processing earnings presentation text: {str(e)}")
+            return {"error": str(e)}
+    
+    def _process_text_sellside_report(self,
+                                      document_text: str,
+                                      ticker: str,
+                                      company_name: str,
+                                      quarter: str,
+                                      year: int,
+                                      quarter_num: int,
+                                      analyst_firm: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Process sell-side report from pasted text
+        
+        Args:
+            document_text: Pasted sell-side report text
+            ticker: Stock ticker
+            company_name: Company name
+            quarter: Quarter
+            year: Year
+            quarter_num: Quarter number
+            analyst_firm: Analyst firm name (optional)
+            
+        Returns:
+            Processing result dictionary
+        """
+        try:
+            # Step 1: Create document metadata in MongoDB
+            document_metadata = {
+                "file_name": f"sellside_report_{ticker}_{quarter}_pasted.txt",
+                "ticker": ticker.upper(),
+                "company_name": company_name,
+                "quarter": quarter.upper(),
+                "year": year,
+                "quarter_num": quarter_num,
+                "document_type": "sellside_report",
+                "upload_date": datetime.now(),
+                "processing_status": "pending",
+                "source": "analyst",
+                "analyst_firm": analyst_firm,
+                "report_date": datetime.now(),
+                "metadata": {
+                    "file_extension": "txt",
+                    "word_count": len(document_text.strip().split()),
+                    "input_method": "text_paste"
+                }
+            }
+            
+            doc_id = self.mongo_helper.save_quarterly_document(document_metadata)
+            
+            # Step 2: Extract data with ChatGPT
+            with st.spinner("🤖 Analyzing sell-side report with ChatGPT..."):
+                self.mongo_helper.update_quarterly_document_status(doc_id, "processing")
+                
+                extracted_data = self.extractor.extract_from_sellside_report(
+                    document_text=document_text,
+                    company_name=company_name,
+                    ticker=ticker,
+                    quarter=quarter,
+                    analyst_firm=analyst_firm
+                )
+                
+                if "error" in extracted_data:
+                    self.mongo_helper.update_quarterly_document_status(
+                        doc_id, "error", error_message=extracted_data["error"]
+                    )
+                    return {
+                        "error": extracted_data["error"],
+                        "document_id": doc_id,
+                        "file_path": None
+                    }
+            
+            # Return for user review
+            return {
+                "success": True,
+                "document_id": doc_id,
+                "file_path": None,
+                "extracted_data": extracted_data,
+                "document_metadata": document_metadata
+            }
+            
+        except Exception as e:
+            st.error(f"Error processing sell-side report text: {str(e)}")
             return {"error": str(e)}
     
     def _process_financial_data(self,

@@ -194,19 +194,49 @@ Add your bullet points, valuation analysis, and key observations here...""",
             )
             uploaded_file = None  # No file upload for buy-side commentary
         else:
-            # File upload for other document types (management, sell-side)
-            uploaded_file = st.file_uploader(
-                "Upload Document",
-                type=['pdf', 'xlsx', 'xls', 'docx', 'txt', 'md'],
-                help="Supported formats: PDF, Excel, Word, Text",
-                key="qe_upload_file"
+            # File upload OR text paste for company presentations and sell-side reports
+            st.markdown("---")
+            
+            # Input method selection
+            input_method = st.radio(
+                "Input Method",
+                options=["Upload File", "Paste Text"],
+                horizontal=True,
+                key="qe_input_method",
+                help="Choose to upload a file or paste the document text directly"
             )
-            buyside_text = None
+            
+            if input_method == "Upload File":
+                uploaded_file = st.file_uploader(
+                    "Upload Document",
+                    type=['pdf', 'xlsx', 'xls', 'docx', 'txt', 'md'],
+                    help="Supported formats: PDF, Excel, Word, Text",
+                    key="qe_upload_file"
+                )
+                buyside_text = None
+            else:  # Paste Text
+                st.subheader(f"📋 Paste {{'earnings_presentation': 'Earnings Presentation', 'sellside_report': 'Sell-Side Report'}.get(document_type, 'Document')} Text")
+                st.markdown("""
+                Paste the full text content from the document. You can copy from:
+                - PDF (using your PDF reader's copy function)
+                - Word documents
+                - Excel spreadsheets
+                - Web pages or reports
+                """)
+                
+                buyside_text = st.text_area(
+                    "Document Text",
+                    height=500,
+                    placeholder="Paste the full text content here...\n\nFor earnings presentations: include all slides, financial data, commentary, and guidance.\nFor sell-side reports: include analyst views, forecasts, ratings, and recommendations.",
+                    help="Paste the complete document text here",
+                    key="qe_document_text_input"
+                )
+                uploaded_file = None
         
         # Upload and process button
-        # Show button if: file is uploaded OR buy-side text is entered OR financial_data selected
+        # Show button if: file is uploaded OR text is entered (any document type) OR financial_data selected
         has_input = (uploaded_file or 
-                     (document_type == "buyside_commentary" and buyside_text and buyside_text.strip()) or
+                     (buyside_text and buyside_text.strip()) or
                      document_type == "financial_data")
         
         if has_input:
@@ -214,7 +244,12 @@ Add your bullet points, valuation analysis, and key observations here...""",
                 st.info(f"📄 File selected: **{uploaded_file.name}** ({uploaded_file.size / 1024:.1f} KB)")
             elif buyside_text:
                 word_count = len(buyside_text.strip().split())
-                st.info(f"💼 Buy-side commentary: **{word_count} words** entered")
+                if document_type == "buyside_commentary":
+                    st.info(f"💼 Buy-side commentary: **{word_count} words** entered")
+                elif document_type == "earnings_presentation":
+                    st.info(f"📊 Earnings presentation text: **{word_count} words** entered")
+                elif document_type == "sellside_report":
+                    st.info(f"📈 Sell-side report text: **{word_count} words** entered")
             elif document_type == "financial_data":
                 st.info(f"🔢 Ready to extract financial data for **{ticker_only} {quarter}**")
             
