@@ -3,6 +3,7 @@ Quarterly Report Generator - Creates comprehensive summary reports using ChatGPT
 """
 
 import openai
+from openai import OpenAI
 import json
 from typing import Dict, List, Any, Optional
 import os
@@ -19,6 +20,11 @@ class QuarterlyReportGenerator:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if self.api_key:
             openai.api_key = self.api_key
+        # Initialize modern OpenAI client when possible
+        try:
+            self.client = OpenAI(api_key=self.api_key) if self.api_key else None
+        except Exception:
+            self.client = None
     
     def _load_report_prompt(self) -> str:
         """Load the report generation prompt template"""
@@ -129,17 +135,32 @@ Return ONLY the final Markdown report.
 """
 
         try:
-            response = openai.chat.completions.create(
-                model="gpt-5",
-                messages=[
-                    {"role": "system", "content": "You are a senior buy-side equity analyst specializing in Vietnamese real estate companies. Write professional investment reports that prioritize internal buy-side analysis while incorporating management and sell-side perspectives with proper attribution."},
-                    {"role": "user", "content": full_prompt}
-                ],
-                temperature=1.0,
-                max_completion_tokens=4000
-            )
-            
-            full_report = response.choices[0].message.content
+            messages = [
+                {"role": "system", "content": "You are a senior buy-side equity analyst specializing in Vietnamese real estate companies. Write professional investment reports that prioritize internal buy-side analysis while incorporating management and sell-side perspectives with proper attribution."},
+                {"role": "user", "content": full_prompt}
+            ]
+
+            model_used = "gpt-5"
+
+            # Prefer OpenAI client with max_completion_tokens for GPT-5
+            if self.client is not None:
+                response = self.client.chat.completions.create(
+                    model=model_used,
+                    messages=messages,
+                    max_completion_tokens=3500
+                )
+            else:
+                # Legacy fallback
+                response = openai.chat.completions.create(
+                    model=model_used,
+                    messages=messages
+                )
+
+            full_report = response.choices[0].message.content if response and response.choices else None
+
+            # If GPT-5 returns empty content, surface an explicit error (no model fallback)
+            if not full_report or not full_report.strip():
+                raise ValueError("Empty response from gpt-5 during summary generation")
             
             # Parse report into sections based on your custom format
             sections = self._parse_custom_report_sections(full_report)
@@ -148,7 +169,7 @@ Return ONLY the final Markdown report.
                 "summary_text": full_report,
                 "summary_sections": sections,
                 "generated_date": datetime.now().isoformat(),
-                "generation_model": "gpt-5",
+                "generation_model": model_used,
                 "source_document_count": len(earnings_data),
                 "company_name": company_name,
                 "ticker": ticker,
@@ -388,17 +409,28 @@ Be specific with numbers and highlight significant changes.
 """
 
         try:
-            response = openai.chat.completions.create(
-                model="gpt-5",
-                messages=[
-                    {"role": "system", "content": "You are a senior analyst analyzing quarterly trends."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=1.0,
-                max_completion_tokens=3000
-            )
-            
-            return response.choices[0].message.content
+            messages = [
+                {"role": "system", "content": "You are a senior analyst analyzing quarterly trends."},
+                {"role": "user", "content": prompt}
+            ]
+
+            if self.client is not None:
+                response = self.client.chat.completions.create(
+                    model="gpt-5",
+                    messages=messages,
+                    max_completion_tokens=3000
+                )
+            else:
+                response = openai.chat.completions.create(
+                    model="gpt-5",
+                    messages=messages
+                )
+
+            content = response.choices[0].message.content if response and response.choices else None
+            if not content or not content.strip():
+                raise ValueError("Empty response from gpt-5 during comparison generation")
+
+            return content
             
         except Exception as e:
             st.error(f"Error generating comparison report: {str(e)}")
