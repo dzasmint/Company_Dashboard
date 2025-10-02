@@ -135,7 +135,7 @@ Return ONLY the final Markdown report.
                     {"role": "system", "content": "You are a senior buy-side equity analyst specializing in Vietnamese real estate companies. Write professional investment reports that prioritize internal buy-side analysis while incorporating management and sell-side perspectives with proper attribution."},
                     {"role": "user", "content": full_prompt}
                 ],
-                temperature=0.2,
+                temperature=1.0,
                 max_tokens=4000
             )
             
@@ -394,7 +394,7 @@ Be specific with numbers and highlight significant changes.
                     {"role": "system", "content": "You are a senior analyst analyzing quarterly trends."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=1.0,
                 max_tokens=3000
             )
             
