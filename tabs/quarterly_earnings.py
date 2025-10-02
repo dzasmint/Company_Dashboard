@@ -215,7 +215,11 @@ Add your bullet points, valuation analysis, and key observations here...""",
                 )
                 buyside_text = None
             else:  # Paste Text
-                st.subheader(f"📋 Paste {{'earnings_presentation': 'Earnings Presentation', 'sellside_report': 'Sell-Side Report'}.get(document_type, 'Document')} Text")
+                doc_type_label = {
+                    'earnings_presentation': 'Earnings Presentation',
+                    'sellside_report': 'Sell-Side Report'
+                }.get(document_type, 'Document')
+                st.subheader(f"📋 Paste {doc_type_label} Text")
                 st.markdown("""
                 Paste the full text content from the document. You can copy from:
                 - PDF (using your PDF reader's copy function)
