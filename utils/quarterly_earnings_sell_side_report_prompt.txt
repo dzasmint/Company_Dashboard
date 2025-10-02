@@ -44,6 +44,26 @@ EVIDENCE & NO-HALLUCINATION
 - If no clear statement exists, set the field to `not_stated` or null and leave quotes empty.
 - Do not infer or compute numbers not stated.
 
+WHAT TO FILL AND WHAT TO LEAVE EMPTY
+This is a SELL-SIDE report, so:
+✅ FILL THESE SECTIONS:
+   - company, ticker, period, currency, units, accounting_basis
+   - headline (if analyst provides one)
+   - recognition_drivers (if analyst discusses revenue recognition or project contributions)
+   - presales (if analyst provides presales data or analysis)
+   - balance_sheet (if analyst discusses debt, cash, leverage)
+   - one_offs_and_events (if analyst highlights any)
+   - outlook_and_guidance (analyst's view on management guidance)
+   - sell_side_commentary (THIS IS THE PRIMARY SECTION - fill completely with analyst views, ratings, forecasts, tone)
+   - source (file_type = "sell_side", publisher = analyst firm name)
+   - methodology (extraction metadata)
+
+❌ LEAVE THESE SECTIONS EMPTY (set to null or empty objects):
+   - financial_data (this comes from separate parquet file, not from sell-side reports)
+   - management_commentary (sell-side reports don't contain direct management commentary - they analyze it)
+   - buy_side_commentary (sell-side reports don't contain buy-side analysis)
+
 OUTPUT
-Return ONE JSON object only, strictly matching the full schema (including `sell_side_commentary`). 
+Return ONE JSON object only, strictly matching the full schema.
+Fill ONLY sell-side-relevant sections. Leave financial_data, management_commentary, and buy_side_commentary as null or empty objects.
 Do not include explanations or prose.

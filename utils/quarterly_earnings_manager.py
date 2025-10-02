@@ -190,6 +190,14 @@ class QuarterlyEarningsManager:
                     analyst_firm=analyst_firm
                 )
         
+        # Validate that we have a file for file-based processing
+        if not uploaded_file:
+            return {
+                "error": "No file uploaded and no text provided. Please upload a file or paste text.",
+                "document_id": None,
+                "file_path": None
+            }
+        
         # Step 1: Save file
         with st.spinner("💾 Saving file..."):
             file_path = self.save_uploaded_file(
@@ -213,7 +221,7 @@ class QuarterlyEarningsManager:
             "file_size_mb": round(file_size_mb, 2),
             "upload_date": datetime.now(),
             "processing_status": "pending",
-            "source": "analyst" if document_type == "sellside_report" else "management" if document_type == "earnings_presentation" else "user",
+            "source": "analyst" if document_type == "sellside_report" else "management" if document_type == "earnings_presentation" else "buyside",
             "analyst_firm": analyst_firm,
             "report_date": datetime.now(),
             "metadata": {

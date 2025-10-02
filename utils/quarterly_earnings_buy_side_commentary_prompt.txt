@@ -33,10 +33,31 @@ TASK
    - source.publish_date = today if not otherwise stated
    - company, ticker, period.quarter = provided parameters
 
+WHAT TO FILL AND WHAT TO LEAVE EMPTY
+This is BUY-SIDE commentary, so:
+✅ FILL THESE SECTIONS (if relevant information is provided):
+   - company, ticker, period
+   - headline (if user provides a summary headline)
+   - recognition_drivers (if user discusses revenue recognition or project contributions)
+   - presales (if user mentions presales data or analysis)
+   - balance_sheet (if user discusses debt, cash, leverage metrics)
+   - one_offs_and_events (if user highlights specific events)
+   - outlook_and_guidance (if user comments on guidance or forward outlook)
+   - buy_side_commentary (THIS IS THE PRIMARY SECTION - fill completely with classified points, valuation analysis, key takeaways)
+   - source (file_type = "buy_side", publisher = your team name)
+   - methodology (extraction metadata)
+
+❌ LEAVE THESE SECTIONS EMPTY (set to null or empty objects):
+   - financial_data (this comes from separate parquet file, not from buy-side commentary)
+   - management_commentary (buy-side commentary doesn't contain management commentary)
+   - sell_side_commentary (buy-side commentary doesn't contain sell-side analysis)
+
 OUTPUT
-Return ONE JSON object containing only:
-- the `buy_side_commentary` block populated as above
-- the `source` metadata
-- the top-level `company`, `ticker`, and `period.quarter`
+Return ONE JSON object containing:
+- company, ticker, period
+- headline, recognition_drivers, presales, balance_sheet, one_offs_and_events, outlook_and_guidance (fill if user provides relevant data, otherwise null)
+- buy_side_commentary block (fully populated)
+- source metadata
+- Leave financial_data, management_commentary, sell_side_commentary as null or empty objects
 
 No extra prose or explanation.

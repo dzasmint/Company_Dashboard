@@ -36,11 +36,31 @@ TASK
 
 CRITICAL RULES
 - No speculation: if the deck does not state a number or guidance, set null.
-- Do NOT assign “beat/miss” labels; this is for management decks only.
+- Do NOT assign "beat/miss" labels; this is for management decks only.
 - Use exact project names as presented.
 - Record YoY/QoQ % only when explicitly shown.
 - Dates must be absolute (YYYY-MM-DD).
 
+WHAT TO FILL AND WHAT TO LEAVE EMPTY
+This is a MANAGEMENT presentation, so:
+✅ FILL THESE SECTIONS:
+   - company, ticker, period, currency, units, accounting_basis
+   - headline (if company provides one)
+   - recognition_drivers (revenue recognition, project contributions)
+   - presales (actual presales data from the presentation)
+   - balance_sheet (debt, cash, leverage data from the presentation)
+   - one_offs_and_events (if management discusses any)
+   - outlook_and_guidance (management's guidance and targets)
+   - management_commentary (THIS IS THE PRIMARY SECTION - fill completely)
+   - source (file_type = "management", publisher = company name)
+   - methodology (extraction metadata)
+
+❌ LEAVE THESE SECTIONS EMPTY (set to null or empty objects):
+   - financial_data (this comes from separate parquet file, not from management presentation)
+   - sell_side_commentary (management presentations don't contain sell-side analysis)
+   - buy_side_commentary (management presentations don't contain buy-side analysis)
+
 OUTPUT
-Return ONE JSON object only, strictly matching the unified schema (including `management_commentary`). 
+Return ONE JSON object only, strictly matching the unified schema.
+Fill ONLY management-relevant sections. Leave financial_data, sell_side_commentary, and buy_side_commentary as null or empty objects.
 Do not include explanations or extra prose.

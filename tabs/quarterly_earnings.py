@@ -170,31 +170,8 @@ class QuarterlyEarningsTab:
             uploaded_file = None
             buyside_text = None
             
-        # Buy-side commentary: Text input instead of file upload
-        elif document_type == "buyside_commentary":
-            st.markdown("---")
-            st.subheader("💼 Buy-Side Commentary")
-            st.markdown("""
-            Enter your buy-side analysis, investment thesis, or key observations.  
-            Include any valuation analysis, catalysts, risks, or key takeaways.
-            """)
-            
-            buyside_text = st.text_area(
-                "Buy-Side Commentary",
-                height=400,
-                placeholder="""Example:
-• Valuation: RNAV at VND 45,000/share implies 35% discount to current price
-• Key catalyst: Expected VHM02 presales acceleration in Q3-Q4
-• Risk: Potential margin pressure from increased land costs
-• Investment view: Accumulate on dips below VND 30,000
-
-Add your bullet points, valuation analysis, and key observations here...""",
-                help="Enter your buy-side analysis in free-form text",
-                key="qe_buyside_text_input"
-            )
-            uploaded_file = None  # No file upload for buy-side commentary
         else:
-            # File upload OR text paste for company presentations and sell-side reports
+            # File upload OR text paste for all document types (earnings, sell-side, buy-side)
             st.markdown("---")
             
             # Input method selection
@@ -215,23 +192,53 @@ Add your bullet points, valuation analysis, and key observations here...""",
                 )
                 buyside_text = None
             else:  # Paste Text
-                doc_type_label = {
+                doc_type_labels = {
                     'earnings_presentation': 'Earnings Presentation',
-                    'sellside_report': 'Sell-Side Report'
-                }.get(document_type, 'Document')
+                    'sellside_report': 'Sell-Side Report',
+                    'buyside_commentary': 'Buy-Side Commentary'
+                }
+                doc_type_label = doc_type_labels.get(document_type, 'Document')
                 st.subheader(f"📋 Paste {doc_type_label} Text")
-                st.markdown("""
-                Paste the full text content from the document. You can copy from:
-                - PDF (using your PDF reader's copy function)
-                - Word documents
-                - Excel spreadsheets
-                - Web pages or reports
-                """)
+                
+                # Customize instructions based on document type
+                if document_type == "buyside_commentary":
+                    st.markdown("""
+                    Enter your buy-side analysis, investment thesis, or key observations.  
+                    Include any valuation analysis, catalysts, risks, or key takeaways.
+                    """)
+                    placeholder_text = """Example:
+• Valuation: RNAV at VND 45,000/share implies 35% discount to current price
+• Key catalyst: Expected VHM02 presales acceleration in Q3-Q4
+• Risk: Potential margin pressure from increased land costs
+• Investment view: Accumulate on dips below VND 30,000
+
+Add your bullet points, valuation analysis, and key observations here..."""
+                    text_height = 400
+                elif document_type == "earnings_presentation":
+                    st.markdown("""
+                    Paste the full text content from the earnings presentation. You can copy from:
+                    - PDF (using your PDF reader's copy function)
+                    - PowerPoint/Keynote presentations
+                    - Word documents
+                    - Web pages or investor relations sites
+                    """)
+                    placeholder_text = "Paste the full earnings presentation text here...\n\nInclude all slides, financial data, commentary, guidance, and Q&A sections."
+                    text_height = 500
+                else:  # sellside_report
+                    st.markdown("""
+                    Paste the full text content from the sell-side research report. You can copy from:
+                    - PDF research reports
+                    - Bloomberg/FactSet reports
+                    - Email reports
+                    - Web-based research platforms
+                    """)
+                    placeholder_text = "Paste the full sell-side report text here...\n\nInclude analyst views, forecasts, financial models, ratings, target prices, and recommendations."
+                    text_height = 500
                 
                 buyside_text = st.text_area(
                     "Document Text",
-                    height=500,
-                    placeholder="Paste the full text content here...\n\nFor earnings presentations: include all slides, financial data, commentary, and guidance.\nFor sell-side reports: include analyst views, forecasts, ratings, and recommendations.",
+                    height=text_height,
+                    placeholder=placeholder_text,
                     help="Paste the complete document text here",
                     key="qe_document_text_input"
                 )
@@ -284,7 +291,7 @@ Add your bullet points, valuation analysis, and key observations here...""",
                         quarter_num=quarter_num
                     )
                 else:
-                    # Process document upload or buy-side commentary
+                    # Process document upload or text input (buy-side, earnings, sell-side)
                     result = self.manager.process_document(
                         uploaded_file=uploaded_file,
                         ticker=ticker_only,
@@ -294,7 +301,7 @@ Add your bullet points, valuation analysis, and key observations here...""",
                         quarter_num=quarter_num,
                         document_type=document_type,
                         analyst_firm=analyst_firm,
-                        buyside_text=buyside_text if document_type == "buyside_commentary" else None
+                        buyside_text=buyside_text  # Pass text input for all document types
                     )
                 
                 if result.get('success'):
