@@ -293,6 +293,203 @@
       "assumptions": null,
       "omissions": null,
       "confidence_pct": null
+    },
+
+    "financial_data": {
+      "data_source": "internal_database",
+      "extraction_date": null,
+      "current_quarter": {
+        "quarter": null,
+        "income_statement": {
+          "net_revenue": null,
+          "cogs": null,
+          "gross_profit": null,
+          "gross_margin_pct": null,
+          "ga_expense": null,
+          "selling_expense": null,
+          "dep_expense": null,
+          "ebit": null,
+          "ebit_margin_pct": null,
+          "ebitda": null,
+          "ebitda_margin_pct": null,
+          "financial_income": null,
+          "financial_expense": null,
+          "interest_expense": null,
+          "pbt": null,
+          "tax": null,
+          "eff_tax_rate_pct": null,
+          "npat": null,
+          "npat_margin_pct": null,
+          "minority_interest_in_earning": null,
+          "npatmi": null
+        },
+        "balance_sheet": {
+          "total_assets": null,
+          "cash": null,
+          "cash_equivalent": null,
+          "short_investment": null,
+          "account_receivable": null,
+          "inventory": null,
+          "tangible_fixed_asset": null,
+          "total_liabilities": null,
+          "account_payable": null,
+          "advance_from_customers": null,
+          "st_debt": null,
+          "lt_debt": null,
+          "total_equity": null,
+          "retain_earning": null,
+          "minority_interest": null
+        },
+        "cash_flow": {
+          "operating_cf": null,
+          "inv_cf": null,
+          "capex": null,
+          "fin_cf": null,
+          "fcf": null
+        },
+        "other_metrics": {
+          "outstanding_shares": null,
+          "invested_capital": null
+        }
+      },
+      "qoq_comparison": {
+        "quarter": null,
+        "income_statement": {
+          "net_revenue": null,
+          "cogs": null,
+          "gross_profit": null,
+          "gross_margin_pct": null,
+          "ga_expense": null,
+          "selling_expense": null,
+          "dep_expense": null,
+          "ebit": null,
+          "ebit_margin_pct": null,
+          "ebitda": null,
+          "ebitda_margin_pct": null,
+          "financial_income": null,
+          "financial_expense": null,
+          "interest_expense": null,
+          "pbt": null,
+          "tax": null,
+          "eff_tax_rate_pct": null,
+          "npat": null,
+          "npat_margin_pct": null,
+          "minority_interest_in_earning": null,
+          "npatmi": null
+        },
+        "balance_sheet": {
+          "total_assets": null,
+          "cash": null,
+          "cash_equivalent": null,
+          "short_investment": null,
+          "account_receivable": null,
+          "inventory": null,
+          "tangible_fixed_asset": null,
+          "total_liabilities": null,
+          "account_payable": null,
+          "advance_from_customers": null,
+          "st_debt": null,
+          "lt_debt": null,
+          "total_equity": null,
+          "retain_earning": null,
+          "minority_interest": null
+        },
+        "cash_flow": {
+          "operating_cf": null,
+          "inv_cf": null,
+          "capex": null,
+          "fin_cf": null,
+          "fcf": null
+        },
+        "other_metrics": {
+          "outstanding_shares": null,
+          "invested_capital": null
+        }
+      },
+      "yoy_comparison": {
+        "quarter": null,
+        "income_statement": {
+          "net_revenue": null,
+          "cogs": null,
+          "gross_profit": null,
+          "gross_margin_pct": null,
+          "ga_expense": null,
+          "selling_expense": null,
+          "dep_expense": null,
+          "ebit": null,
+          "ebit_margin_pct": null,
+          "ebitda": null,
+          "ebitda_margin_pct": null,
+          "financial_income": null,
+          "financial_expense": null,
+          "interest_expense": null,
+          "pbt": null,
+          "tax": null,
+          "eff_tax_rate_pct": null,
+          "npat": null,
+          "npat_margin_pct": null,
+          "minority_interest_in_earning": null,
+          "npatmi": null
+        },
+        "balance_sheet": {
+          "total_assets": null,
+          "cash": null,
+          "cash_equivalent": null,
+          "short_investment": null,
+          "account_receivable": null,
+          "inventory": null,
+          "tangible_fixed_asset": null,
+          "total_liabilities": null,
+          "account_payable": null,
+          "advance_from_customers": null,
+          "st_debt": null,
+          "lt_debt": null,
+          "total_equity": null,
+          "retain_earning": null,
+          "minority_interest": null
+        },
+        "cash_flow": {
+          "operating_cf": null,
+          "inv_cf": null,
+          "capex": null,
+          "fin_cf": null,
+          "fcf": null
+        },
+        "other_metrics": {
+          "outstanding_shares": null,
+          "invested_capital": null
+        }
+      },
+      "calculated_changes": {
+        "qoq": {
+          "net_revenue_pct": null,
+          "gross_profit_pct": null,
+          "ebit_pct": null,
+          "ebitda_pct": null,
+          "npat_pct": null,
+          "npatmi_pct": null,
+          "total_assets_pct": null,
+          "cash_pct": null,
+          "inventory_pct": null,
+          "st_debt_pct": null,
+          "lt_debt_pct": null,
+          "total_equity_pct": null
+        },
+        "yoy": {
+          "net_revenue_pct": null,
+          "gross_profit_pct": null,
+          "ebit_pct": null,
+          "ebitda_pct": null,
+          "npat_pct": null,
+          "npatmi_pct": null,
+          "total_assets_pct": null,
+          "cash_pct": null,
+          "inventory_pct": null,
+          "st_debt_pct": null,
+          "lt_debt_pct": null,
+          "total_equity_pct": null
+        }
+      }
     }
   }
   

@@ -670,9 +670,12 @@ class MongoDBHelper:
         """Ensure proper indexes exist on quarterly collections"""
         try:
             # QuarterlyEarningsData collection indexes
-            self.quarterly_data_collection.create_index([("ticker", 1), ("quarter", 1)], unique=True)
+            # REMOVED unique=True to allow multiple documents per ticker/quarter (one per source)
+            self.quarterly_data_collection.create_index([("ticker", 1), ("quarter", 1)])
+            self.quarterly_data_collection.create_index([("ticker", 1), ("quarter", 1), ("source.file_type", 1)])
             self.quarterly_data_collection.create_index([("ticker", 1), ("year", 1), ("quarter_num", 1)])
             self.quarterly_data_collection.create_index([("last_updated", -1)])
+            self.quarterly_data_collection.create_index([("document_id", 1)])
             
             # QuarterlyEarningsDocuments collection indexes  
             self.quarterly_documents_collection.create_index([("ticker", 1), ("quarter", 1)])
@@ -937,30 +940,14 @@ class MongoDBHelper:
             return False
     
     def save_quarterly_earnings_data(self, earnings_data: dict) -> str:
-        """Save or update quarterly earnings data (upsert by ticker and quarter)"""
+        """Save quarterly earnings data (creates new document for each source)"""
         if self.quarterly_data_collection is None:
             return None
         
         try:
-            # Upsert based on ticker and quarter
-            result = self.quarterly_data_collection.update_one(
-                {
-                    "ticker": earnings_data.get("ticker"),
-                    "quarter": earnings_data.get("quarter")
-                },
-                {"$set": earnings_data},
-                upsert=True
-            )
-            
-            if result.upserted_id:
-                return str(result.upserted_id)
-            else:
-                # Get the existing document ID
-                doc = self.quarterly_data_collection.find_one({
-                    "ticker": earnings_data.get("ticker"),
-                    "quarter": earnings_data.get("quarter")
-                })
-                return str(doc['_id']) if doc else None
+            # Insert new document (each uploaded file gets its own document)
+            result = self.quarterly_data_collection.insert_one(earnings_data)
+            return str(result.inserted_id)
         except Exception as e:
             st.error(f"Error saving earnings data: {str(e)}")
             return None

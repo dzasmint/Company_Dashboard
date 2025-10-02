@@ -15,6 +15,7 @@ from .quarterly_earnings_extractor import QuarterlyEarningsExtractor
 from .quarterly_report_generator import QuarterlyReportGenerator
 from .mongodb_utils import MongoDBHelper
 from .chatGPT_project_extractor import ChatGPTProjectExtractor
+from .financial_data_extractor import FinancialDataExtractor
 
 
 class QuarterlyEarningsManager:
@@ -34,6 +35,7 @@ class QuarterlyEarningsManager:
         self.report_generator = QuarterlyReportGenerator(api_key=openai_api_key)
         self.mongo_helper = MongoDBHelper()
         self.pdf_extractor = ChatGPTProjectExtractor(api_key=openai_api_key)
+        self.financial_extractor = FinancialDataExtractor()
         self.base_data_path = base_data_path
     
     def save_uploaded_file(self,
@@ -329,6 +331,95 @@ class QuarterlyEarningsManager:
             st.error(f"Error processing buy-side commentary: {str(e)}")
             return {"error": str(e)}
     
+    def _process_financial_data(self,
+                               ticker: str,
+                               company_name: str,
+                               quarter: str,
+                               year: int,
+                               quarter_num: int) -> Dict[str, Any]:
+        """
+        Process automated financial data extraction from FA_processed.parquet
+        
+        Args:
+            ticker: Stock ticker
+            company_name: Company name
+            quarter: Quarter (e.g., "2Q25")
+            year: Year
+            quarter_num: Quarter number
+            
+        Returns:
+            Processing result dictionary
+        """
+        try:
+            # Step 1: Validate data availability
+            with st.spinner(f"🔍 Validating data availability for {ticker} {quarter}..."):
+                validation = self.financial_extractor.validate_data_availability(ticker, quarter)
+                
+                if not validation["valid"]:
+                    st.error(f"❌ Data not available: {validation['message']}")
+                    return {
+                        "error": validation["message"],
+                        "validation": validation
+                    }
+                
+                st.success(f"✅ Data available for {quarter} and comparison quarters")
+            
+            # Step 2: Create document metadata in MongoDB
+            document_metadata = {
+                "file_name": f"financial_data_{ticker}_{quarter}.json",
+                "ticker": ticker.upper(),
+                "company_name": company_name,
+                "quarter": quarter.upper(),
+                "year": year,
+                "quarter_num": quarter_num,
+                "document_type": "financial_data",
+                "upload_date": datetime.now(),
+                "processing_status": "pending",
+                "source": "internal_database",
+                "analyst_firm": None,
+                "report_date": datetime.now(),
+                "metadata": {
+                    "file_extension": "json",
+                    "data_source": "FA_processed.parquet",
+                    "extraction_method": "automated"
+                }
+            }
+            
+            doc_id = self.mongo_helper.save_quarterly_document(document_metadata)
+            
+            # Step 3: Extract financial data
+            with st.spinner("📊 Extracting financial data from database..."):
+                self.mongo_helper.update_quarterly_document_status(doc_id, "processing")
+                
+                extracted_data = self.financial_extractor.extract_quarterly_data(ticker, quarter)
+                
+                if "error" in extracted_data:
+                    self.mongo_helper.update_quarterly_document_status(
+                        doc_id, "error", error_message=extracted_data["error"]
+                    )
+                    return {
+                        "error": extracted_data["error"],
+                        "document_id": doc_id,
+                        "file_path": None
+                    }
+                
+                st.success(f"✅ Extracted data for {quarter}, " + 
+                          f"{extracted_data.get('qoq_comparison', {}).get('quarter', 'N/A')} (QoQ), and " +
+                          f"{extracted_data.get('yoy_comparison', {}).get('quarter', 'N/A')} (YoY)")
+            
+            # Return for user review (matches pattern from _process_buyside_commentary)
+            return {
+                "success": True,
+                "document_id": doc_id,
+                "file_path": None,  # No file saved for automated extraction
+                "extracted_data": {"financial_data": extracted_data},  # Wrap in financial_data key
+                "document_metadata": document_metadata
+            }
+            
+        except Exception as e:
+            st.error(f"Error processing financial data: {str(e)}")
+            return {"error": str(e)}
+    
     def save_extracted_data_to_mongodb(self,
                                       extracted_data: Dict[str, Any],
                                       document_id: str,
@@ -354,22 +445,22 @@ class QuarterlyEarningsManager:
         """
         
         try:
-            # Prepare earnings data document
+            # Get source type
+            source_type = extracted_data.get('source', {}).get('file_type', 'unknown')
+            
+            # Prepare new earnings data document (each upload is separate)
             earnings_data = {
+                "document_id": document_id,  # Link to source document
                 "ticker": ticker.upper(),
                 "company_name": company_name,
                 "quarter": quarter.upper(),
                 "year": year,
                 "quarter_num": quarter_num,
-                "source_documents": [{
-                    "document_id": document_id,
-                    "document_type": extracted_data.get('extraction_metadata', {}).get('source_type', 'unknown'),
-                    "weight": 1.0
-                }],
+                "upload_date": datetime.now(),
                 "last_updated": datetime.now()
             }
             
-            # Merge extracted data (exclude metadata)
+            # Copy all extracted data
             for key, value in extracted_data.items():
                 if key != 'extraction_metadata' and key != 'error':
                     earnings_data[key] = value
@@ -377,8 +468,10 @@ class QuarterlyEarningsManager:
             # Add extraction metadata
             earnings_data['extraction_metadata'] = extracted_data.get('extraction_metadata', {})
             
-            # Save to MongoDB (upsert - merge with existing data for same quarter)
+            # Save to MongoDB (insert new document - each source is separate)
             data_id = self.mongo_helper.save_quarterly_earnings_data(earnings_data)
+            
+            st.info(f"🆕 Created separate data document for {ticker} - {quarter} ({source_type})")
             
             # Update document status
             self.mongo_helper.update_quarterly_document_status(

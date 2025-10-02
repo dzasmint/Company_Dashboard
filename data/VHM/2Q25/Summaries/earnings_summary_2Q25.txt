@@ -1,28 +1,36 @@
-# Results Review — 2Q25
+# Vinhomes (VHM) 2Q25 Results - Buy-Side Short Report
 
-## Earnings (2Q25 vs comps)
-- Adjusted revenue, including BCC and bulk sales, was VND16,500 billion, up 53% QoQ but down 43% YoY.
-- NPATMI reached VND7,550 billion, representing a 181% increase QoQ but a 31% decline YoY.
-- Bulk sales finance income of VND5,400 billion was recognized as compensation from a partner.
-- Handovers at Royal Island and Ocean Park 2&3 were key contributors to NPATMI.
+## Headline Summary
+Vinhomes reported 2Q25 revenue of VND 19.0 trillion, a YoY decline of 33%, with NPAT at VND 8.3 trillion. Despite the revenue drop, presales performance was robust, driven by retail channels. Our stance remains positive, diverging from the sell-side's in-line assessment, as we see potential for Vinhomes to exceed its full-year guidance.
 
-## Presales & Backlog
-- Contracted sales for the quarter were VND32,500 billion, down 8% YoY and 7% QoQ.
-- 1H25 contracted sales totaled VND67,500 billion, up 31% YoY.
-- Unbilled backlog stood at VND138,200 billion, a 16% increase YoY, with Royal Island and Wonder City each contributing 59%.
-- New launches included Golden City and Green City, with a combined 9,510 low-rise units launched in late June 2025.
+## Earnings Review (2Q25 vs 1Q25 and 2Q24)
+- **Revenue:** VND 19.0 trillion, down 33% YoY. Adjusted revenue, including BCC bulk, was VND 25.7 trillion, down 35% YoY.
+- **Gross Profit:** VND 4.5 trillion, with a gross margin not disclosed in financial data.
+- **NPAT:** VND 8.3 trillion, with significant contributions from project handovers at VH Ocean Park 2 & 3 and Royal Island.
+- **One-offs:** Included VND 5.4 trillion compensation income from a partner [Sell-side].
+- **Sell-side View:** Results were labeled as in-line [Sell-side – VCI, BSI], but our analysis suggests potential for exceeding guidance due to strong presales and upcoming bulk sales.
+
+## Presales & Sales Pipeline
+- **Contracted Sales:** VND 32.5 trillion, down 8% YoY. However, 1H25 contracted sales grew 31% YoY to VND 67.5 trillion.
+- **Unbilled Backlog:** VND 138.2 trillion, up 16% YoY, with Wonder City & Royal Island contributing 59%.
+- **New Launches:** Vinhomes Golden City and Green City launched with strong initial bookings.
+- **Buy-Side View:** Presales are robust, particularly from retail channels, and new projects are performing well, supporting our positive outlook.
 
 ## Balance Sheet & Leverage
-- Cash and equivalents increased by VND27 trillion QoQ, driven by deposits from partners.
-- Gross debt was VND90,400 billion, with a net debt to equity ratio of 17.2%.
-- The cash balance saw a significant rise due to joint development project deposits.
+- **Cash and Equivalents:** VND 17.937 trillion.
+- **Gross Debt:** VND 90.351 trillion, with a total debt to total assets ratio of 13.7%.
+- **Leverage:** Interest coverage at 7.1x, with a favorable debt maturity profile.
+- **Buy-Side View:** Improved financial position due to strong presales, with cash increasing significantly.
 
-## One-offs & Corporate
-- A one-off compensation income of VND5,400 billion was recorded in Q2 2025, positively impacting results.
-- No significant changes to the 2025 NPATMI forecast are anticipated by sell-side analysts.
+## Guidance & Outlook
+- **Management Guidance:** Maintained full-year revenue target of VND 180 trillion and NPAT of VND 42 trillion [Management].
+- **Buy-Side View:** We believe Vinhomes is likely to exceed guidance, supported by upcoming bulk sales and strong presales momentum.
 
-## Watch items for 2H25
-- Monitor the launch and presales progress of new projects, including Green Paradise and Lang Van, expected in H2 2025.
-- Track the company's ability to meet its full-year presales guidance of VND150,000-200,000 billion.
-- Assess the impact of any further bulk sales or compensation income on financial performance.
-- Evaluate the sustainability of cash flow improvements from joint development projects.
+## Valuation & Recommendation
+- **RNAV Discount:** Currently at 20%, with potential for an increase due to new project announcements in Nha Trang and Ha Noi.
+- **Buy-Side Stance:** We maintain a positive outlook, with potential for RNAV uplift, supporting an Accumulate recommendation.
+
+## Catalysts & Risks
+- **Catalysts:** Launch of new mega projects and ongoing sales across existing developments [Management].
+- **Risks:** Large debt maturity approaching within 1 year [Sell-side – BSI].
+- **Buy-Side View:** We see the launch of Vinhomes Can Gio in 4Q25 as a significant catalyst, with risks mitigated by strong cash flows and presales.

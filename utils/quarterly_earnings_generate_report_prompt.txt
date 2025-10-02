@@ -4,70 +4,166 @@ You will receive one or more JSON documents extracted from:
 - Management earnings presentations (`source.file_type = "management"`)
 - Sell-side reports (`source.file_type = "sell_side"`)
 - Buy-side analyst commentary (`source.file_type = "buy_side"`)
+- Financial data from internal database (`financial_data`)
 
-Your task is to synthesize them into ONE professional **buy-side short report** on {{COMPANY_NAME}} ({{TICKER}}) {{QUARTER}} results.
+Your task is to synthesize them into ONE professional **PowerPoint-ready markdown presentation** on {{COMPANY_NAME}} ({{TICKER}}) {{QUARTER}} results.
 
 PRIORITY OF SOURCES
 1) **Buy-side commentary** (our own view) = primary narrative.
-2) **Management** = factual reported numbers, project-level data, official guidance/outlook.
-3) **Sell-side** = tone/consensus, expectations, rating/TP, catalysts/risks.
+2) **Financial data** (internal database) = ground truth for reported numbers, use to verify and cross-check all claims.
+3) **Management** = project-level color, official guidance/outlook, strategic commentary.
+4) **Sell-side** = tone/consensus, expectations, rating/TP, catalysts/risks.
 
 When you use information from management or sell-side, **explicitly attribute** it in-line (e.g., *[Management]*, *[Sell-side – {{publisher}}]*).
 
-When your buy-side view differs from sell-side consensus, **highlight the difference** (e.g., “Our view: … differs from sell-side consensus (Vietcap: …)”).
+When your buy-side view differs from sell-side consensus, **highlight the difference** (e.g., "Our view: … differs from sell-side consensus (Vietcap: …)").
 
-REPORT STRUCTURE
-Produce a concise, professional **buy-side style note** with the following sections:
+PRESENTATION STRUCTURE
+Produce a **PowerPoint-ready markdown presentation** with exactly 7 slides:
 
-1. **Headline Summary**
-   - 1–2 sentences summarizing the quarter, our stance, and key deviations from sell-side consensus.
+## Slide 1: Executive Summary
+### {{COMPANY_NAME}} ({{TICKER}}) - {{QUARTER}} Results Overview
 
-2. **Earnings Review ({{QUARTER}} vs {{COMPARISON_QUARTERS}})**
-   - Revenue, gross profit/margin, NPAT/NPATMI, EBITDA if available.
-   - Drivers by project or business line.
-   - One-offs clearly flagged.
-   - Attribute source: [Management] or [Sell-side].
-   - Compare with our own bullet points if we commented, and mention if sell-side labeled beat/in-line/miss.
+**Key Highlights:**
+- Brief summary of quarterly performance using key metrics from `financial_data`
+- Revenue and NPATMI with YoY/QoQ changes
 
-3. **Presales & Sales Pipeline**
-   - Presales numbers, YoY/QoQ growth, unbilled backlog, launches, project mix.
-   - Highlight what management reported vs. what we (buy-side) emphasized.
-   - Attribute where data came from [Management] / [Sell-side].
-   - Mention sell-side reaction if they changed forecast because of presales trend.
+**Buy-Side Commentary:**
+- Our key takeaways and stance
+- Main points from `buy_side_commentary`
 
-4. **Balance Sheet & Leverage**
-   - Net debt, gearing, interest coverage, cost of debt, cash position, major changes.
-   - Attribute management’s reported figures and any sell-side concerns.
-   - Add our own interpretation and risk view.
+**Management Commentary:**
+- Key management messages *[Management]*
+- Strategic updates and guidance
 
-5. **Guidance & Outlook**
-   - Management’s guidance (if any).
-   - Our stance: do we think targets are realistic? Where we diverge from sell-side consensus.
-   - Mention if sell-side raised/lowered guidance/forecast.
+**Sell-Side Commentary:**
+- Consensus view and rating changes *[Sell-side]*
+- Beat/miss assessment vs expectations
 
-6. **Valuation & Recommendation**
-   - Pull our own RNAV / TP / upside from `buy_side_commentary.valuation_analysis`.
-   - Compare with sell-side TP/rating.
-   - Explicitly state discount/premium vs RNAV if we commented.
-   - Conclude our buy-side stance (e.g., Overweight/Accumulate/Neutral/Reduce).
+## Slide 2: Income Statement Analysis
+### Quarterly Financial Performance
 
-7. **Catalysts & Risks**
-   - Our identified catalysts/risks.
-   - Add management and sell-side ones (mark sources).
-   - Highlight where we differ from consensus.
+| Field | Current Quarter | Previous Quarter | Last Year Quarter | QoQ Growth | YoY Growth | Comments |
+|-------|----------------|------------------|-------------------|------------|------------|----------|
+| Revenue | [from financial_data.current_quarter.income_statement.revenue] | [from financial_data.qoq_comparison.income_statement.revenue] | [from financial_data.yoy_comparison.income_statement.revenue] | [from financial_data.calculated_changes.qoq.revenue_pct] | [from financial_data.calculated_changes.yoy.revenue_pct] | [Key drivers/commentary] |
+| Gross Profit | [current] | [previous] | [last year] | [QoQ %] | [YoY %] | [Commentary] |
+| EBITDA | [current] | [previous] | [last year] | [QoQ %] | [YoY %] | [Commentary] |
+| NPAT | [current] | [previous] | [last year] | [QoQ %] | [YoY %] | [Commentary] |
+| NPATMI | [current] | [previous] | [last year] | [QoQ %] | [YoY %] | [Commentary] |
+
+*All figures in {{TARGET_CCY}} {{TARGET_UNITS}}*
+
+## Slide 3: Earnings Review
+### {{QUARTER}} Performance Commentary
+
+**Key Performance Drivers:**
+- Analysis of revenue and profitability trends
+- Business line performance from [Management] commentary
+- One-off items and adjustments
+
+**vs. Expectations:**
+- Beat/miss analysis vs sell-side consensus
+- Our buy-side assessment vs forecasts
+
+**Operational Highlights:**
+- Key operational metrics and trends
+- Management commentary on performance drivers
+
+## Slide 4: Presales & Sales Pipeline
+### Sales Performance & Forward Indicators
+
+**Presales Performance:**
+- Current quarter presales with YoY/QoQ growth
+- Unbilled backlog and contract value
+
+**Pipeline Analysis:**
+- Project launches and pipeline development
+- Geographic and product mix trends
+
+**Management Commentary:**
+- Forward sales guidance *[Management]*
+- Market conditions and pricing trends
+
+**Our Assessment:**
+- Buy-side view on sales sustainability
+- Pipeline quality and conversion expectations
+
+## Slide 5: Balance Sheet & Leverage Analysis
+### Debt and Capital Structure
+
+**Net Debt to Equity Trend:**
+| Quarter | Net Debt | Total Equity | Net Debt/Equity Ratio | QoQ Change | YoY Change |
+|---------|----------|--------------|----------------------|------------|------------|
+| Current | [ST_debt + LT_debt - cash - cash_equivalent] | [from balance_sheet.equity] | [calculated ratio] | [QoQ %] | [YoY %] |
+| Previous | [previous quarter data] | [previous equity] | [previous ratio] | - | - |
+| Last Year | [last year data] | [last year equity] | [last year ratio] | - | - |
+
+**Total Debt Composition:**
+| Debt Type | Current Quarter | Previous Quarter | Last Year Quarter | QoQ Change | YoY Change |
+|-----------|----------------|------------------|-------------------|------------|------------|
+| Short-term Debt | [ST_debt] | [previous ST_debt] | [last year ST_debt] | [QoQ %] | [YoY %] |
+| Long-term Debt | [LT_debt] | [previous LT_debt] | [last year LT_debt] | [QoQ %] | [YoY %] |
+| **Total Debt** | [ST_debt + LT_debt] | [previous total] | [last year total] | [QoQ %] | [YoY %] |
+
+## Slide 6: Guidance & Outlook
+### Management Guidance and Market Outlook
+
+**Management Guidance:**
+- Official FY guidance and targets *[Management]*
+- Key assumptions and market outlook
+
+**Sell-Side Consensus:**
+- Forecast changes and rating updates *[Sell-side]*
+- Consensus estimates vs guidance
+
+**Our View:**
+- Assessment of guidance achievability
+- Key risks and opportunities
+- Where we differ from consensus
+
+## Slide 7: Valuation Analysis
+### Investment Recommendation and Target Price
+
+**Buy-Side Valuation:**
+- Our RNAV/DCF valuation and target price
+- Key valuation assumptions and methodology
+- Discount/premium to RNAV assessment
+
+**Sell-Side Comparison:**
+- Consensus target price and rating
+- Range of sell-side estimates
+
+**Investment Recommendation:**
+- Our rating: [Overweight/Neutral/Underweight]
+- Upside/downside to target price
+- Key investment thesis points
+
+**Catalysts & Risks:**
+- Positive catalysts and upside drivers
+- Key risks and downside scenarios
 
 STYLE & RULES
-- **Tone:** concise, professional buy-side language.
-- **Attribution:** whenever info is not ours, label [Management] or [Sell-side – {{publisher}}].
-- **Evidence:** if available, weave in key quotes from management or sell-side when impactful.
-- **Numbers:** keep in {{TARGET_CCY}} {{TARGET_UNITS}}; include YoY/QoQ % only if present.
-- **No hallucination:** if data is missing, state “not disclosed”.
-- **Bias:** our buy-side commentary drives conclusions; management and sell-side are supporting context.
+- **Format:** PowerPoint-ready markdown with clear slide headers (## Slide X:) and structured content
+- **Tone:** concise, professional buy-side language suitable for presentation
+- **Financial data priority:** ALWAYS use `financial_data` for reported numbers when available. This is the ground truth from internal database (FA_processed.parquet). If management or sell-side states different numbers, flag the discrepancy.
+- **Attribution:** whenever info is not ours or from financial_data, label [Management] or [Sell-side – {{publisher}}].
+- **Tables:** Use proper markdown table formatting for financial data presentation
+- **Numbers:** keep in {{TARGET_CCY}} {{TARGET_UNITS}}; include YoY/QoQ % only if present (financial_data has pre-calculated changes).
+- **No hallucination:** if data is missing, state "not disclosed" or "not available in financial_data".
+- **Bias:** our buy-side commentary drives conclusions; financial_data provides objective numbers; management and sell-side are supporting context.
 - **Comparison:** always note where our view diverges from sell-side consensus (esp. on results beat/miss, guidance, valuation).
+- **Verification:** cross-check management claims and sell-side estimates against financial_data actuals.
 
 INPUT
-- JSON array: each element is one extracted doc with fields from the unified schema (management_commentary, sell_side_commentary, buy_side_commentary, etc.)
+- JSON array: each element is one extracted doc with fields from the unified schema (management_commentary, sell_side_commentary, buy_side_commentary, financial_data, etc.)
+- `financial_data` (when present) contains:
+  - `current_quarter`: complete Income Statement, Balance Sheet, Cash Flow, Other Metrics
+  - `qoq_comparison`: same metrics for previous quarter
+  - `yoy_comparison`: same metrics for same quarter last year
+  - `calculated_changes.qoq` and `calculated_changes.yoy`: pre-calculated percentage changes for key metrics
 
 OUTPUT
-- A single well-structured **Markdown** report following the above section headers and rules.
+- A **PowerPoint-ready markdown presentation** with exactly 7 slides following the above structure
+- Each slide should be clearly marked with ## Slide X: headers
+- Professional formatting suitable for direct conversion to PowerPoint
 - No raw JSON. No extra explanations about your process.
