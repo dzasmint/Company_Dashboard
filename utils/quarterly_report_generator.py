@@ -136,7 +136,7 @@ Return ONLY the final Markdown report.
                     {"role": "user", "content": full_prompt}
                 ],
                 temperature=1.0,
-                max_tokens=4000
+                max_completion_tokens=4000
             )
             
             full_report = response.choices[0].message.content
@@ -395,7 +395,7 @@ Be specific with numbers and highlight significant changes.
                     {"role": "user", "content": prompt}
                 ],
                 temperature=1.0,
-                max_tokens=3000
+                max_completion_tokens=3000
             )
             
             return response.choices[0].message.content
