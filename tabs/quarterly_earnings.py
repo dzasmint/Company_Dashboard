@@ -85,12 +85,14 @@ class QuarterlyEarningsTab:
         st.header("Upload Quarterly Earnings Document")
         
         # Get company from sidebar selection
-        if 'selected_ticker' not in st.session_state or not st.session_state.selected_ticker:
+        # Check both 'selected_company' (used by sidebar) and 'selected_ticker' (legacy)
+        ticker_only = st.session_state.get('selected_company') or st.session_state.get('selected_ticker')
+        
+        if not ticker_only:
             st.warning("⚠️ Please select a company from the sidebar first.")
             st.info("👈 Use the sidebar to select a company before uploading quarterly earnings documents.")
             return
         
-        ticker_only = st.session_state.selected_ticker
         company_name = st.session_state.get('selected_company_name', ticker_only)
         
         # Display selected company
@@ -317,22 +319,24 @@ Add your bullet points, valuation analysis, and key observations here..."""
         """Render the document management tab"""
         st.header("Document Management")
         
-        # Company and quarter selector
-        col1, col2, col3 = st.columns([2, 1, 1])
+        # Get company from sidebar selection
+        # Check both 'selected_company' (used by sidebar) and 'selected_ticker' (legacy)
+        selected_ticker = st.session_state.get('selected_company') or st.session_state.get('selected_ticker')
+        
+        if not selected_ticker:
+            st.warning("⚠️ Please select a company from the sidebar first.")
+            st.info("👈 Use the sidebar to select a company before viewing documents.")
+            return
+        
+        company_name = st.session_state.get('selected_company_name', selected_ticker)
+        
+        # Display selected company
+        st.info(f"📊 **Selected Company:** {company_name} ({selected_ticker})")
+        
+        # Quarter selector
+        col1, col2 = st.columns([1, 1])
         
         with col1:
-            companies = load_real_estate_companies_from_mongo_db(include_names=True)
-            if companies:
-                selected_company = st.selectbox(
-                    "Company",
-                    options=companies,
-                    key="qe_doc_mgmt_company"
-                )
-                selected_ticker = selected_company.split(" - ")[0] if " - " in selected_company else selected_company
-            else:
-                selected_ticker = st.text_input("Company Ticker", key="qe_doc_mgmt_ticker")
-        
-        with col2:
             # Get available quarters for this company
             available_quarters = self.manager.get_company_quarters(selected_ticker)
             if available_quarters:
@@ -345,7 +349,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
                 st.info("No quarters available")
                 selected_quarter = None
         
-        with col3:
+        with col2:
             if st.button("🔄 Refresh", use_container_width=True, key="qe_doc_mgmt_refresh"):
                 st.rerun()
         
@@ -486,24 +490,23 @@ Add your bullet points, valuation analysis, and key observations here..."""
         """Render the summary report generation tab"""
         st.header("Generate Quarterly Summary Report")
         
-        col1, col2 = st.columns([2, 1])
+        # Get company from sidebar selection
+        # Check both 'selected_company' (used by sidebar) and 'selected_ticker' (legacy)
+        summary_ticker = st.session_state.get('selected_company') or st.session_state.get('selected_ticker')
+        
+        if not summary_ticker:
+            st.warning("⚠️ Please select a company from the sidebar first.")
+            st.info("👈 Use the sidebar to select a company before generating reports.")
+            return
+        
+        summary_company_name = st.session_state.get('selected_company_name', summary_ticker)
+        
+        # Display selected company
+        st.info(f"📊 **Selected Company:** {summary_company_name} ({summary_ticker})")
+        
+        col1, col2 = st.columns([1, 1])
         
         with col1:
-            # Company selection
-            companies = load_real_estate_companies_from_mongo_db(include_names=True)
-            if companies:
-                summary_company = st.selectbox(
-                    "Select Company",
-                    options=companies,
-                    key="qe_summary_company"
-                )
-                summary_ticker = summary_company.split(" - ")[0] if " - " in summary_company else summary_company
-                summary_company_name = summary_company.split(" - ")[1] if " - " in summary_company else summary_company
-            else:
-                summary_ticker = st.text_input("Company Ticker", key="qe_summary_ticker")
-                summary_company_name = st.text_input("Company Name", key="qe_summary_company_name")
-        
-        with col2:
             # Quarter selection
             available_quarters = self.manager.get_company_quarters(summary_ticker)
             if available_quarters:
