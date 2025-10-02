@@ -84,31 +84,21 @@ class QuarterlyEarningsTab:
         """Render the upload documents tab"""
         st.header("Upload Quarterly Earnings Document")
         
+        # Get company from sidebar selection
+        if 'selected_ticker' not in st.session_state or not st.session_state.selected_ticker:
+            st.warning("⚠️ Please select a company from the sidebar first.")
+            st.info("👈 Use the sidebar to select a company before uploading quarterly earnings documents.")
+            return
+        
+        ticker_only = st.session_state.selected_ticker
+        company_name = st.session_state.get('selected_company_name', ticker_only)
+        
+        # Display selected company
+        st.info(f"📊 **Selected Company:** {company_name} ({ticker_only})")
+        
         col1, col2 = st.columns(2)
         
         with col1:
-            # Company selection
-            companies = load_real_estate_companies_from_mongo_db(include_names=True)
-            if companies:
-                company_ticker = st.selectbox(
-                    "Select Company",
-                    options=companies,
-                    help="Choose the company for this earnings document",
-                    key="qe_upload_company_selector"
-                )
-                
-                # Extract ticker from "TICKER - Company Name" format
-                if company_ticker and " - " in company_ticker:
-                    ticker_only = company_ticker.split(" - ")[0]
-                    company_name = company_ticker.split(" - ")[1]
-                else:
-                    ticker_only = company_ticker
-                    company_name = company_ticker
-            else:
-                st.warning("No companies found in database. Please add companies first.")
-                ticker_only = st.text_input("Company Ticker", key="qe_upload_ticker_input")
-                company_name = st.text_input("Company Name", key="qe_upload_company_input")
-            
             # Quarter selection
             current_year = datetime.now().year
             years = list(range(current_year - 2, current_year + 2))
