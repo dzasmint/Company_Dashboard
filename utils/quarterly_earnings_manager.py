@@ -391,7 +391,10 @@ class QuarterlyEarningsManager:
             with st.spinner("📊 Extracting financial data from database..."):
                 self.mongo_helper.update_quarterly_document_status(doc_id, "processing")
                 
-                extracted_data = self.financial_extractor.extract_quarterly_data(ticker, quarter)
+                # Extract data in unified schema format
+                extracted_data = self.financial_extractor.extract_quarterly_data(
+                    ticker, quarter, company_name
+                )
                 
                 if "error" in extracted_data:
                     self.mongo_helper.update_quarterly_document_status(
@@ -403,16 +406,18 @@ class QuarterlyEarningsManager:
                         "file_path": None
                     }
                 
-                st.success(f"✅ Extracted data for {quarter}, " + 
-                          f"{extracted_data.get('qoq_comparison', {}).get('quarter', 'N/A')} (QoQ), and " +
-                          f"{extracted_data.get('yoy_comparison', {}).get('quarter', 'N/A')} (YoY)")
+                # Get comparison quarters from the financial_data section
+                qoq_q = extracted_data.get('financial_data', {}).get('qoq_comparison', {}).get('quarter', 'N/A')
+                yoy_q = extracted_data.get('financial_data', {}).get('yoy_comparison', {}).get('quarter', 'N/A')
+                
+                st.success(f"✅ Extracted data for {quarter}, {qoq_q} (QoQ), and {yoy_q} (YoY)")
             
-            # Return for user review (matches pattern from _process_buyside_commentary)
+            # Return for user review (extracted_data is now in unified schema format)
             return {
                 "success": True,
                 "document_id": doc_id,
                 "file_path": None,  # No file saved for automated extraction
-                "extracted_data": {"financial_data": extracted_data},  # Wrap in financial_data key
+                "extracted_data": extracted_data,  # Already in unified schema format
                 "document_metadata": document_metadata
             }
             

@@ -337,16 +337,17 @@ class FinancialDataExtractor:
         
         return result
     
-    def extract_quarterly_data(self, ticker: str, quarter: str) -> Dict[str, Any]:
+    def extract_quarterly_data(self, ticker: str, quarter: str, company_name: str = None) -> Dict[str, Any]:
         """
-        Extract complete financial data for a quarter with comparisons
+        Extract complete financial data for a quarter in unified schema format
         
         Args:
             ticker: Stock ticker (e.g., "VHM")
             quarter: Quarter string (e.g., "2Q25")
+            company_name: Company name (optional)
             
         Returns:
-            Structured financial data matching the JSON schema
+            Structured financial data matching the unified quarterly_analysis.json schema
         """
         # Validate first
         validation = self.validate_data_availability(ticker, quarter)
@@ -376,23 +377,68 @@ class FinancialDataExtractor:
         # Calculate percentage changes
         changes = self._calculate_changes(current_data, qoq_data, yoy_data)
         
-        # Structure result
+        # Parse quarter for year and quarter_num
+        q_num = int(quarter[0])
+        year = 2000 + int(quarter[2:])
+        
+        # Structure result following unified quarterly_analysis.json schema
         result = {
-            "data_source": "internal_database",
-            "extraction_date": datetime.now().isoformat(),
-            "current_quarter": {
-                "quarter": quarter,
-                **current_data
+            # Top-level metadata (matching other document types)
+            "company": company_name,
+            "ticker": ticker.upper(),
+            "period": {
+                "quarter": quarter.upper(),
+                "comparison_quarters": [qoq_quarter.upper(), yoy_quarter.upper()],
+                "fiscal_year_half": "1H" if q_num <= 2 else "2H",
+                "as_of_date": None
             },
-            "qoq_comparison": {
-                "quarter": qoq_quarter,
-                **qoq_data
+            "source": {
+                "file_name": f"financial_data_{ticker}_{quarter}.json",
+                "file_type": "financial_data",
+                "publisher": "Internal Database",
+                "publish_date": datetime.now().isoformat(),
+                "pages_covered": None,
+                "version_note": "Automated extraction from FA_processed.parquet"
             },
-            "yoy_comparison": {
-                "quarter": yoy_quarter,
-                **yoy_data
+            "currency": "VND",
+            "units": "bn",
+            "accounting_basis": "VAS",
+            
+            # Financial data section (nested under financial_data key to match schema)
+            "financial_data": {
+                "data_source": "internal_database",
+                "extraction_date": datetime.now().isoformat(),
+                "current_quarter": {
+                    "quarter": quarter,
+                    **current_data
+                },
+                "qoq_comparison": {
+                    "quarter": qoq_quarter,
+                    **qoq_data
+                },
+                "yoy_comparison": {
+                    "quarter": yoy_quarter,
+                    **yoy_data
+                },
+                "calculated_changes": changes
             },
-            "calculated_changes": changes
+            
+            # Empty sections (to match schema structure)
+            "headline": {},
+            "recognition_drivers": {},
+            "presales": {},
+            "balance_sheet": {},
+            "one_offs_and_events": [],
+            "outlook_and_guidance": {},
+            "management_commentary": {},
+            "sell_side_commentary": {},
+            "buy_side_commentary": {},
+            "methodology": {
+                "parsing_notes": "Automated extraction from FA_processed.parquet",
+                "assumptions": "All values converted to VND billions. Percentages multiplied by 100.",
+                "omissions": None,
+                "confidence_pct": 100
+            }
         }
         
         return result

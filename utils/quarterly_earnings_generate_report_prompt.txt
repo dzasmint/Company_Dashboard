@@ -155,12 +155,19 @@ STYLE & RULES
 - **Verification:** cross-check management claims and sell-side estimates against financial_data actuals.
 
 INPUT
-- JSON array: each element is one extracted doc with fields from the unified schema (management_commentary, sell_side_commentary, buy_side_commentary, financial_data, etc.)
-- `financial_data` (when present) contains:
+- JSON array: each element is one document following the unified `quarterly_analysis.json` schema
+- Each document has top-level fields: company, ticker, period, source, currency, units, accounting_basis
+- Document types identified by `source.file_type`:
+  - "management" - Earnings presentations with `management_commentary` populated
+  - "sell_side" - Analyst reports with `sell_side_commentary` populated
+  - "buy_side" - Buy-side notes with `buy_side_commentary` populated
+  - "financial_data" - Internal database with `financial_data` populated
+- `financial_data` section (when source.file_type = "financial_data") contains:
   - `current_quarter`: complete Income Statement, Balance Sheet, Cash Flow, Other Metrics
   - `qoq_comparison`: same metrics for previous quarter
   - `yoy_comparison`: same metrics for same quarter last year
   - `calculated_changes.qoq` and `calculated_changes.yoy`: pre-calculated percentage changes for key metrics
+- All documents share the same schema structure for consistency
 
 OUTPUT
 - A **PowerPoint-ready markdown presentation** with exactly 7 slides following the above structure
