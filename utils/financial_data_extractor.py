@@ -45,8 +45,9 @@ class FinancialDataExtractor:
         
         # Balance Sheet
         'Total_Asset': 'total_assets',
-        'Cash': 'cash',
-        'Cash_Equivalent': 'cash_equivalent',
+        # Cash_Equivalent is the primary field (includes cash + cash equivalents)
+        # We use Cash_Equivalent as it's the consolidated figure
+        'Cash_Equivalent': 'cash_and_equivalents',
         'Short_Investment': 'short_investment',
         'Account_Receivable': 'account_receivable',
         'Inventory': 'inventory',
@@ -83,7 +84,7 @@ class FinancialDataExtractor:
     ]
     
     BALANCE_SHEET_FIELDS = [
-        'total_assets', 'cash', 'cash_equivalent', 'short_investment',
+        'total_assets', 'cash_and_equivalents', 'short_investment',
         'account_receivable', 'inventory', 'tangible_fixed_asset',
         'total_liabilities', 'account_payable', 'advance_from_customers',
         'st_debt', 'lt_debt', 'total_equity', 'retain_earning', 'minority_interest'
@@ -320,7 +321,7 @@ class FinancialDataExtractor:
             ('income_statement', 'npat', 'npat_pct'),
             ('income_statement', 'npatmi', 'npatmi_pct'),
             ('balance_sheet', 'total_assets', 'total_assets_pct'),
-            ('balance_sheet', 'cash', 'cash_pct'),
+            ('balance_sheet', 'cash_and_equivalents', 'cash_and_equivalents_pct'),
             ('balance_sheet', 'inventory', 'inventory_pct'),
             ('balance_sheet', 'st_debt', 'st_debt_pct'),
             ('balance_sheet', 'lt_debt', 'lt_debt_pct'),
