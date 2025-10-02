@@ -143,7 +143,7 @@ Document text:
 
         try:
             response = openai.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-5",
                 messages=[
                     {"role": "system", "content": "You are a meticulous financial data extractor specializing in Vietnamese real estate earnings. Zero hallucination tolerance. Extract only what is explicitly present in the document."},
                     {"role": "user", "content": full_prompt}
@@ -161,7 +161,7 @@ Document text:
             result['methodology']['extraction_metadata'] = {
                 'extraction_tool': 'quarterly_earnings_extractor',
                 'extraction_date': datetime.now().isoformat(),
-                'model': 'gpt-4o',
+                'model': 'gpt-5',
                 'document_type': 'earnings_presentation'
             }
             
@@ -260,7 +260,7 @@ Document text:
 
         try:
             response = openai.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-5",
                 messages=[
                     {"role": "system", "content": "You are a meticulous financial data extractor specializing in Vietnamese sell-side research reports. Zero hallucination tolerance. Only extract what is explicitly present. Distinguish actuals from estimates."},
                     {"role": "user", "content": full_prompt}
@@ -278,7 +278,7 @@ Document text:
             result['methodology']['extraction_metadata'] = {
                 'extraction_tool': 'quarterly_earnings_extractor',
                 'extraction_date': datetime.now().isoformat(),
-                'model': 'gpt-4o',
+                'model': 'gpt-5',
                 'document_type': 'sellside_report'
             }
             
@@ -357,7 +357,7 @@ User commentary:
 
         try:
             response = openai.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-5",
                 messages=[
                     {"role": "system", "content": "You are an expert at analyzing qualitative financial commentary and structuring insights. You preserve the original meaning while organizing information systematically."},
                     {"role": "user", "content": prompt}
@@ -375,7 +375,7 @@ User commentary:
             result['methodology']['extraction_metadata'] = {
                 'extraction_tool': 'quarterly_earnings_extractor',
                 'extraction_date': datetime.now().isoformat(),
-                'model': 'gpt-4o',
+                'model': 'gpt-5',
                 'document_type': 'user_commentary'
             }
             

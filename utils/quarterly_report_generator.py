@@ -130,7 +130,7 @@ Return ONLY the final Markdown report.
 
         try:
             response = openai.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-5",
                 messages=[
                     {"role": "system", "content": "You are a senior buy-side equity analyst specializing in Vietnamese real estate companies. Write professional investment reports that prioritize internal buy-side analysis while incorporating management and sell-side perspectives with proper attribution."},
                     {"role": "user", "content": full_prompt}
@@ -148,7 +148,7 @@ Return ONLY the final Markdown report.
                 "summary_text": full_report,
                 "summary_sections": sections,
                 "generated_date": datetime.now().isoformat(),
-                "generation_model": "gpt-4o",
+                "generation_model": "gpt-5",
                 "source_document_count": len(earnings_data),
                 "company_name": company_name,
                 "ticker": ticker,
@@ -389,7 +389,7 @@ Be specific with numbers and highlight significant changes.
 
         try:
             response = openai.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-5",
                 messages=[
                     {"role": "system", "content": "You are a senior analyst analyzing quarterly trends."},
                     {"role": "user", "content": prompt}

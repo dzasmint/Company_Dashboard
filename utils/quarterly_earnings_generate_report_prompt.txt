@@ -24,21 +24,12 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 ## Slide 1: Executive Summary
 ### {{COMPANY_NAME}} ({{TICKER}}) - {{QUARTER}} Results Overview
 
-**Key Highlights:**
-- Brief summary of quarterly performance using key metrics from `financial_data`
-- Revenue and NPATMI with YoY/QoQ changes
-
-**Buy-Side Commentary:**
-- Our key takeaways and stance
-- Main points from `buy_side_commentary`
-
-**Management Commentary:**
-- Key management messages *[Management]*
-- Strategic updates and guidance
-
-**Sell-Side Commentary:**
-- Consensus view and rating changes *[Sell-side]*
-- Beat/miss assessment vs expectations
+**Fluid Summary (integrated):**
+- 1–2 sentences summarizing the quarter using key numbers from `financial_data` (revenue, NPAT/NPATMI with YoY/QoQ).
+- 5–8 concise bullets synthesizing ALL sources: result vs expectations, key earnings drivers, presales/pipeline, balance sheet/leverage, guidance/outlook, valuation/catalysts.
+- Note where our buy-side view differs from consensus in-line.
+- Keep narrative unified; do not create separate buy-side/management/sell-side sections.
+- Use inline attribution only when necessary (e.g., impactful quotes) as [Management] or [Sell-side – {{publisher}}].
 
 ## Slide 2: Income Statement Analysis
 ### Quarterly Financial Performance
