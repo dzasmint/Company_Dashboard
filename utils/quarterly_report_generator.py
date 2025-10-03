@@ -220,6 +220,7 @@ Return ONLY the final Markdown report.
             "sell_side_commentary": [],  # Collect all sell-side commentary
             "buy_side_commentary": [],   # Collect all buy-side commentary
             "financial_data": None,      # Financial data from internal database
+            "supplementary_data": None,  # Supplementary data from user uploads
             "methodology_notes": []
         }
         
@@ -293,6 +294,12 @@ Return ONLY the final Markdown report.
                 # Financial data takes precedence as ground truth
                 aggregated["financial_data"] = data["financial_data"].copy()
                 aggregated["financial_data"]["_source"] = source_info
+            
+            # Collect supplementary data from user uploads
+            if "supplementary_data" in data and data["supplementary_data"] and source_info["file_type"] == "supplementary_data":
+                # Supplementary data from user upload
+                aggregated["supplementary_data"] = data["supplementary_data"].copy()
+                aggregated["supplementary_data"]["_source"] = source_info
             
             # Merge outlook (combine guidance from all sources)
             if "outlook_and_guidance" in data and data["outlook_and_guidance"]:
