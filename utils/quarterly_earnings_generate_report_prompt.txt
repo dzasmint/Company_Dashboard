@@ -32,15 +32,79 @@ Compare our stance vs sell-side consensus clearly.
 - Be direct but professional; no marketing hype.
 
 #### Slide 2 — Income Statement (Table)
-- Fill from `financial_data` (current vs prev Q vs LY, QoQ/YoY %).
-- Add 1–2 concise sentences on drivers/quality (cite mgmt/buy-side/sell-side when relevant).
+### Quarterly Financial Performance
+
+**CRITICAL:** Extract ALL data from `financial_data` section. Do NOT leave placeholders.
+
+| Field | Current Quarter | Previous Quarter | Last Year Quarter | QoQ Growth | YoY Growth | Comments |
+|-------|----------------|------------------|-------------------|------------|------------|----------|
+| Revenue | `financial_data.current_quarter.income_statement.net_revenue` | `financial_data.qoq_comparison.income_statement.net_revenue` | `financial_data.yoy_comparison.income_statement.net_revenue` | `financial_data.calculated_changes.qoq.net_revenue_pct%` | `financial_data.calculated_changes.yoy.net_revenue_pct%` | Key drivers from management/buy-side |
+| Gross Profit | `financial_data.current_quarter.income_statement.gross_profit` | `financial_data.qoq_comparison.income_statement.gross_profit` | `financial_data.yoy_comparison.income_statement.gross_profit` | `financial_data.calculated_changes.qoq.gross_profit_pct%` | `financial_data.calculated_changes.yoy.gross_profit_pct%` | Margin trends |
+| EBITDA | `financial_data.current_quarter.income_statement.ebitda` | `financial_data.qoq_comparison.income_statement.ebitda` | `financial_data.yoy_comparison.income_statement.ebitda` | `financial_data.calculated_changes.qoq.ebitda_pct%` | `financial_data.calculated_changes.yoy.ebitda_pct%` | Operational efficiency |
+| NPAT | `financial_data.current_quarter.income_statement.npat` | `financial_data.qoq_comparison.income_statement.npat` | `financial_data.yoy_comparison.income_statement.npat` | `financial_data.calculated_changes.qoq.npat_pct%` | `financial_data.calculated_changes.yoy.npat_pct%` | Bottom line performance |
+| NPATMI | `financial_data.current_quarter.income_statement.npatmi` | `financial_data.qoq_comparison.income_statement.npatmi` | `financial_data.yoy_comparison.income_statement.npatmi` | `financial_data.calculated_changes.qoq.npatmi_pct%` | `financial_data.calculated_changes.yoy.npatmi_pct%` | Attributable to shareholders |
+
+**INSTRUCTIONS:**
+- Replace backtick paths with ACTUAL NUMBERS from the `financial_data` JSON
+- Format numbers with commas (e.g., 15,234)
+- Show % changes with + or - sign (e.g., +8.5%, -3.2%)
+- If a value is null, show "N/A"
+- Comments column: add brief qualitative insight from management/buy-side commentary
 
 #### Slide 3 — Earnings Review
 - 3–5 bullets: key drivers, one-offs, segment/project color.
 - Note beat/miss vs sell-side expectations and our angle.
 
-#### Slide 4 — Presales & Backlog (Data)
-- Show presales/backlog tables using supplementary or management data.
+## Slide 4: Presales & Unbilled Booking Tables
+
+**I. Presales table**
+**Quarterly Presales Trend:**
+Source: `supplementary_data.time_series` (if available), otherwise *[Management]* commentary
+
+| Quarter | Total Presales | Bulk Presales | Retail Presales | QoQ Change | YoY Change |
+|---------|----------------|---------------|-----------------|------------|------------|
+| Q-4 | {{value}} {{unit}} | {{value}} {{unit}} | {{value}} {{unit}} | - | - |
+| Q-3 | {{value}} {{unit}} | {{value}} {{unit}} | {{value}} {{unit}} | {{%}} | - |
+| Q-2 | {{value}} {{unit}} | {{value}} {{unit}} | {{value}} {{unit}} | {{%}} | - |
+| Q-1 | {{value}} {{unit}} | {{value}} {{unit}} | {{value}} {{unit}} | {{%}} | - |
+| **Current ({{QUARTER}})** | **{{value}} {{unit}}** | **{{value}} {{unit}}** | **{{value}} {{unit}}** | **{{%}}** | **{{%}}** |
+
+**IF** supplementary data not available: Show data from *[Management]* presentation or *[Sell-side]* estimates in table format.
+
+**II. Presales mix breakdown (if available)**
+
+**Current Quarter Mix:**
+- Bulk presales: {{X}} {{unit}} ({{%}} of total)
+- Retail presales: {{Y}} {{unit}} ({{%}} of total)
+- Mix ratio: {{Bulk %}} / {{Retail %}}
+
+**Mix Evolution (last 4 quarters):**
+Show how the mix has shifted from `supplementary_data.time_series` or *[Management]*
+
+**III. Unbilled Booking**
+
+**Backlog Trend:**
+| Quarter | Unbilled Booking | QoQ Change | As % of Quarterly Revenue |
+|---------|-----------------|------------|---------------------------|
+| Q-4 | {{value}} {{unit}} | - | {{%}} |
+| Q-3 | {{value}} {{unit}} | {{%}} | {{%}} |
+| Q-2 | {{value}} {{unit}} | {{%}} | {{%}} |
+| Q-1 | {{value}} {{unit}} | {{%}} | {{%}} |
+| **Current** | **{{value}} {{unit}}** | **{{%}}** | **{{%}}** |
+
+*Source: `supplementary_data` or *[Management]* commentary*
+
+**IV. Project contribution to this quarter presales (if available)**
+
+From `management_commentary.presales`
+
+| Project | Presales Contribution | % of Total | Region | Product Type |
+|---------|----------------------|------------|--------|--------------|
+| {{Project 1}} | {{value}} {{unit}} | {{%}} | {{region}} | {{type}} |
+| {{Project 2}} | {{value}} {{unit}} | {{%}} | {{region}} | {{type}} |
+| {{Project 3}} | {{value}} {{unit}} | {{%}} | {{region}} | {{type}} |
+| Others | {{value}} {{unit}} | {{%}} | - | - |
+
 - Keep factual but include 1–2 key notes on trend or mix.
 
 #### Slide 5 — Presales Analysis
