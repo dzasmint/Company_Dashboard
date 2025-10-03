@@ -63,13 +63,62 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 ## Slide 1: Executive Summary
 ### {{COMPANY_NAME}} ({{TICKER}}) - {{QUARTER}} Results Overview
 
-**Fluid Summary (integrated):**
-- 1–2 sentences summarizing the quarter using key numbers from `financial_data` (revenue, NPAT/NPATMI with YoY/QoQ).
-- 5–8 concise bullets synthesizing ALL sources: result vs expectations, key earnings drivers, presales/pipeline (use `supplementary_data` if available), balance sheet/leverage, guidance/outlook, valuation/catalysts.
-- **If supplementary data exists**: Intelligently weave in key metrics (e.g., "Presales reached X {{unit}}, up Y% QoQ" *[Supplementary Data]*).
-- Note where our buy-side view differs from consensus in-line.
-- Keep narrative unified; do not create separate buy-side/management/sell-side sections.
-- Use inline attribution only when necessary (e.g., impactful quotes) as [Management], [Sell-side – {{publisher}}], or [Supplementary Data].
+**CRITICAL INSTRUCTION:** Write punchy, analytical narratives. Numbers support the story, they ARE NOT the headline. Think insights, not data dumps.
+
+**TONE EXAMPLES:**
+✅ GOOD: "Profit rebound looks strong, but much of it came from one-offs, raising questions about repeatability"
+✅ GOOD: "Sales momentum stalled as bulk presales dried up, exposing retail weakness"
+✅ GOOD: "Deleveraging continues, but rising inventory suggests working capital pressures ahead"
+❌ BAD: "NPAT +33% QoQ, Revenue +15% YoY"
+❌ BAD: "Results beat consensus by 5%"
+
+**HOW TO WRITE:**
+- Start with the INSIGHT or IMPLICATION
+- Support with specific numbers in parentheses or inline
+- Example: "Margin compression accelerated (gross margin: 35.2%, down 240bps QoQ), suggesting pricing power has evaporated"
+- Example: "Revenue growth masks underlying weakness (NPAT +15% but operating CF -20%), pointing to working capital deterioration"
+
+**Fluid Summary (5-7 punchy bullets):**
+
+Write 5-7 analytical bullets covering:
+
+1. **Overall Quarter Verdict** (1 sentence):
+   - What's the real story? Strong/mixed/weak and why?
+   - Use numbers as evidence: "(revenue {{X}}bn, +{{Y}}% but NPAT only +{{Z}}% on one-offs)"
+
+2. **Earnings Quality & Drivers** (1-2 bullets):
+   - What drove the result? Is it sustainable?
+   - Examples: "Earnings lifted by {{X}}bn BCC windfall, masking {{Y}}% decline in core operations"
+   - "Margin expansion finally materializing (NPAT margin: {{X}}%, up {{Y}}bps) as operating leverage kicks in"
+
+3. **Presales & Pipeline Reality** (1 bullet):
+   - **IF supplementary data available**: What's the presales story?
+   - Examples: "Presales momentum stalling ({{X}} VND tn, -{{Y}}% QoQ) as bulk sales evaporated while retail failed to compensate"
+   - "Pipeline strengthening (unbilled backlog: {{X}} VND tn, +{{Y}}% QoQ), providing {{Z}} months of revenue visibility"
+   - **IF NOT available**: Use management/sell-side commentary
+
+4. **Balance Sheet & Leverage** (1 bullet):
+   - What's happening to financial health?
+   - Examples: "Deleveraging on track (Net D/E: {{X}}%, down from {{Y}}%), but cash burn of {{Z}}bn raises refinancing questions"
+   - "Inventory bloat continues ({{X}}bn, +{{Y}}% QoQ), tying up {{Z}}bn in working capital"
+
+5. **Guidance & Outlook** (1 bullet):
+   - What does management say and do we believe it?
+   - Examples: "Management raised FY guidance to {{X}}bn, but presales run-rate suggests {{Y}}% risk of a miss"
+   - "No guidance revision despite {{X}}% revenue shortfall - management confidence or denial?"
+
+6. **Our View vs Consensus** (1 bullet):
+   - Where do we differ and why?
+   - Examples: "We're more cautious than sell-side (our TP: {{X}} vs consensus {{Y}}) given weak presales trends not reflected in analyst models"
+   - "Supplementary data shows {{metric}} deteriorating {{X}}%, a red flag management and sell-side are downplaying"
+
+**RULES:**
+- Lead with the INSIGHT, not the number
+- Numbers in parentheses or inline, not as the main point
+- Be provocative but professional
+- Synthesize ALL sources (financial data, supplementary, management, sell-side, buy-side)
+- Keep unified narrative - no separate sections by source
+- Use attributions sparingly, only for direct quotes or critical claims
 
 ## Slide 2: Income Statement Analysis
 ### Quarterly Financial Performance
