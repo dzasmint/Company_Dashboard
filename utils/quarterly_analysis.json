@@ -499,6 +499,20 @@
         "npat_trend": [],
         "cash_trend": []
       }
+    },
+
+    "supplementary_data": {
+      "data_source": "user_uploaded",
+      "file_name": null,
+      "upload_date": null,
+      "time_series": {},
+      "metrics_included": [],
+      "units": {},
+      "quarters_covered": [],
+      "current_quarter_values": {},
+      "qoq_changes": {},
+      "yoy_changes": {},
+      "trend_summary": {}
     }
   }
   

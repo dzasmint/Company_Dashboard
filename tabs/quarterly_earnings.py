@@ -121,13 +121,15 @@ class QuarterlyEarningsTab:
                     "earnings_presentation",
                     "sellside_report",
                     "buyside_commentary",
-                    "financial_data"
+                    "financial_data",
+                    "supplementary_data"
                 ],
                 format_func=lambda x: {
                     "earnings_presentation": "📊 Company Earnings Presentation",
                     "sellside_report": "📈 Sell-Side Research Report",
                     "buyside_commentary": "💼 Buy-Side Commentary",
-                    "financial_data": "🔢 Financial Data (Automated)"
+                    "financial_data": "🔢 Financial Data (Automated)",
+                    "supplementary_data": "📋 Supplementary Data (Excel/CSV)"
                 }.get(x, x),
                 help="Select the type of document you're uploading or data to process",
                 key="qe_upload_doc_type"
@@ -160,6 +162,34 @@ class QuarterlyEarningsTab:
             you will see a warning and the process will not continue.
             """.format(quarter=quarter))
             uploaded_file = None
+            buyside_text = None
+            
+        # Supplementary data: Upload Excel/CSV with time series
+        elif document_type == "supplementary_data":
+            st.markdown("---")
+            st.subheader("📋 Upload Supplementary Data (Excel/CSV)")
+            st.markdown("""
+            Upload a **CSV or Excel file** containing quarterly time series data that's important for earnings analysis.
+            
+            **Expected format:**
+            - First column: `Date` or `Quarter` (e.g., "1Q25", "2Q25")
+            - Subsequent columns: Your custom metrics (e.g., "Total presales", "Bulk presales", "Unbilled booking")
+            - Each row represents one quarter's data
+            
+            **Example columns:**
+            - Presales (Total, Bulk, Retail)
+            - Unbilled booking / Backlog
+            - Average selling price (ASP)
+            - Units sold
+            - Any other KPIs tracked by management
+            """)
+            
+            uploaded_file = st.file_uploader(
+                "Upload Supplementary Data File",
+                type=['csv', 'xlsx', 'xls'],
+                help="Upload CSV or Excel file with quarterly time series data",
+                key="qe_upload_supplementary_file"
+            )
             buyside_text = None
             
         else:
@@ -301,7 +331,8 @@ Add your bullet points, valuation analysis, and key observations here..."""
                         'financial_data': 'Financial data extracted successfully!',
                         'buyside_commentary': 'Buy-side commentary processed successfully!',
                         'earnings_presentation': 'Management presentation processed successfully!',
-                        'sellside_report': 'Sell-side report processed successfully!'
+                        'sellside_report': 'Sell-side report processed successfully!',
+                        'supplementary_data': 'Supplementary data parsed successfully!'
                     }.get(document_type, 'Document processed successfully!')
                     
                     st.success(f"✅ {success_msg}")

@@ -5,14 +5,16 @@ You will receive one or more JSON documents extracted from:
 - Sell-side reports (`source.file_type = "sell_side"`)
 - Buy-side analyst commentary (`source.file_type = "buy_side"`)
 - Financial data from internal database (`financial_data`)
+- Supplementary data from user uploads (`supplementary_data` - time series like presales, unbilled booking, etc.)
 
 Your task is to synthesize them into ONE professional **PowerPoint-ready markdown presentation** on {{COMPANY_NAME}} ({{TICKER}}) {{QUARTER}} results.
 
 PRIORITY OF SOURCES
 1) **Buy-side commentary** (our own view) = primary narrative.
 2) **Financial data** (internal database) = ground truth for reported numbers, use to verify and cross-check all claims.
-3) **Management** = project-level color, official guidance/outlook, strategic commentary.
-4) **Sell-side** = tone/consensus, expectations, rating/TP, catalysts/risks.
+3) **Supplementary data** (user uploads) = additional KPIs and time series (presales, unbilled booking, ASP, etc.) - use to enrich analysis.
+4) **Management** = project-level color, official guidance/outlook, strategic commentary.
+5) **Sell-side** = tone/consensus, expectations, rating/TP, catalysts/risks.
 
 When you use information from management or sell-side, **explicitly attribute** it in-line (e.g., *[Management]*, *[Sell-side – {{publisher}}]*).
 
@@ -72,13 +74,18 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 ## Slide 4: Presales & Sales Pipeline
 ### Sales Performance & Forward Indicators
 
+**CRITICAL:** If `supplementary_data` is available, prioritize it for presales metrics and trends.
+
 **Presales Performance:**
-- Current quarter presales with YoY/QoQ growth
-- Unbilled backlog and contract value
+- Use `supplementary_data.current_quarter_values` for detailed presales breakdown (Total, Bulk, Retail)
+- Show QoQ/YoY growth from `supplementary_data.qoq_changes` and `supplementary_data.yoy_changes`
+- If available, show 4-quarter trend from `supplementary_data.time_series`
+- Unbilled backlog/booking from `supplementary_data` if present
 
 **Pipeline Analysis:**
-- Project launches and pipeline development
+- Project launches and pipeline development *[Management]*
 - Geographic and product mix trends
+- Use trend indicators from `supplementary_data.trend_summary` if available
 
 **Management Commentary:**
 - Forward sales guidance *[Management]*
@@ -87,6 +94,7 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 **Our Assessment:**
 - Buy-side view on sales sustainability
 - Pipeline quality and conversion expectations
+- Cross-reference supplementary data trends with management guidance
 
 ## Slide 5: Balance Sheet & Leverage Analysis
 ### Debt and Capital Structure

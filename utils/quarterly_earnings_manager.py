@@ -16,6 +16,7 @@ from .quarterly_report_generator import QuarterlyReportGenerator
 from .mongodb_utils import MongoDBHelper
 from .chatGPT_project_extractor import ChatGPTProjectExtractor
 from .financial_data_extractor import FinancialDataExtractor
+from .supplementary_data_parser import SupplementaryDataParser
 
 
 class QuarterlyEarningsManager:
@@ -36,6 +37,7 @@ class QuarterlyEarningsManager:
         self.mongo_helper = MongoDBHelper()
         self.pdf_extractor = ChatGPTProjectExtractor(api_key=openai_api_key)
         self.financial_extractor = FinancialDataExtractor()
+        self.supplementary_parser = SupplementaryDataParser()
         self.base_data_path = base_data_path
     
     def save_uploaded_file(self,
@@ -198,7 +200,26 @@ class QuarterlyEarningsManager:
                 "file_path": None
             }
         
-        # Step 1: Save file
+        # Handle supplementary data (Excel/CSV file - different processing)
+        if document_type == "supplementary_data":
+            # Save file first
+            with st.spinner("💾 Saving file..."):
+                file_path = self.save_uploaded_file(
+                    uploaded_file, ticker, quarter, document_type
+                )
+                st.success(f"✅ File saved to: {file_path}")
+            
+            # Process supplementary data
+            return self._process_supplementary_data(
+                ticker=ticker,
+                company_name=company_name,
+                quarter=quarter,
+                year=year,
+                quarter_num=quarter_num,
+                file_path=file_path
+            )
+        
+        # Step 1: Save file (for other document types)
         with st.spinner("💾 Saving file..."):
             file_path = self.save_uploaded_file(
                 uploaded_file, ticker, quarter, document_type
@@ -612,6 +633,123 @@ class QuarterlyEarningsManager:
             
         except Exception as e:
             st.error(f"Error processing financial data: {str(e)}")
+            return {"error": str(e)}
+    
+    def _process_supplementary_data(self,
+                                    ticker: str,
+                                    company_name: str,
+                                    quarter: str,
+                                    year: int,
+                                    quarter_num: int,
+                                    file_path: str) -> Dict[str, Any]:
+        """
+        Process supplementary data from uploaded Excel/CSV file
+        
+        Args:
+            ticker: Stock ticker
+            company_name: Company name
+            quarter: Quarter
+            year: Year
+            quarter_num: Quarter number
+            file_path: Path to uploaded file
+            
+        Returns:
+            Processing result dictionary
+        """
+        try:
+            # Step 1: Create document metadata
+            document_metadata = {
+                "file_name": file_path.split('/')[-1],
+                "ticker": ticker.upper(),
+                "company_name": company_name,
+                "quarter": quarter.upper(),
+                "year": year,
+                "quarter_num": quarter_num,
+                "document_type": "supplementary_data",
+                "upload_date": datetime.now(),
+                "processing_status": "pending",
+                "source": "user",
+                "analyst_firm": None,
+                "report_date": datetime.now(),
+                "metadata": {
+                    "file_extension": file_path.split('.')[-1],
+                    "data_type": "time_series"
+                }
+            }
+            
+            doc_id = self.mongo_helper.save_quarterly_document(document_metadata)
+            
+            # Step 2: Parse supplementary data
+            with st.spinner("📊 Parsing supplementary data..."):
+                self.mongo_helper.update_quarterly_document_status(doc_id, "processing")
+                
+                supplementary_data = self.supplementary_parser.parse_file(file_path, quarter)
+                
+                if "error" in supplementary_data:
+                    self.mongo_helper.update_quarterly_document_status(
+                        doc_id, "error", error_message=supplementary_data["error"]
+                    )
+                    return {
+                        "error": supplementary_data["error"],
+                        "document_id": doc_id,
+                        "file_path": file_path
+                    }
+            
+            # Step 3: Structure in unified schema format
+            extracted_data = {
+                "company": company_name,
+                "ticker": ticker.upper(),
+                "period": {
+                    "quarter": quarter.upper(),
+                    "comparison_quarters": [],
+                    "fiscal_year_half": "1H" if quarter_num <= 2 else "2H",
+                    "as_of_date": None
+                },
+                "source": {
+                    "file_name": file_path.split('/')[-1],
+                    "file_type": "supplementary_data",
+                    "publisher": "User Upload",
+                    "publish_date": datetime.now().isoformat(),
+                    "pages_covered": None,
+                    "version_note": "User-provided supplementary time series data"
+                },
+                "currency": "VND",
+                "units": "bn",
+                "accounting_basis": None,
+                
+                # Supplementary data section
+                "supplementary_data": supplementary_data,
+                
+                # Empty sections
+                "headline": {},
+                "recognition_drivers": {},
+                "presales": {},
+                "balance_sheet": {},
+                "one_offs_and_events": [],
+                "outlook_and_guidance": {},
+                "management_commentary": {},
+                "sell_side_commentary": {},
+                "buy_side_commentary": {},
+                "financial_data": {},
+                "methodology": {
+                    "parsing_notes": "Parsed from user-uploaded Excel/CSV file",
+                    "assumptions": None,
+                    "omissions": None,
+                    "confidence_pct": 100
+                }
+            }
+            
+            # Return for user review
+            return {
+                "success": True,
+                "document_id": doc_id,
+                "file_path": file_path,
+                "extracted_data": extracted_data,
+                "document_metadata": document_metadata
+            }
+            
+        except Exception as e:
+            st.error(f"Error processing supplementary data: {str(e)}")
             return {"error": str(e)}
     
     def save_extracted_data_to_mongodb(self,
