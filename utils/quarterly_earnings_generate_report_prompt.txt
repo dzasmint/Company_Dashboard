@@ -46,7 +46,7 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 
 **INSTRUCTIONS:**
 - Replace backtick paths with ACTUAL NUMBERS from the `financial_data` JSON
-- Format numbers with commas (e.g., 15,234.56)
+- Format numbers with commas (e.g., 15,234)
 - Show % changes with + or - sign (e.g., +8.5%, -3.2%)
 - If a value is null, show "N/A"
 - Comments column: add brief qualitative insight from management/buy-side commentary
@@ -127,11 +127,9 @@ Analyze trends from `financial_data.current_quarter.income_statement` vs compari
 - **Revenue Quality:** Assess revenue growth trajectory (QoQ and YoY). Is growth accelerating or decelerating?
 - **Profitability Trends:** Analyze margin progression:
   - Gross Margin: `gross_margin_pct` trend
-  - EBITDA Margin: `ebitda_margin_pct` trend
   - NPAT Margin: `npat_margin_pct` trend
-- **Operating Leverage:** Are margins expanding with revenue growth?
 - **Cost Structure:** Trends in COGS, GA expenses, selling expenses relative to revenue
-- **Below-the-line Items:** Financial income/expense trends, tax rate changes
+- **Below-the-line Items:** Financial income/expense trends
 
 **Balance Sheet Health:**
 Analyze from `financial_data.*.balance_sheet`:
@@ -155,8 +153,8 @@ Analyze from `financial_data.current_quarter.cash_flow`:
 
 **Key Financial Ratios:**
 Calculate and assess:
-- **Profitability:** EBITDA margin, NPAT margin, implied ROE
-- **Leverage:** Net Debt/Equity, Net Debt/EBITDA
+- **Profitability:** NPAT margin, implied ROE
+- **Leverage:** Net Debt/Equity
 - **Efficiency:** Asset turnover (Revenue / Avg Total Assets)
 - **Growth:** Revenue CAGR (if YoY data available)
 
