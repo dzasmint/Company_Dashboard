@@ -117,58 +117,49 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 - Add brief commentary on leverage trends from management/buy-side
 
 ## Slide 6: Independent Financial Analysis
-### Objective Assessment Based on Financial Data
+### What the Numbers Really Tell Us
 
 **CRITICAL INSTRUCTION:** 
-Conduct this analysis ONLY using the `financial_data` section. Do NOT reference management commentary, sell-side views, or buy-side commentary. This is your independent, objective assessment as a financial analyst looking at the raw numbers.
+This is your independent forensic analysis using ONLY `financial_data`. Channel your inner skeptic - what story do the numbers tell that management might not want to highlight? Be incisive, analytical, and provocative while remaining professional.
 
-**Income Statement Analysis:**
-Analyze trends from `financial_data.current_quarter.income_statement` vs comparisons:
-- **Revenue Quality:** Assess revenue growth trajectory (QoQ and YoY). Is growth accelerating or decelerating?
-- **Profitability Trends:** Analyze margin progression:
-  - Gross Margin: `gross_margin_pct` trend
-  - NPAT Margin: `npat_margin_pct` trend
-- **Cost Structure:** Trends in COGS, GA expenses, selling expenses relative to revenue
-- **Below-the-line Items:** Financial income/expense trends
+**The Real Revenue Story:**
+Don't just state growth rates. Analyze the revenue quality:
+- **Growth Sustainability:** Is the QoQ growth a one-off or sustainable trend? Compare to the YoY - which tells the truer story?
+- **Revenue Recognition Games:** With gross margin trends, are they pulling forward revenue or changing recognition policies?
+- **The Hidden Story:** What's driving the delta between revenue growth and NPAT growth? This gap reveals operational efficiency truth.
 
-**Balance Sheet Health:**
-Analyze from `financial_data.*.balance_sheet`:
-- **Asset Quality:**
-  - Inventory trend and % of total assets - is it growing faster than revenue?
-  - Receivables trend - any deterioration in collection?
-  - Cash position - adequate liquidity?
-- **Capital Structure:**
-  - Debt levels and trends (ST vs LT mix)
-  - Equity growth trajectory
-  - ROE implied by NPATMI / Average Equity
-- **Working Capital:** Net working capital trend and efficiency
+**Margin Forensics - Where's the Squeeze?**
+- **The Margin Cascade:** Track how margins deteriorate from Gross → EBITDA → NPAT. Where's the biggest leak?
+- **Cost Structure Red Flags:** If GA expense is growing faster than revenue, management is losing control. Calculate the ratio.
+- **Operating Leverage Mystery:** At this revenue scale, margins should expand. If they're not, why? Competitive pressure or internal inefficiency?
 
-**Cash Flow Assessment:**
-Analyze from `financial_data.current_quarter.cash_flow`:
-- **Operating Cash Flow:** Is it positive? Growing? Matching NPAT?
-- **Cash Conversion:** Operating CF vs NPAT ratio
-- **Investment Activity:** Capex trends, level relative to depreciation
-- **Financing Activity:** Debt repayment vs new borrowing
-- **Free Cash Flow:** Is it positive? Can it cover dividend/debt service?
+**Balance Sheet Truth-Telling:**
+- **Working Capital Trap:** Calculate cash conversion cycle. If inventory days + receivable days are expanding while payable days shrink = cash squeeze ahead.
+- **The Debt Time Bomb:** ST debt vs cash position. Can they really refinance or is a liquidity crisis brewing?
+- **Asset Efficiency Destruction:** If asset turnover is declining (Revenue/Assets), they're destroying shareholder value by deploying capital poorly.
+- **Hidden Leverage:** Don't just look at book debt. What about advance from customers that's really quasi-debt?
 
-**Key Financial Ratios:**
-Calculate and assess:
-- **Profitability:** NPAT margin, implied ROE
-- **Leverage:** Net Debt/Equity
-- **Efficiency:** Asset turnover (Revenue / Avg Total Assets)
-- **Growth:** Revenue CAGR (if YoY data available)
+**Cash Flow Reality Check:**
+- **Quality of Earnings:** If Operating CF/NPAT < 80%, earnings quality is questionable. Where's the cash?
+- **The CapEx Trap:** Compare CapEx to depreciation. If CapEx < depreciation consistently, they're harvesting the business.
+- **Free Cash Flow Mirage:** After real maintenance CapEx and working capital needs, what's truly left for shareholders?
+- **Financing Shell Game:** Are they borrowing to pay dividends? Check if FCF covers distributions.
 
-**Red Flags & Positive Signals:**
-Based purely on the numbers:
-- 🚩 **Concerns:** Margin compression, rising inventory, weak cash conversion, increasing leverage, etc.
-- ✅ **Strengths:** Margin expansion, deleveraging, strong FCF, revenue acceleration, etc.
+**The Uncomfortable Questions:**
+Based on pure financial analysis:
+- **Why is [specific concerning metric] deteriorating when peers are improving?**
+- **How sustainable is the current capital structure if revenue drops 20%?**
+- **What happens to liquidity in the next 12 months given ST debt maturities?**
+- **Is management's growth strategy destroying ROE?** (Calculate trend)
 
-**Quarter-over-Quarter Assessment:**
-- Overall trajectory: Improving / Stable / Deteriorating
-- Financial health score: Strong / Moderate / Weak
-- Key metric to watch next quarter
+**The Verdict:**
+- **Bull Case (20% probability):** Only if [specific metrics improve]
+- **Base Case (60% probability):** [Current trajectory assessment]
+- **Bear Case (20% probability):** If [specific risks materialize]
 
-**TONE:** Professional, objective, data-driven. Only reference specific numbers from `financial_data`. No speculation beyond what the numbers show.
+**The Number That Matters Most:** [Pick ONE metric that best predicts future performance]
+
+**TONE:** Sharp, analytical, provocative but professional. Use specific numbers to support every claim. Think like an activist short-seller looking for cracks in the story.
 
 ## Slide 7: Guidance & Outlook
 ### Management Guidance and Market Outlook
