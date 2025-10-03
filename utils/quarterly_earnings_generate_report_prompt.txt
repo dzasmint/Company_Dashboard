@@ -11,10 +11,47 @@ Your task is to synthesize them into ONE professional **PowerPoint-ready markdow
 
 PRIORITY OF SOURCES
 1) **Buy-side commentary** (our own view) = primary narrative.
-2) **Financial data** (internal database) = ground truth for reported numbers, use to verify and cross-check all claims.
-3) **Supplementary data** (user uploads) = additional KPIs and time series (presales, unbilled booking, ASP, etc.) - use to enrich analysis.
+2) **Financial data** (internal database) = ground truth for reported numbers, includes 5 quarters of historical data for trend analysis.
+3) **Supplementary data** (user uploads) = additional KPIs and time series - intelligently integrate based on what metrics are provided.
 4) **Management** = project-level color, official guidance/outlook, strategic commentary.
 5) **Sell-side** = tone/consensus, expectations, rating/TP, catalysts/risks.
+
+HOW TO USE FINANCIAL DATA (5 QUARTERS)
+- `financial_data.quarters_included` lists all 5 quarters (e.g., ["2Q24", "3Q24", "4Q24", "1Q25", "2Q25"])
+- `financial_data.current_quarter` = most recent quarter data
+- `financial_data.previous_quarters[0-3]` = 4 historical quarters (Q-1 through Q-4)
+- `financial_data.trend_analysis` = pre-calculated trends for key metrics (revenue, NPAT, margins, cash, inventory)
+- Use this 5-quarter dataset to identify: trends, seasonality, momentum, inflection points
+
+HOW TO USE SUPPLEMENTARY DATA (INTELLIGENT & ADAPTIVE)
+**CRITICAL:** Supplementary data is user-provided and varies by company. You must intelligently adapt based on what's available.
+
+1) **Check what's available:**
+   - `supplementary_data.metrics_included` = list of metric names provided by user
+   - `supplementary_data.units` = units for each metric (e.g., "VND tn", "%", "units")
+   - `supplementary_data.quarters_covered` = quarters with data
+
+2) **Intelligently integrate:**
+   - If metrics relate to **presales** (e.g., "Total presales", "Bulk presales", "Retail presales") → use in Slide 4
+   - If metrics relate to **pricing** (e.g., "ASP", "Average selling price") → use in Slide 3 or 4
+   - If metrics relate to **units** (e.g., "Units sold", "Bookings") → use in Slide 4
+   - If metrics relate to **backlog** (e.g., "Unbilled booking", "Contract backlog") → use in Slide 4
+   - If metrics are **operational KPIs** → use in Slide 3 or where contextually relevant
+
+3) **How to display:**
+   - Use `supplementary_data.current_quarter_values[metric_name]` for current quarter value
+   - Use `supplementary_data.qoq_changes[metric_name]` for QoQ % change
+   - Use `supplementary_data.yoy_changes[metric_name]` for YoY % change
+   - Use `supplementary_data.time_series[metric_name]` to show 4-5 quarter trend
+   - Always include units from `supplementary_data.units[metric_name]`
+
+4) **Trend analysis:**
+   - Use `supplementary_data.trend_summary[metric_name].trend` (increasing/decreasing)
+   - Reference min/max values and averages when meaningful
+
+5) **Attribution:**
+   - Cite as *[Supplementary Data]* when using these metrics
+   - Explain what the metric measures if not self-evident
 
 When you use information from management or sell-side, **explicitly attribute** it in-line (e.g., *[Management]*, *[Sell-side – {{publisher}}]*).
 
@@ -28,10 +65,11 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 
 **Fluid Summary (integrated):**
 - 1–2 sentences summarizing the quarter using key numbers from `financial_data` (revenue, NPAT/NPATMI with YoY/QoQ).
-- 5–8 concise bullets synthesizing ALL sources: result vs expectations, key earnings drivers, presales/pipeline, balance sheet/leverage, guidance/outlook, valuation/catalysts.
+- 5–8 concise bullets synthesizing ALL sources: result vs expectations, key earnings drivers, presales/pipeline (use `supplementary_data` if available), balance sheet/leverage, guidance/outlook, valuation/catalysts.
+- **If supplementary data exists**: Intelligently weave in key metrics (e.g., "Presales reached X {{unit}}, up Y% QoQ" *[Supplementary Data]*).
 - Note where our buy-side view differs from consensus in-line.
 - Keep narrative unified; do not create separate buy-side/management/sell-side sections.
-- Use inline attribution only when necessary (e.g., impactful quotes) as [Management] or [Sell-side – {{publisher}}].
+- Use inline attribution only when necessary (e.g., impactful quotes) as [Management], [Sell-side – {{publisher}}], or [Supplementary Data].
 
 ## Slide 2: Income Statement Analysis
 ### Quarterly Financial Performance
@@ -59,42 +97,114 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 ### {{QUARTER}} Performance Commentary
 
 **Key Performance Drivers:**
-- Analysis of revenue and profitability trends
+- Analysis of revenue and profitability trends using 5-quarter context from `financial_data.trend_analysis`
 - Business line performance from [Management] commentary
 - One-off items and adjustments
+- **If supplementary data includes operational metrics**: Integrate them contextually (e.g., unit sales, pricing, other KPIs)
 
 **vs. Expectations:**
 - Beat/miss analysis vs sell-side consensus
 - Our buy-side assessment vs forecasts
 
 **Operational Highlights:**
-- Key operational metrics and trends
+- Key operational metrics from all sources
+- **Adaptively use supplementary data**: Check `supplementary_data.metrics_included` and integrate relevant metrics with proper units and attribution *[Supplementary Data]*
 - Management commentary on performance drivers
 
-## Slide 4: Presales & Sales Pipeline
-### Sales Performance & Forward Indicators
+## Slide 4: Presales & Sales Pipeline - In-Depth Analysis
+### Sales Performance, Mix Dynamics & Forward Pipeline
 
-**CRITICAL:** If `supplementary_data` is available, prioritize it for presales metrics and trends.
+**OBJECTIVE:** Provide comprehensive presales analysis by synthesizing ALL data sources. This is a critical slide - be thorough and insightful.
 
-**Presales Performance:**
-- Use `supplementary_data.current_quarter_values` for detailed presales breakdown (Total, Bulk, Retail)
-- Show QoQ/YoY growth from `supplementary_data.qoq_changes` and `supplementary_data.yoy_changes`
-- If available, show 4-quarter trend from `supplementary_data.time_series`
-- Unbilled backlog/booking from `supplementary_data` if present
+**I. PRESALES PERFORMANCE OVERVIEW**
 
-**Pipeline Analysis:**
-- Project launches and pipeline development *[Management]*
-- Geographic and product mix trends
-- Use trend indicators from `supplementary_data.trend_summary` if available
+**A. Current Quarter Results:**
+- **PRIMARY SOURCE:** Use `supplementary_data` for presales metrics if available, otherwise use management commentary
+- Report total presales with proper units *[Supplementary Data]* or *[Management]*
+- Show QoQ change: "{{current_value}} {{unit}}, {{±X%}} vs {{prev_quarter}}"
+- Show YoY change: "{{±Y%}} vs {{year_ago_quarter}}"
+- **Context:** Is this strong/weak relative to recent quarters? Reference `trend_summary`
 
-**Management Commentary:**
-- Forward sales guidance *[Management]*
-- Market conditions and pricing trends
+**B. Presales Mix Analysis (if breakdown available):**
+- **IF** supplementary data includes Bulk vs Retail breakdown:
+  - Show split: "Bulk: {{X}} {{unit}} ({{%}} of total), Retail: {{Y}} {{unit}} ({{%}} of total)" *[Supplementary Data]*
+  - **Mix shift analysis:** Compare current mix to previous quarters - is company shifting toward bulk or retail?
+  - **Strategic implications:** What does the mix shift tell us? (Bulk = faster revenue but lower margins vs Retail = stronger pricing power)
+  - Reference management's strategy *[Management]* - does the mix align with stated priorities?
 
-**Our Assessment:**
-- Buy-side view on sales sustainability
-- Pipeline quality and conversion expectations
-- Cross-reference supplementary data trends with management guidance
+**C. Multi-Quarter Trend Analysis:**
+- **Create a trend table** using `supplementary_data.time_series`:
+  | Metric | Q-4 | Q-3 | Q-2 | Q-1 | Current | Trend |
+  |--------|-----|-----|-----|-----|---------|-------|
+  | Total Presales | {{}} | {{}} | {{}} | {{}} | {{}} | ↑/↓/→ |
+  | Bulk (if avail) | {{}} | {{}} | {{}} | {{}} | {{}} | ↑/↓/→ |
+  | Retail (if avail) | {{}} | {{}} | {{}} | {{}} | {{}} | ↑/↓/→ |
+
+- **Trend interpretation:** Is presales accelerating, decelerating, or stable? Any seasonality patterns?
+- **Inflection points:** Did presales momentum change in recent quarters? Why?
+
+**II. PROJECT-LEVEL DRIVERS**
+
+**Key Project Contributors:**
+- Extract from `management_commentary.presales` or `recognition_drivers.projects_contributing`
+- Which 2-3 projects drove presales this quarter? *[Management]*
+- Any new project launches contributing? *[Management]*
+- Compare project mix to previous quarters - is it becoming more concentrated or diversified?
+
+**Geographic & Segment Mix:**
+- Hanoi vs HCMC vs other regions *[Management]*
+- High-rise vs landed vs other product types
+- Any strategic shift in focus areas?
+
+**III. UNBILLED BACKLOG / CONTRACT PIPELINE**
+
+**A. Backlog Analysis (if supplementary data available):**
+- **Current backlog:** "{{value}} {{unit}}" *[Supplementary Data]*
+- **QoQ change:** up/down {{%}} - is pipeline building or being worked down?
+- **Backlog coverage:** Calculate backlog as % of quarterly revenue or as months of revenue
+- **5-quarter backlog trend:** Is it growing consistently (healthy pipeline) or declining (pipeline concern)?
+
+**B. Backlog Quality:**
+- What % is presold but not yet recognized as revenue?
+- Expected revenue recognition timeline *[Management]*
+- Any risk of cancellations or delays? *[Management]* or *[Sell-side]*
+
+**IV. PRICING & VOLUME DYNAMICS (if data available)**
+
+- **IF** supplementary data includes ASP or pricing metrics:
+  - Current ASP and trend over 5 quarters
+  - Is presales growth driven by volume or pricing power?
+  - Calculate implied units: Total presales / ASP
+  - Compare to market pricing trends *[Management]* or *[Sell-side]*
+
+**V. FORWARD OUTLOOK & PIPELINE**
+
+**Upcoming Launches:**
+- New projects launching in next 2-4 quarters *[Management]*
+- Expected presales contribution from new launches
+- Launch schedule vs market conditions
+
+**Management Guidance:**
+- FY presales target *[Management]*
+- Progress toward target (current YTD vs target %)
+- Confidence level based on pipeline
+
+**Sell-Side View:**
+- Analyst expectations for presales trajectory *[Sell-side]*
+- Any forecast revisions based on recent performance
+- Consensus estimates vs our supplementary data
+
+**VI. OUR BUY-SIDE ASSESSMENT**
+
+Synthesize all sources to provide your view:
+- **Presales sustainability:** Based on trends, backlog, and pipeline, is current run-rate sustainable?
+- **Mix dynamics:** Is the bulk/retail mix optimal? Any concerns about margin implications?
+- **Pipeline health:** Strong/Moderate/Weak based on backlog trends and upcoming launches
+- **Key risks:** What could derail presales momentum? (market conditions, pricing pressure, competition)
+- **Key catalysts:** What could accelerate presales? (new launches, market recovery, pricing power)
+- **Where we differ from consensus:** If supplementary data shows trends that management or sell-side aren't highlighting
+
+**TONE:** Comprehensive, analytical, data-driven. Use specific numbers from supplementary data, management commentary, and sell-side views. This should be one of the most detailed slides.
 
 ## Slide 5: Balance Sheet & Leverage Analysis
 ### Debt and Capital Structure
@@ -128,23 +238,28 @@ Produce a **PowerPoint-ready markdown presentation** with exactly 8 slides:
 ### What the Numbers Really Tell Us
 
 **CRITICAL INSTRUCTION:** 
-This is your independent forensic analysis using ONLY `financial_data`. Channel your inner skeptic - what story do the numbers tell that management might not want to highlight? Be incisive, analytical, and provocative while remaining professional.
+This is your independent forensic analysis using ONLY `financial_data` (5 quarters of history). Channel your inner skeptic - what story do the numbers tell that management might not want to highlight? Be incisive, analytical, and provocative while remaining professional.
+
+**DATA AVAILABLE:**
+- 5 quarters of complete financial statements: `financial_data.quarters_included`
+- Pre-calculated trends: `financial_data.trend_analysis` (revenue, NPAT, NPATMI, cash, inventory, margins)
+- Current vs 4 historical quarters for pattern detection
 
 **The Real Revenue Story:**
-Don't just state growth rates. Analyze the revenue quality:
-- **Growth Sustainability:** Is the QoQ growth a one-off or sustainable trend? Compare to the YoY - which tells the truer story?
-- **Revenue Recognition Games:** With gross margin trends, are they pulling forward revenue or changing recognition policies?
-- **The Hidden Story:** What's driving the delta between revenue growth and NPAT growth? This gap reveals operational efficiency truth.
+Don't just state growth rates. Analyze the revenue quality using 5-quarter trends:
+- **Growth Sustainability:** Look at `financial_data.trend_analysis.revenue_trend` - is this quarter an outlier or part of a consistent trajectory?
+- **Revenue Recognition Games:** Compare `gross_margin_trend` over 5 quarters - are margins volatile (suggesting revenue timing games)?
+- **The Hidden Story:** Plot revenue growth vs NPAT growth over 5 quarters - is the gap widening (operational inefficiency)?
 
 **Margin Forensics - Where's the Squeeze?**
-- **The Margin Cascade:** Track how margins deteriorate from Gross → EBITDA → NPAT. Where's the biggest leak?
-- **Cost Structure Red Flags:** If GA expense is growing faster than revenue, management is losing control. Calculate the ratio.
-- **Operating Leverage Mystery:** At this revenue scale, margins should expand. If they're not, why? Competitive pressure or internal inefficiency?
+- **The Margin Cascade:** Use `gross_margin_trend` and `npat_margin_trend` over 5 quarters - track the deterioration path.
+- **Cost Structure Red Flags:** Compare GA expense growth vs revenue growth over 5 quarters - is management losing control?
+- **Operating Leverage Mystery:** At this revenue scale, margins should expand. Check the 5-quarter trend - are they improving or compressing?
 
 **Balance Sheet Truth-Telling:**
-- **Working Capital Trap:** Calculate cash conversion cycle. If inventory days + receivable days are expanding while payable days shrink = cash squeeze ahead.
-- **The Debt Time Bomb:** ST debt vs cash position. Can they really refinance or is a liquidity crisis brewing?
-- **Asset Efficiency Destruction:** If asset turnover is declining (Revenue/Assets), they're destroying shareholder value by deploying capital poorly.
+- **Working Capital Trap:** Use `inventory_trend` over 5 quarters - is it growing faster than revenue (working capital squeeze)?
+- **The Debt Time Bomb:** Analyze `cash_trend` vs debt levels - is liquidity improving or deteriorating?
+- **Asset Efficiency Destruction:** Calculate asset turnover trend over 5 quarters - is it improving or declining?
 - **Hidden Leverage:** Don't just look at book debt. What about advance from customers that's really quasi-debt?
 
 **Cash Flow Reality Check:**
