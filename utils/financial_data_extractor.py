@@ -150,22 +150,22 @@ class FinancialDataExtractor:
         
         return qoq_quarter, yoy_quarter
     
-    def _calculate_latest_four_quarters(self, quarter: str) -> list:
+    def _calculate_latest_five_quarters(self, quarter: str) -> list:
         """
-        Calculate the latest 4 quarters including the current quarter
+        Calculate the latest 5 quarters including the current quarter
         
         Args:
             quarter: e.g., "2Q25"
             
         Returns:
-            List of 4 quarters in chronological order, e.g., ["3Q24", "4Q24", "1Q25", "2Q25"]
+            List of 5 quarters in chronological order, e.g., ["2Q24", "3Q24", "4Q24", "1Q25", "2Q25"]
         """
         quarters = []
         q_num = int(quarter[0])
         year = int("20" + quarter[2:])
         
-        # Start from current quarter and go back 3 quarters
-        for i in range(3, -1, -1):  # 3, 2, 1, 0
+        # Start from current quarter and go back 4 quarters
+        for i in range(4, -1, -1):  # 4, 3, 2, 1, 0
             temp_q = q_num - i
             temp_year = year
             
@@ -226,22 +226,22 @@ class FinancialDataExtractor:
                     "missing_quarters": [quarter]
                 }
             
-            # Calculate latest 4 quarters
-            four_quarters = self._calculate_latest_four_quarters(quarter)
+            # Calculate latest 5 quarters
+            five_quarters = self._calculate_latest_five_quarters(quarter)
             
             # Convert to parquet format
-            four_quarters_pq = [self._convert_quarter_format(q) for q in four_quarters]
+            five_quarters_pq = [self._convert_quarter_format(q) for q in five_quarters]
             
             # Check which quarters are available
             available_quarters_pq = set(ticker_data['DATE'].unique())
             
             missing = []
-            for i, (q, q_pq) in enumerate(zip(four_quarters, four_quarters_pq)):
+            for i, (q, q_pq) in enumerate(zip(five_quarters, five_quarters_pq)):
                 if q_pq not in available_quarters_pq:
-                    if i == 3:  # Current quarter
+                    if i == 4:  # Current quarter
                         missing.append(f"{q} (current)")
                     else:
-                        missing.append(f"{q} (Q-{3-i})")
+                        missing.append(f"{q} (Q-{4-i})")
             
             if missing:
                 available = sorted([q for q in available_quarters_pq], reverse=True)[:10]
@@ -254,8 +254,8 @@ class FinancialDataExtractor:
             
             return {
                 "valid": True,
-                "message": "All 4 quarters available",
-                "available_quarters": four_quarters_pq,
+                "message": "All 5 quarters available",
+                "available_quarters": five_quarters_pq,
                 "missing_quarters": []
             }
             
@@ -391,24 +391,24 @@ class FinancialDataExtractor:
         df = self._load_data()
         ticker_data = df[df['TICKER'] == ticker.upper()]
         
-        # Get latest 4 quarters
-        four_quarters = self._calculate_latest_four_quarters(quarter)
+        # Get latest 5 quarters
+        five_quarters = self._calculate_latest_five_quarters(quarter)
         
         # Convert to parquet format
-        four_quarters_pq = [self._convert_quarter_format(q) for q in four_quarters]
+        five_quarters_pq = [self._convert_quarter_format(q) for q in five_quarters]
         
-        # Extract data for all four quarters
+        # Extract data for all five quarters
         quarters_data = {}
-        for q, q_pq in zip(four_quarters, four_quarters_pq):
+        for q, q_pq in zip(five_quarters, five_quarters_pq):
             quarters_data[q] = self._extract_quarter_data(ticker_data, ticker, q_pq)
         
-        # Current quarter is the last one (index 3)
-        current_data = quarters_data[four_quarters[3]]
-        qoq_data = quarters_data[four_quarters[2]]  # Previous quarter
-        yoy_data = quarters_data[four_quarters[0]] if len(four_quarters) == 4 else {}  # Same quarter last year (approximate)
+        # Current quarter is the last one (index 4)
+        current_data = quarters_data[five_quarters[4]]
+        qoq_data = quarters_data[five_quarters[3]]  # Previous quarter
+        yoy_data = quarters_data[five_quarters[0]]  # First quarter (year-ago approximation)
         
-        # Calculate percentage changes (using last quarter as QoQ and first quarter for trend)
-        changes = self._calculate_changes(current_data, qoq_data, quarters_data[four_quarters[0]])
+        # Calculate percentage changes (using last quarter as QoQ and first quarter for year trend)
+        changes = self._calculate_changes(current_data, qoq_data, yoy_data)
         
         # Parse quarter for year and quarter_num
         q_num = int(quarter[0])
@@ -421,8 +421,8 @@ class FinancialDataExtractor:
             "ticker": ticker.upper(),
             "period": {
                 "quarter": quarter.upper(),
-                "comparison_quarters": [q.upper() for q in four_quarters[:-1]],  # All quarters except current
-                "quarters_analyzed": [q.upper() for q in four_quarters],  # All 4 quarters
+                "comparison_quarters": [q.upper() for q in five_quarters[:-1]],  # All quarters except current
+                "quarters_analyzed": [q.upper() for q in five_quarters],  # All 5 quarters
                 "fiscal_year_half": "1H" if q_num <= 2 else "2H",
                 "as_of_date": None
             },
@@ -442,43 +442,52 @@ class FinancialDataExtractor:
             "financial_data": {
                 "data_source": "internal_database",
                 "extraction_date": datetime.now().isoformat(),
-                "quarters_included": four_quarters,  # List of all 4 quarters
+                "quarters_included": five_quarters,  # List of all 5 quarters
                 "current_quarter": {
-                    "quarter": four_quarters[3],
+                    "quarter": five_quarters[4],
                     **current_data
                 },
                 "previous_quarters": [
                     {
-                        "quarter": four_quarters[2],
+                        "quarter": five_quarters[3],
                         "label": "Q-1 (Previous Quarter)",
-                        **quarters_data[four_quarters[2]]
+                        **quarters_data[five_quarters[3]]
                     },
                     {
-                        "quarter": four_quarters[1],
+                        "quarter": five_quarters[2],
                         "label": "Q-2",
-                        **quarters_data[four_quarters[1]]
+                        **quarters_data[five_quarters[2]]
                     },
                     {
-                        "quarter": four_quarters[0],
+                        "quarter": five_quarters[1],
                         "label": "Q-3",
-                        **quarters_data[four_quarters[0]]
+                        **quarters_data[five_quarters[1]]
+                    },
+                    {
+                        "quarter": five_quarters[0],
+                        "label": "Q-4",
+                        **quarters_data[five_quarters[0]]
                     }
                 ],
                 # Keep legacy fields for backward compatibility
                 "qoq_comparison": {
-                    "quarter": four_quarters[2],
+                    "quarter": five_quarters[3],
                     **qoq_data
                 },
                 "yoy_comparison": {
-                    "quarter": four_quarters[0],  # Approximation - might not be exact YoY
-                    **quarters_data[four_quarters[0]]
+                    "quarter": five_quarters[0],  # Year-ago quarter
+                    **yoy_data
                 },
                 "calculated_changes": changes,
                 "trend_analysis": {
-                    "quarters": four_quarters,
-                    "revenue_trend": [quarters_data[q].get("income_statement", {}).get("net_revenue") for q in four_quarters],
-                    "npat_trend": [quarters_data[q].get("income_statement", {}).get("npat") for q in four_quarters],
-                    "cash_trend": [quarters_data[q].get("balance_sheet", {}).get("cash_and_equivalents") for q in four_quarters]
+                    "quarters": five_quarters,
+                    "revenue_trend": [quarters_data[q].get("income_statement", {}).get("net_revenue") for q in five_quarters],
+                    "npat_trend": [quarters_data[q].get("income_statement", {}).get("npat") for q in five_quarters],
+                    "npatmi_trend": [quarters_data[q].get("income_statement", {}).get("npatmi") for q in five_quarters],
+                    "cash_trend": [quarters_data[q].get("balance_sheet", {}).get("cash_and_equivalents") for q in five_quarters],
+                    "inventory_trend": [quarters_data[q].get("balance_sheet", {}).get("inventory") for q in five_quarters],
+                    "gross_margin_trend": [quarters_data[q].get("income_statement", {}).get("gross_margin_pct") for q in five_quarters],
+                    "npat_margin_trend": [quarters_data[q].get("income_statement", {}).get("npat_margin_pct") for q in five_quarters]
                 }
             },
             
