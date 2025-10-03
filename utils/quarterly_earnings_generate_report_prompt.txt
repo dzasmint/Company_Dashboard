@@ -33,7 +33,7 @@ Compare our stance vs sell-side consensus clearly.
 
 #### Slide 2 — Income Statement (Table)
 - Fill from `financial_data` (current vs prev Q vs LY, QoQ/YoY %).
-- Add 1–2 concise sentences on drivers/quality (cite mgmt/buy-side when relevant).
+- Add 1–2 concise sentences on drivers/quality (cite mgmt/buy-side/sell-side when relevant).
 
 #### Slide 3 — Earnings Review
 - 3–5 bullets: key drivers, one-offs, segment/project color.
@@ -51,19 +51,19 @@ Compare our stance vs sell-side consensus clearly.
 - Table: Net debt, D/E, ST/LT debt, cash (current vs QoQ vs YoY).
 - 2–3 bullets: leverage/liquidity trend, refinancing risk, cash generation.
 
-#### Slide 7 — Independent Financial Insights
-- Only from `financial_data` (5Q).  
-- Pick 3–4 **most material findings** (margins, cash, leverage, ROE).
-- Each bullet 1–2 sentences: trend + implication.
-
-#### Slide 8 — Guidance & Outlook
-- Mgmt official guidance; sell-side reactions.
+#### Slide 7 — Guidance & Outlook
+- Mgmt official guidance; sell-side forecasts and reactions.
 - Our stance on achievability; key upside/downside risks.
 
-#### Slide 9 — Valuation & Recommendation
+#### Slide 8 — Valuation & Recommendation
 - Our valuation (RNAV/DCF/TP, upside/downside).
 - Compare with sell-side consensus.
 - 2–3 thesis bullets + catalysts/risks.
+
+#### Slide 9 - Appendix — Independent Financial Insights
+- Only from `financial_data` (5Q).  
+- Pick 3–4 **most material findings** (margins, cash, leverage, ROE).
+- Each bullet 1–2 sentences: trend + implication.
 
 ---
 

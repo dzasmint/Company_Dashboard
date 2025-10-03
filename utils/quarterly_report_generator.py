@@ -89,50 +89,23 @@ class QuarterlyReportGenerator:
                 sell_side_publisher = data.get("source", {}).get("publisher", "Unknown Analyst")
                 break
         
-        # If custom prompt loaded, use it; otherwise use default
-        if prompt_template:
-            # Replace all template variables with actual values
-            prompt = prompt_template.replace("{{COMPANY_NAME}}", company_name)
-            prompt = prompt.replace("{{TICKER}}", ticker)
-            prompt = prompt.replace("{{QUARTER}}", quarter)
-            prompt = prompt.replace("{{COMPARISON_QUARTERS}}", comparison_quarters_str)
-            prompt = prompt.replace("{{TARGET_CCY}}", "VND")
-            prompt = prompt.replace("{{TARGET_UNITS}}", "bn")
-            prompt = prompt.replace("{{publisher}}", sell_side_publisher)
-            
-            # Add the JSON data at the end
-            full_prompt = f"{prompt}\n\nINPUT DATA:\n{json.dumps(data_summary, indent=2)}"
-        else:
-            # Fallback to inline prompt if file not found (updated for buy-side focus)
-            full_prompt = f"""
-You are a senior buy-side analyst writing a professional quarterly report for {company_name} ({ticker}) - {quarter}.
-
-PRIORITY OF SOURCES:
-1) Buy-side commentary (our primary view)
-2) Management (factual numbers and guidance)  
-3) Sell-side (market consensus and expectations)
-
-Generate a buy-side focused report with these sections:
-1) Headline Summary
-2) Earnings Review ({quarter} vs {comparison_quarters_str})
-3) Presales & Sales Pipeline
-4) Balance Sheet & Leverage
-5) Guidance & Outlook
-6) Valuation & Recommendation
-7) Catalysts & Risks
-
-CRITICAL RULES:
-- Buy-side commentary drives the narrative
-- Attribute management and sell-side sources explicitly [Management] / [Sell-side]
-- Highlight where our view differs from sell-side consensus
-- Professional buy-side tone and language
-- Currency: VND billions
-
-INPUT DATA:
-{json.dumps(data_summary, indent=2)}
-
-Return ONLY the final Markdown report.
-"""
+        # Prompt file is required - do not use fallback
+        if not prompt_template:
+            error_msg = "Prompt file not found: quarterly_earnings_generate_report_prompt.txt is required for report generation"
+            st.error(error_msg)
+            return {"error": error_msg}
+        
+        # Replace all template variables with actual values
+        prompt = prompt_template.replace("{{COMPANY_NAME}}", company_name)
+        prompt = prompt.replace("{{TICKER}}", ticker)
+        prompt = prompt.replace("{{QUARTER}}", quarter)
+        prompt = prompt.replace("{{COMPARISON_QUARTERS}}", comparison_quarters_str)
+        prompt = prompt.replace("{{TARGET_CCY}}", "VND")
+        prompt = prompt.replace("{{TARGET_UNITS}}", "bn")
+        prompt = prompt.replace("{{publisher}}", sell_side_publisher)
+        
+        # Add the JSON data at the end
+        full_prompt = f"{prompt}\n\nINPUT DATA:\n{json.dumps(data_summary, indent=2)}"
 
         try:
             messages = [
