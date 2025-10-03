@@ -64,6 +64,23 @@ class SupplementaryDataParser:
             return None
         return round(((current - previous) / abs(previous)) * 100, 1)
     
+    def _quarter_sort_key(self, quarter_str: str) -> tuple:
+        """
+        Create a sort key for quarter strings
+        
+        Args:
+            quarter_str: Quarter like "2Q25"
+            
+        Returns:
+            Tuple (year, quarter_num) for sorting
+        """
+        if not quarter_str or len(quarter_str) < 3:
+            return (0, 0)
+        
+        q_num = int(quarter_str[0])
+        year = int("20" + quarter_str[2:])
+        return (year, q_num)
+    
     def parse_file(self, file_path: str, target_quarter: str) -> Dict[str, Any]:
         """
         Parse supplementary data file
@@ -120,8 +137,10 @@ class SupplementaryDataParser:
             for col in metric_cols:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # Sort by quarter
-            df = df.sort_values('normalized_quarter')
+            # Sort by quarter chronologically using custom sort key
+            df['sort_key'] = df['normalized_quarter'].apply(self._quarter_sort_key)
+            df = df.sort_values('sort_key')
+            df = df.drop('sort_key', axis=1).reset_index(drop=True)
             
             # Build time series dictionary
             time_series = {}
@@ -134,27 +153,31 @@ class SupplementaryDataParser:
                     })
             
             # Find current quarter data
-            current_quarter_row = df[df['normalized_quarter'] == target_quarter]
+            current_quarter_mask = df['normalized_quarter'] == target_quarter
             current_quarter_values = {}
             qoq_changes = {}
             yoy_changes = {}
             
-            if not current_quarter_row.empty:
-                current_idx = current_quarter_row.index[0]
+            if current_quarter_mask.any():
+                # Get position in sorted dataframe (use iloc position, not index)
+                current_position = df[current_quarter_mask].index[0]
+                
+                # Find the actual row position after sort
+                current_iloc_pos = df.index.get_loc(current_position)
                 
                 # Get current values
                 for col in metric_cols:
-                    current_val = df.loc[current_idx, col]
+                    current_val = df.iloc[current_iloc_pos][col]
                     current_quarter_values[col] = float(current_val) if not pd.isna(current_val) else None
                     
-                    # Calculate QoQ change
-                    if current_idx > 0:
-                        prev_val = df.iloc[current_idx - 1][col]
+                    # Calculate QoQ change (previous position in sorted df)
+                    if current_iloc_pos > 0:
+                        prev_val = df.iloc[current_iloc_pos - 1][col]
                         qoq_changes[col] = self._calculate_changes(current_val, prev_val)
                     
-                    # Calculate YoY change (4 quarters back)
-                    if current_idx >= 4:
-                        yoy_val = df.iloc[current_idx - 4][col]
+                    # Calculate YoY change (4 quarters back in sorted df)
+                    if current_iloc_pos >= 4:
+                        yoy_val = df.iloc[current_iloc_pos - 4][col]
                         yoy_changes[col] = self._calculate_changes(current_val, yoy_val)
             
             # Generate trend summary
