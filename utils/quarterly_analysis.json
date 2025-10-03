@@ -1,12 +1,13 @@
 {
     "company": null,
     "ticker": null,
-    "period": {
-      "quarter": null,
-      "comparison_quarters": [],
-      "fiscal_year_half": null,
-      "as_of_date": null
-    },
+  "period": {
+    "quarter": null,
+    "comparison_quarters": [],
+    "quarters_analyzed": [],
+    "fiscal_year_half": null,
+    "as_of_date": null
+  },
     "source": {
       "file_name": null,
       "file_type": "management|sell_side|buy_side",
@@ -298,6 +299,7 @@
     "financial_data": {
       "data_source": "internal_database",
       "extraction_date": null,
+      "quarters_included": [],
       "current_quarter": {
         "quarter": null,
         "income_statement": {
@@ -460,6 +462,7 @@
           "invested_capital": null
         }
       },
+      "previous_quarters": [],
       "calculated_changes": {
         "qoq": {
           "net_revenue_pct": null,
@@ -469,7 +472,7 @@
           "npat_pct": null,
           "npatmi_pct": null,
           "total_assets_pct": null,
-          "cash_pct": null,
+          "cash_and_equivalents_pct": null,
           "inventory_pct": null,
           "st_debt_pct": null,
           "lt_debt_pct": null,
@@ -483,12 +486,18 @@
           "npat_pct": null,
           "npatmi_pct": null,
           "total_assets_pct": null,
-          "cash_pct": null,
+          "cash_and_equivalents_pct": null,
           "inventory_pct": null,
           "st_debt_pct": null,
           "lt_debt_pct": null,
           "total_equity_pct": null
         }
+      },
+      "trend_analysis": {
+        "quarters": [],
+        "revenue_trend": [],
+        "npat_trend": [],
+        "cash_trend": []
       }
     }
   }

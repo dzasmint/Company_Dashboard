@@ -150,6 +150,37 @@ class FinancialDataExtractor:
         
         return qoq_quarter, yoy_quarter
     
+    def _calculate_latest_four_quarters(self, quarter: str) -> list:
+        """
+        Calculate the latest 4 quarters including the current quarter
+        
+        Args:
+            quarter: e.g., "2Q25"
+            
+        Returns:
+            List of 4 quarters in chronological order, e.g., ["3Q24", "4Q24", "1Q25", "2Q25"]
+        """
+        quarters = []
+        q_num = int(quarter[0])
+        year = int("20" + quarter[2:])
+        
+        # Start from current quarter and go back 3 quarters
+        for i in range(3, -1, -1):  # 3, 2, 1, 0
+            temp_q = q_num - i
+            temp_year = year
+            
+            # Adjust for year boundary
+            while temp_q <= 0:
+                temp_q += 4
+                temp_year -= 1
+            while temp_q > 4:
+                temp_q -= 4
+                temp_year += 1
+            
+            quarters.append(f"{temp_q}Q{str(temp_year)[2:]}")
+        
+        return quarters
+    
     def _convert_quarter_format(self, quarter: str) -> str:
         """
         Convert quarter format from "2Q25" to "2025Q2" (parquet format)
@@ -195,24 +226,22 @@ class FinancialDataExtractor:
                     "missing_quarters": [quarter]
                 }
             
-            # Calculate comparison quarters
-            qoq_quarter, yoy_quarter = self._calculate_comparison_quarters(quarter)
+            # Calculate latest 4 quarters
+            four_quarters = self._calculate_latest_four_quarters(quarter)
             
             # Convert to parquet format
-            current_pq = self._convert_quarter_format(quarter)
-            qoq_pq = self._convert_quarter_format(qoq_quarter)
-            yoy_pq = self._convert_quarter_format(yoy_quarter)
+            four_quarters_pq = [self._convert_quarter_format(q) for q in four_quarters]
             
             # Check which quarters are available
             available_quarters_pq = set(ticker_data['DATE'].unique())
             
             missing = []
-            if current_pq not in available_quarters_pq:
-                missing.append(f"{quarter} (current)")
-            if qoq_pq not in available_quarters_pq:
-                missing.append(f"{qoq_quarter} (QoQ comparison)")
-            if yoy_pq not in available_quarters_pq:
-                missing.append(f"{yoy_quarter} (YoY comparison)")
+            for i, (q, q_pq) in enumerate(zip(four_quarters, four_quarters_pq)):
+                if q_pq not in available_quarters_pq:
+                    if i == 3:  # Current quarter
+                        missing.append(f"{q} (current)")
+                    else:
+                        missing.append(f"{q} (Q-{3-i})")
             
             if missing:
                 available = sorted([q for q in available_quarters_pq], reverse=True)[:10]
@@ -225,8 +254,8 @@ class FinancialDataExtractor:
             
             return {
                 "valid": True,
-                "message": "All required quarters available",
-                "available_quarters": [current_pq, qoq_pq, yoy_pq],
+                "message": "All 4 quarters available",
+                "available_quarters": four_quarters_pq,
                 "missing_quarters": []
             }
             
@@ -362,21 +391,24 @@ class FinancialDataExtractor:
         df = self._load_data()
         ticker_data = df[df['TICKER'] == ticker.upper()]
         
-        # Calculate comparison quarters
-        qoq_quarter, yoy_quarter = self._calculate_comparison_quarters(quarter)
+        # Get latest 4 quarters
+        four_quarters = self._calculate_latest_four_quarters(quarter)
         
         # Convert to parquet format
-        current_pq = self._convert_quarter_format(quarter)
-        qoq_pq = self._convert_quarter_format(qoq_quarter)
-        yoy_pq = self._convert_quarter_format(yoy_quarter)
+        four_quarters_pq = [self._convert_quarter_format(q) for q in four_quarters]
         
-        # Extract data for all three quarters
-        current_data = self._extract_quarter_data(ticker_data, ticker, current_pq)
-        qoq_data = self._extract_quarter_data(ticker_data, ticker, qoq_pq)
-        yoy_data = self._extract_quarter_data(ticker_data, ticker, yoy_pq)
+        # Extract data for all four quarters
+        quarters_data = {}
+        for q, q_pq in zip(four_quarters, four_quarters_pq):
+            quarters_data[q] = self._extract_quarter_data(ticker_data, ticker, q_pq)
         
-        # Calculate percentage changes
-        changes = self._calculate_changes(current_data, qoq_data, yoy_data)
+        # Current quarter is the last one (index 3)
+        current_data = quarters_data[four_quarters[3]]
+        qoq_data = quarters_data[four_quarters[2]]  # Previous quarter
+        yoy_data = quarters_data[four_quarters[0]] if len(four_quarters) == 4 else {}  # Same quarter last year (approximate)
+        
+        # Calculate percentage changes (using last quarter as QoQ and first quarter for trend)
+        changes = self._calculate_changes(current_data, qoq_data, quarters_data[four_quarters[0]])
         
         # Parse quarter for year and quarter_num
         q_num = int(quarter[0])
@@ -389,7 +421,8 @@ class FinancialDataExtractor:
             "ticker": ticker.upper(),
             "period": {
                 "quarter": quarter.upper(),
-                "comparison_quarters": [qoq_quarter.upper(), yoy_quarter.upper()],
+                "comparison_quarters": [q.upper() for q in four_quarters[:-1]],  # All quarters except current
+                "quarters_analyzed": [q.upper() for q in four_quarters],  # All 4 quarters
                 "fiscal_year_half": "1H" if q_num <= 2 else "2H",
                 "as_of_date": None
             },
@@ -409,19 +442,44 @@ class FinancialDataExtractor:
             "financial_data": {
                 "data_source": "internal_database",
                 "extraction_date": datetime.now().isoformat(),
+                "quarters_included": four_quarters,  # List of all 4 quarters
                 "current_quarter": {
-                    "quarter": quarter,
+                    "quarter": four_quarters[3],
                     **current_data
                 },
+                "previous_quarters": [
+                    {
+                        "quarter": four_quarters[2],
+                        "label": "Q-1 (Previous Quarter)",
+                        **quarters_data[four_quarters[2]]
+                    },
+                    {
+                        "quarter": four_quarters[1],
+                        "label": "Q-2",
+                        **quarters_data[four_quarters[1]]
+                    },
+                    {
+                        "quarter": four_quarters[0],
+                        "label": "Q-3",
+                        **quarters_data[four_quarters[0]]
+                    }
+                ],
+                # Keep legacy fields for backward compatibility
                 "qoq_comparison": {
-                    "quarter": qoq_quarter,
+                    "quarter": four_quarters[2],
                     **qoq_data
                 },
                 "yoy_comparison": {
-                    "quarter": yoy_quarter,
-                    **yoy_data
+                    "quarter": four_quarters[0],  # Approximation - might not be exact YoY
+                    **quarters_data[four_quarters[0]]
                 },
-                "calculated_changes": changes
+                "calculated_changes": changes,
+                "trend_analysis": {
+                    "quarters": four_quarters,
+                    "revenue_trend": [quarters_data[q].get("income_statement", {}).get("net_revenue") for q in four_quarters],
+                    "npat_trend": [quarters_data[q].get("income_statement", {}).get("npat") for q in four_quarters],
+                    "cash_trend": [quarters_data[q].get("balance_sheet", {}).get("cash_and_equivalents") for q in four_quarters]
+                }
             },
             
             # Empty sections (to match schema structure)
