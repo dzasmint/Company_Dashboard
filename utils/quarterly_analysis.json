@@ -513,6 +513,48 @@
       "qoq_changes": {},
       "yoy_changes": {},
       "trend_summary": {}
+    },
+
+    "forecast_data": {
+      "data_source": "mongodb_forecast",
+      "extraction_date": null,
+      "fy_forecast": {
+        "year": null,
+        "revenue_fy": null,
+        "npatmi_fy": null,
+        "ebitda_fy": null,
+        "gross_profit_fy": null
+      },
+      "ytd_progress": {
+        "quarter": null,
+        "quarter_num": null,
+        "expected_progress_pct": null,
+        "revenue_ytd_actual": null,
+        "revenue_fy_forecast": null,
+        "revenue_achievement_pct": null,
+        "revenue_status": "ahead|on_track|behind|unknown",
+        "npatmi_ytd_actual": null,
+        "npatmi_fy_forecast": null,
+        "npatmi_achievement_pct": null,
+        "npatmi_status": "ahead|on_track|behind|unknown",
+        "remaining_quarters": null,
+        "remaining_revenue_implied": null,
+        "remaining_npatmi_implied": null
+      },
+      "valuation_metrics": {
+        "current_price": null,
+        "rnav_per_share": null,
+        "rnav_upside_pct": null,
+        "rnav_discount_pct": null,
+        "trailing_pe": null,
+        "current_year_pe": null,
+        "next_year_pe": null,
+        "mean_pe": null,
+        "trailing_pb": null,
+        "current_year_pb": null,
+        "next_year_pb": null,
+        "mean_pb": null
+      }
     }
   }
   

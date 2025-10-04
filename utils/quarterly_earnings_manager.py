@@ -17,6 +17,7 @@ from .mongodb_utils import MongoDBHelper
 from .chatGPT_project_extractor import ChatGPTProjectExtractor
 from .financial_data_extractor import FinancialDataExtractor
 from .supplementary_data_parser import SupplementaryDataParser
+from .forecast_data_extractor import ForecastDataExtractor
 
 
 class QuarterlyEarningsManager:
@@ -38,6 +39,7 @@ class QuarterlyEarningsManager:
         self.pdf_extractor = ChatGPTProjectExtractor(api_key=openai_api_key)
         self.financial_extractor = FinancialDataExtractor()
         self.supplementary_parser = SupplementaryDataParser()
+        self.forecast_extractor = ForecastDataExtractor()
         self.base_data_path = base_data_path
     
     def save_uploaded_file(self,
@@ -854,6 +856,25 @@ class QuarterlyEarningsManager:
             if not all_earnings_data:
                 st.warning("⚠️ No earnings data found for this quarter. Please upload and analyze documents first.")
                 return {"error": "No data available"}
+        
+        # Auto-load forecast data from MongoDB (if available)
+        with st.spinner("🎯 Loading forecast and valuation data..."):
+            try:
+                forecast_data_doc = self.forecast_extractor.structure_for_unified_schema(
+                    ticker=ticker,
+                    quarter=quarter,
+                    company_name=company_name,
+                    quarterly_data=all_earnings_data
+                )
+                
+                if forecast_data_doc and "error" not in forecast_data_doc:
+                    # Add forecast data to the earnings data list
+                    all_earnings_data.append(forecast_data_doc)
+                    st.success(f"✅ Loaded forecast for FY{forecast_data_doc.get('forecast_data', {}).get('fy_forecast', {}).get('year', '')}")
+                else:
+                    st.info("ℹ️ No forecast data available (optional - will generate report without it)")
+            except Exception as e:
+                st.warning(f"⚠️ Could not load forecast data: {str(e)} (optional - continuing without it)")
         
         # Generate summary report
         with st.spinner("🤖 Generating comprehensive summary report..."):

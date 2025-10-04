@@ -6,6 +6,7 @@ You will receive JSON documents from:
 - Management
 - Sell-side
 - Supplementary KPIs
+- Forecast data (FY targets, YTD progress, RNAV, P/E, P/B)
 
 Goal: Produce ONE professional **PowerPoint-ready markdown** deck on {{COMPANY_NAME}} ({{TICKER}}) {{QUARTER}} results.
 
@@ -15,6 +16,7 @@ SOURCE PRIORITY
 3. Management = official color & guidance.
 4. Sell-side = consensus tone & rating/TP.
 5. Supplementary KPIs = add where relevant.
+6. Forecast data = FY targets, YTD progress tracking, valuation metrics (RNAV, multiples).
 
 Always **attribute non-buy-side info** inline: [Management], [Sell-side – {{publisher}}], [Supplementary Data].
 Flag discrepancies if numbers differ from financial_data.
@@ -116,13 +118,45 @@ From `management_commentary.presales`
 - 2–3 bullets: leverage/liquidity trend, refinancing risk, cash generation.
 
 #### Slide 7 — Guidance & Outlook
-- Mgmt official guidance; sell-side forecasts and reactions.
-- Our stance on achievability; key upside/downside risks.
+
+**FY Forecast Progress (if `forecast_data` available):**
+- FY targets: Revenue {{X}} bn, NPATMI {{Y}} bn from `forecast_data.fy_forecast`
+- YTD actual: Revenue {{A}} bn ({{%}} of FY), NPATMI {{B}} bn ({{%}} of FY) from `forecast_data.ytd_progress`
+- Status: {{ahead/on_track/behind}} - from `forecast_data.ytd_progress.revenue_status` and `npatmi_status`
+- Remaining {{N}} quarters need: {{X}} bn revenue, {{Y}} bn NPATMI to hit FY target (from `forecast_data.ytd_progress.remaining_revenue_implied` and `remaining_npatmi_implied`)
+
+**Management Guidance:**
+- Official FY guidance *[Management]*
+- Compare with our forecast if different
+
+**Sell-Side View:**
+- Consensus forecasts and recent revisions *[Sell-side]*
+
+**Our Assessment:**
+- Achievability verdict based on YTD progress and trends
+- Key risks and catalysts
 
 #### Slide 8 — Valuation & Recommendation
-- Our valuation (RNAV/DCF/TP, upside/downside).
-- Compare with sell-side consensus.
-- 2–3 thesis bullets + catalysts/risks.
+
+**Our Valuation (if `forecast_data.valuation_metrics` available):**
+- Current price: {{X}} VND from `forecast_data.valuation_metrics.current_price`
+- RNAV per share: {{Y}} VND from `forecast_data.valuation_metrics.rnav_per_share`
+- Upside to RNAV: {{Z}}% from `forecast_data.valuation_metrics.rnav_upside_pct`
+- Trading multiples:
+  - Trailing P/E: {{A}}x, {{year}}F P/E: {{B}}x, {{year+1}}F P/E: {{C}}x
+  - Mean P/E: {{D}}x - Trading at {{premium/discount}} to historical mean
+  - Trailing P/B: {{E}}x, {{year}}F P/B: {{F}}x
+
+**Buy-Side View:**
+- Our target price and rating from `buy_side_commentary.valuation_analysis`
+- Investment thesis (2-3 bullets)
+
+**Sell-Side Consensus:**
+- Consensus TP and rating *[Sell-side]*
+- Where we differ and why
+
+**Catalysts & Risks:**
+- Key catalysts and downside risks
 
 #### Slide 9 - Appendix — Independent Financial Insights
 - Only from `financial_data` (5Q).  

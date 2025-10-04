@@ -194,6 +194,7 @@ class QuarterlyReportGenerator:
             "buy_side_commentary": [],   # Collect all buy-side commentary
             "financial_data": None,      # Financial data from internal database
             "supplementary_data": None,  # Supplementary data from user uploads
+            "forecast_data": None,       # Forecast and valuation from MongoDB
             "methodology_notes": []
         }
         
@@ -273,6 +274,12 @@ class QuarterlyReportGenerator:
                 # Supplementary data from user upload
                 aggregated["supplementary_data"] = data["supplementary_data"].copy()
                 aggregated["supplementary_data"]["_source"] = source_info
+            
+            # Collect forecast data from MongoDB
+            if "forecast_data" in data and data["forecast_data"] and source_info["file_type"] == "forecast_data":
+                # Forecast and valuation data
+                aggregated["forecast_data"] = data["forecast_data"].copy()
+                aggregated["forecast_data"]["_source"] = source_info
             
             # Merge outlook (combine guidance from all sources)
             if "outlook_and_guidance" in data and data["outlook_and_guidance"]:
