@@ -62,10 +62,10 @@ class QuarterlyEarningsTab:
         
         # Create tabs
         tab_upload, tab_documents, tab_analysis, tab_summary = st.tabs([
-            "📤 Upload Documents",
-            "📁 Document Management",
-            "🤖 AI Analysis",
-            "📋 Summary Reports"
+            "Upload Documents",
+            "Document Management",
+            "Extracted JSON Analysis",
+            "Summary Reports"
         ])
         
         with tab_upload:
@@ -96,7 +96,7 @@ class QuarterlyEarningsTab:
         company_name = st.session_state.get('selected_company_name', ticker_only)
         
         # Display selected company
-        st.info(f"📊 **Selected Company:** {company_name} ({ticker_only})")
+        st.info(f"**Selected Company:** {company_name} ({ticker_only})")
         
         col1, col2 = st.columns(2)
         
@@ -125,11 +125,11 @@ class QuarterlyEarningsTab:
                     "supplementary_data"
                 ],
                 format_func=lambda x: {
-                    "earnings_presentation": "📊 Company Earnings Presentation",
-                    "sellside_report": "📈 Sell-Side Research Report",
-                    "buyside_commentary": "💼 Buy-Side Commentary",
-                    "financial_data": "🔢 Financial Data (Automated)",
-                    "supplementary_data": "📋 Supplementary Data (Excel/CSV)"
+                    "earnings_presentation": "Company Earnings Presentation",
+                    "sellside_report": "Sell-Side Research Report",
+                    "buyside_commentary": "Buy-Side Commentary",
+                    "financial_data": "Financial Data (Automated)",
+                    "supplementary_data": "Supplementary Data (Excel/CSV)"
                 }.get(x, x),
                 help="Select the type of document you're uploading or data to process",
                 key="qe_upload_doc_type"
@@ -148,9 +148,9 @@ class QuarterlyEarningsTab:
         # Financial data: Automated extraction (no upload)
         if document_type == "financial_data":
             st.markdown("---")
-            st.subheader("🔢 Automated Financial Data Extraction")
+            st.subheader("Automated Financial Data Extraction")
             st.info("""
-            📊 **Automatic extraction from internal database (FA_processed.parquet)**
+            **Automatic extraction from internal database (FA_processed.parquet)**
             
             This will extract:
             - Complete financial statements for **{quarter}** (current quarter)
@@ -167,7 +167,7 @@ class QuarterlyEarningsTab:
         # Supplementary data: Upload Excel/CSV with time series
         elif document_type == "supplementary_data":
             st.markdown("---")
-            st.subheader("📋 Upload Supplementary Data (Excel/CSV)")
+            st.subheader("Upload Supplementary Data (Excel/CSV)")
             st.markdown("""
             Upload a **CSV or Excel file** containing quarterly time series data that's important for earnings analysis.
             
@@ -274,25 +274,25 @@ Add your bullet points, valuation analysis, and key observations here..."""
         
         if has_input:
             if uploaded_file:
-                st.info(f"📄 File selected: **{uploaded_file.name}** ({uploaded_file.size / 1024:.1f} KB)")
+                st.info(f"File selected: **{uploaded_file.name}** ({uploaded_file.size / 1024:.1f} KB)")
             elif buyside_text:
                 word_count = len(buyside_text.strip().split())
                 if document_type == "buyside_commentary":
-                    st.info(f"💼 Buy-side commentary: **{word_count} words** entered")
+                    st.info(f"Buy-side commentary: **{word_count} words** entered")
                 elif document_type == "earnings_presentation":
-                    st.info(f"📊 Earnings presentation text: **{word_count} words** entered")
+                    st.info(f"Earnings presentation text: **{word_count} words** entered")
                 elif document_type == "sellside_report":
-                    st.info(f"📈 Sell-side report text: **{word_count} words** entered")
+                    st.info(f"Sell-side report text: **{word_count} words** entered")
             elif document_type == "financial_data":
-                st.info(f"🔢 Ready to extract financial data for **{ticker_only} {quarter}**")
+                st.info(f"Ready to extract financial data for **{ticker_only} {quarter}**")
             
             # Button label based on document type
             if document_type == "financial_data":
-                button_label = "🔢 Process Financial Data"
+                button_label = "Process Financial Data"
             elif document_type == "buyside_commentary":
-                button_label = "🚀 Process Buy-Side Commentary"
+                button_label = "Process Buy-Side Commentary"
             else:
-                button_label = "🚀 Upload and Analyze Document"
+                button_label = "Upload and Analyze Document"
             
             if st.button(button_label, type="primary", use_container_width=True, key="qe_upload_analyze_btn"):
                 # Store metadata in session state
@@ -362,7 +362,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
         company_name = st.session_state.get('selected_company_name', selected_ticker)
         
         # Display selected company
-        st.info(f"📊 **Selected Company:** {company_name} ({selected_ticker})")
+        st.info(f"**Selected Company:** {company_name} ({selected_ticker})")
         
         # Quarter selector
         col1, col2 = st.columns([1, 1])
@@ -426,16 +426,16 @@ Add your bullet points, valuation analysis, and key observations here..."""
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    if st.button("🔍 View Details", use_container_width=True, key="qe_doc_view_btn"):
+                    if st.button("View Details", use_container_width=True, key="qe_doc_view_btn"):
                         selected_doc = documents[selected_doc_idx]
                         st.json(selected_doc)
                 
                 with col2:
-                    if st.button("🔄 Re-analyze", use_container_width=True, key="qe_doc_reanalyze_btn"):
+                    if st.button("Re-analyze", use_container_width=True, key="qe_doc_reanalyze_btn"):
                         st.info("Re-analysis feature coming soon")
                 
                 with col3:
-                    if st.button("🗑️ Delete", use_container_width=True, type="secondary", key="qe_doc_delete_btn"):
+                    if st.button("Delete", use_container_width=True, type="secondary", key="qe_doc_delete_btn"):
                         doc_id = doc_data[selected_doc_idx]['Document ID']
                         if self.manager.delete_document(doc_id):
                             st.rerun()
@@ -445,7 +445,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
             st.info("Select a company and quarter to view documents")
     
     def _render_analysis_tab(self):
-        """Render the AI analysis review tab"""
+        """Render the AI JSON analysis review tab"""
         st.header("AI-Extracted Data Review")
         
         if st.session_state.qe_processed_data:
@@ -459,7 +459,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
                 if section_name == 'extraction_metadata':
                     continue
                 
-                with st.expander(f"📊 {section_name.replace('_', ' ').title()}", expanded=True):
+                with st.expander(f"{section_name.replace('_', ' ').title()}", expanded=True):
                     if isinstance(section_data, dict):
                         st.json(section_data)
                     elif isinstance(section_data, list):
@@ -489,10 +489,10 @@ Add your bullet points, valuation analysis, and key observations here..."""
             col1, col2 = st.columns([3, 1])
             
             with col1:
-                st.info("💡 Review the data above. If it looks good, click Save to store in MongoDB.")
+                st.info("Review the data above. If it looks good, click Save to store in MongoDB.")
             
             with col2:
-                if st.button("💾 Save to MongoDB", type="primary", use_container_width=True, key="qe_analysis_save_btn"):
+                if st.button("Save to MongoDB", type="primary", use_container_width=True, key="qe_analysis_save_btn"):
                     # Get metadata from session state
                     ticker = st.session_state.qe_upload_ticker
                     company_name = st.session_state.qe_upload_company
@@ -533,7 +533,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
         summary_company_name = st.session_state.get('selected_company_name', summary_ticker)
         
         # Display selected company
-        st.info(f"📊 **Selected Company:** {summary_company_name} ({summary_ticker})")
+        st.info(f"**Selected Company:** {summary_company_name} ({summary_ticker})")
         
         col1, col2 = st.columns([1, 1])
         
@@ -557,7 +557,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
         col1, col2 = st.columns(2)
         with col1:
             generate_btn = st.button(
-                "📝 Generate Summary Report",
+                "Generate Summary Report",
                 type="primary",
                 use_container_width=True,
                 disabled=not summary_quarter,
@@ -586,7 +586,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
                 
                 # Display summary
                 st.markdown("---")
-                st.markdown("## 📋 Quarterly Earnings Summary")
+                st.markdown("##Quarterly Earnings Summary")
                 
                 st.markdown(summary.get('summary_text', 'No summary text available'))
                 
@@ -605,7 +605,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
                                 txt_content = f.read()
                             
                             st.download_button(
-                                label="📄 Download as TXT",
+                                label="Download as TXT",
                                 data=txt_content,
                                 file_name=f"earnings_summary_{summary_ticker}_{summary_quarter}.txt",
                                 mime="text/plain",
@@ -616,7 +616,7 @@ Add your bullet points, valuation analysis, and key observations here..."""
                 with col2:
                     # Download as markdown
                     st.download_button(
-                        label="📝 Download as Markdown",
+                        label="Download as Markdown",
                         data=summary.get('summary_text', ''),
                         file_name=f"earnings_summary_{summary_ticker}_{summary_quarter}.md",
                         mime="text/markdown",

@@ -100,46 +100,24 @@ class QuarterlyEarningsExtractor:
         # Format the schema for the prompt
         schema_str = json.dumps(self.schema, indent=2)
         
-        # If custom prompt loaded, use it; otherwise use default
-        if prompt_template:
-            # Replace all template variables with actual values
-            prompt = prompt_template.replace("{{COMPANY_NAME}}", company_name)
-            prompt = prompt.replace("{{TICKER}}", ticker)
-            prompt = prompt.replace("{{QUARTER}}", quarter)
-            prompt = prompt.replace("{{COMPARISON_QUARTERS_JSON}}", json.dumps(comparison_quarters))
-            prompt = prompt.replace("{{FISCAL_HALF}}", fiscal_half)
-            prompt = prompt.replace("{{TARGET_CCY}}", "VND")
-            prompt = prompt.replace("{{TARGET_UNITS}}", "bn")
-            prompt = prompt.replace("{{ACCOUNTING_BASIS}}", "VAS")  # Default for Vietnam, but can detect IFRS/USGAAP
-            
-            # Add schema and document text at the end
-            full_prompt = f"{prompt}\n\nJSON SCHEMA:\n{schema_str}\n\nDOCUMENT TEXT:\n{document_text[:50000]}"
-        else:
-            # Fallback to inline prompt if file not found
-            full_prompt = f"""
-You are a meticulous financial data extractor for Vietnamese real estate companies.
-
-Company: {company_name} ({ticker})
-Quarter: {quarter}
-
-Extract data from the management earnings presentation and output ONE JSON object conforming EXACTLY to the schema.
-
-JSON SCHEMA:
-{schema_str}
-
-CRITICAL RULES:
-- Zero hallucination: if a metric is not explicitly stated, leave it null
-- Distinguish reported vs adjusted metrics (adjusted includes BCC, bulk sales)
-- Distinguish presales vs recognized revenue
-- Capture project-level contributors with exact names
-- Normalize all amounts to VND billions
-- Set currency to "VND", units to "bn"
-- Set accounting_basis to "VAS" unless deck indicates IFRS or USGAAP
-- Return ONLY valid JSON
-
-Document text:
-{document_text[:50000]}
-"""
+        # Prompt file is required - do not use fallback
+        if not prompt_template:
+            error_msg = "Prompt file not found: quarterly_earnings_management_presentation_prompt.txt is required"
+            st.error(error_msg)
+            return {"error": error_msg}
+        
+        # Replace all template variables with actual values
+        prompt = prompt_template.replace("{{COMPANY_NAME}}", company_name)
+        prompt = prompt.replace("{{TICKER}}", ticker)
+        prompt = prompt.replace("{{QUARTER}}", quarter)
+        prompt = prompt.replace("{{COMPARISON_QUARTERS_JSON}}", json.dumps(comparison_quarters))
+        prompt = prompt.replace("{{FISCAL_HALF}}", fiscal_half)
+        prompt = prompt.replace("{{TARGET_CCY}}", "VND")
+        prompt = prompt.replace("{{TARGET_UNITS}}", "bn")
+        prompt = prompt.replace("{{ACCOUNTING_BASIS}}", "VAS")  # Default for Vietnam, but can detect IFRS/USGAAP
+        
+        # Add schema and document text at the end
+        full_prompt = f"{prompt}\n\nJSON SCHEMA:\n{schema_str}\n\nDOCUMENT TEXT:\n{document_text[:50000]}"
 
         try:
             response = openai.chat.completions.create(
@@ -230,33 +208,10 @@ Document text:
             # Add schema and document text at the end
             full_prompt = f"{prompt}\n\nJSON SCHEMA:\n{schema_str}\n\nDOCUMENT TEXT:\n{document_text[:50000]}"
         else:
-            # Fallback to inline prompt if file not found
-            full_prompt = f"""
-You are a meticulous financial data extractor for Vietnamese sell-side reports.
-
-Company: {company_name} ({ticker})
-Quarter: {quarter}
-Analyst Firm: {analyst_firm or "Unknown"}
-
-Extract data from the sell-side report and output ONE JSON object conforming EXACTLY to the schema.
-
-JSON SCHEMA:
-{schema_str}
-
-CRITICAL RULES:
-- Zero hallucination: only record what the note states
-- Distinguish reported vs adjusted metrics
-- Do NOT infer bases for % changes
-- Capture analyst estimates separately from actuals
-- Normalize all amounts to VND billions
-- Set currency to "VND", units to "bn"
-- Set source.file_type to "sell_side"
-- Set source.publisher to analyst firm
-- Return ONLY valid JSON
-
-Document text:
-{document_text[:50000]}
-"""
+            # Prompt file is required - do not use fallback
+            error_msg = "Prompt file not found: quarterly_earnings_sell_side_report_prompt.txt is required"
+            st.error(error_msg)
+            return {"error": error_msg}
 
         try:
             response = openai.chat.completions.create(
@@ -286,103 +241,6 @@ Document text:
             
         except Exception as e:
             st.error(f"Error extracting from sell-side report: {str(e)}")
-            return {"error": str(e)}
-    
-    def extract_from_user_commentary(self,
-                                     document_text: str,
-                                     company_name: str,
-                                     ticker: str,
-                                     quarter: str) -> Dict[str, Any]:
-        """
-        Extract structured insights from user commentary/notes using the unified schema
-        
-        Args:
-            document_text: User's notes or commentary
-            company_name: Company name
-            ticker: Stock ticker
-            quarter: Quarter (e.g., "2Q25")
-            
-        Returns:
-            Dictionary with categorized user insights following the schema
-        """
-        
-        # Format the schema for the prompt
-        schema_str = json.dumps(self.schema, indent=2)
-        
-        prompt = f"""
-You are analyzing user commentary and notes about {company_name} ({ticker}) - {quarter}.
-
-This is a Vietnamese real estate company. The user has provided qualitative observations, opinions, and notes about the company's quarterly performance.
-Extract and structure this information according to the JSON schema below.
-
-JSON SCHEMA TO FOLLOW:
-{schema_str}
-
-IMPORTANT INSTRUCTIONS:
-1. Return ONLY valid JSON matching the schema structure exactly
-2. For the "company" and "ticker" fields:
-   - Set "company" to "{company_name}"
-   - Set "ticker" to "{ticker}"
-3. For the "source" section:
-   - Set "file_type" to "management" (or "sell_side" if commentary references analyst views)
-   - Set "publisher" to "User Commentary"
-4. For "currency" and "business_model":
-   - Set "currency" to "VND"
-   - Infer business model from user's description of the Vietnamese company
-5. Extract any quantitative data mentioned by the user (revenue, units, etc.) into appropriate sections
-6. For qualitative insights:
-   - Use "one_offs_and_events" for notable observations about specific events
-   - Use "outlook_and_guidance.management_quotes" for user's key observations
-   - Use "methodology.parsing_notes" to capture the qualitative nature of the source
-7. Preserve the user's tone and opinions
-8. If user mentions specific projects, add them to "presales.new_launches" or "recognition_drivers.projects_contributing"
-9. If user discusses balance sheet concerns, extract to "balance_sheet.notable_movements"
-10. Set "methodology.confidence_pct" lower (30-60%) to reflect qualitative source
-11. Use notes fields liberally to capture context and user opinions
-
-SPECIAL HANDLING FOR USER COMMENTARY:
-- Much of the data will be qualitative observations rather than hard numbers
-- Use null for most quantitative fields unless user explicitly mentions numbers
-- Focus on capturing:
-  * User's sentiment and tone
-  * Key observations and opinions
-  * Concerns or opportunities noted
-  * Strategic insights
-  * Management tone observations
-  * Market positioning views
-
-User commentary:
-{document_text}
-"""
-
-        try:
-            response = openai.chat.completions.create(
-                model="gpt-5-mini",
-                messages=[
-                    {"role": "system", "content": "You are an expert at analyzing qualitative financial commentary and structuring insights. You preserve the original meaning while organizing information systematically."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=1.0,
-                response_format={"type": "json_object"}
-            )
-            
-            result = json.loads(response.choices[0].message.content)
-            
-            # Add extraction metadata
-            if 'methodology' not in result:
-                result['methodology'] = {}
-            
-            result['methodology']['extraction_metadata'] = {
-                'extraction_tool': 'quarterly_earnings_extractor',
-                'extraction_date': datetime.now().isoformat(),
-                'model': 'gpt-5-mini',
-                'document_type': 'user_commentary'
-            }
-            
-            return result
-            
-        except Exception as e:
-            st.error(f"Error extracting from user commentary: {str(e)}")
             return {"error": str(e)}
     
     def extract_from_buyside_commentary(self, 
@@ -420,29 +278,10 @@ User commentary:
             # Add schema and commentary text at the end
             full_prompt = f"{prompt}\n\nJSON SCHEMA:\n{schema_str}\n\nBUY-SIDE COMMENTARY TEXT:\n{commentary_text}"
         else:
-            # Fallback to inline prompt if file not found
-            full_prompt = f"""
-You are a meticulous note organizer processing buy-side analyst commentary.
-
-Company: {company_name} ({ticker})
-Quarter: {quarter}
-
-Extract and organize the buy-side commentary according to the schema.
-
-JSON SCHEMA:
-{schema_str}
-
-CRITICAL RULES:
-- Capture each bullet exactly as written in raw_bullets
-- Classify each point by category (earnings, presales, balance_sheet, etc.)
-- Extract valuation analysis if present (RNAV, target price, upside/downside)
-- Determine sentiment: positive/neutral/negative/mixed/not_stated
-- Do not invent metrics or sentiment
-- Return ONLY valid JSON
-
-Buy-side commentary:
-{commentary_text}
-"""
+            # Prompt file is required - do not use fallback
+            error_msg = "Prompt file not found: quarterly_earnings_buy_side_commentary_prompt.txt is required"
+            st.error(error_msg)
+            return {"error": error_msg}
 
         try:
             response = openai.chat.completions.create(
