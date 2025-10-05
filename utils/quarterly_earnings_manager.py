@@ -858,6 +858,7 @@ class QuarterlyEarningsManager:
                 return {"error": "No data available"}
         
         # Auto-load forecast data from MongoDB (if available)
+        forecast_data_doc = None
         with st.spinner("🎯 Loading forecast and valuation data..."):
             try:
                 forecast_data_doc = self.forecast_extractor.structure_for_unified_schema(
@@ -868,9 +869,111 @@ class QuarterlyEarningsManager:
                 )
                 
                 if forecast_data_doc and "error" not in forecast_data_doc:
-                    # Add forecast data to the earnings data list
-                    all_earnings_data.append(forecast_data_doc)
                     st.success(f"✅ Loaded forecast for FY{forecast_data_doc.get('forecast_data', {}).get('fy_forecast', {}).get('year', '')}")
+                    
+                    # Save/update forecast data to MongoDB (upsert to avoid duplicates)
+                    with st.spinner("💾 Saving forecast data to MongoDB..."):
+                        # Check if forecast data already exists for this ticker/quarter
+                        existing_forecast_doc = self.mongo_helper.quarterly_documents_collection.find_one({
+                            "ticker": ticker.upper(),
+                            "quarter": quarter.upper(),
+                            "document_type": "forecast_data"
+                        })
+                        
+                        if existing_forecast_doc:
+                            # Update existing document
+                            forecast_doc_id = str(existing_forecast_doc['_id'])
+                            
+                            # Update metadata timestamp
+                            self.mongo_helper.quarterly_documents_collection.update_one(
+                                {"_id": existing_forecast_doc['_id']},
+                                {"$set": {
+                                    "last_updated": datetime.now(),
+                                    "processing_status": "completed",
+                                    "metadata.fy_year": forecast_data_doc.get('forecast_data', {}).get('fy_forecast', {}).get('year')
+                                }}
+                            )
+                            
+                            # Update earnings data (upsert)
+                            forecast_earnings_data = {
+                                "document_id": forecast_doc_id,
+                                "ticker": ticker.upper(),
+                                "company_name": company_name,
+                                "quarter": quarter.upper(),
+                                "year": year,
+                                "quarter_num": int(quarter[0]),
+                                "last_updated": datetime.now()
+                            }
+                            
+                            # Copy all forecast data
+                            for key, value in forecast_data_doc.items():
+                                if key not in ['extraction_metadata', 'error']:
+                                    forecast_earnings_data[key] = value
+                            
+                            # Upsert to QuarterlyEarningsData
+                            self.mongo_helper.quarterly_data_collection.update_one(
+                                {
+                                    "ticker": ticker.upper(),
+                                    "quarter": quarter.upper(),
+                                    "source.file_type": "forecast_data"
+                                },
+                                {"$set": forecast_earnings_data},
+                                upsert=True
+                            )
+                            st.success("✅ Forecast data updated in MongoDB")
+                        else:
+                            # Create new document
+                            forecast_metadata = {
+                                "file_name": f"forecast_data_{ticker}_{quarter}.json",
+                                "ticker": ticker.upper(),
+                                "company_name": company_name,
+                                "quarter": quarter.upper(),
+                                "year": year,
+                                "quarter_num": int(quarter[0]),
+                                "document_type": "forecast_data",
+                                "upload_date": datetime.now(),
+                                "processing_status": "completed",
+                                "source": "mongodb_forecast",
+                                "analyst_firm": None,
+                                "report_date": datetime.now(),
+                                "metadata": {
+                                    "file_extension": "json",
+                                    "extraction_method": "automated",
+                                    "fy_year": forecast_data_doc.get('forecast_data', {}).get('fy_forecast', {}).get('year')
+                                }
+                            }
+                            
+                            # Save metadata
+                            forecast_doc_id = self.mongo_helper.save_quarterly_document(forecast_metadata)
+                            
+                            # Prepare earnings data for saving
+                            forecast_earnings_data = {
+                                "document_id": forecast_doc_id,
+                                "ticker": ticker.upper(),
+                                "company_name": company_name,
+                                "quarter": quarter.upper(),
+                                "year": year,
+                                "quarter_num": int(quarter[0]),
+                                "upload_date": datetime.now(),
+                                "last_updated": datetime.now()
+                            }
+                            
+                            # Copy all forecast data
+                            for key, value in forecast_data_doc.items():
+                                if key not in ['extraction_metadata', 'error']:
+                                    forecast_earnings_data[key] = value
+                            
+                            # Save to QuarterlyEarningsData collection
+                            data_id = self.mongo_helper.save_quarterly_earnings_data(forecast_earnings_data)
+                            
+                            if data_id:
+                                self.mongo_helper.update_quarterly_document_status(
+                                    forecast_doc_id, "completed", extraction_id=data_id
+                                )
+                                st.success("✅ Forecast data saved to MongoDB")
+                    
+                    # Add forecast data to the earnings data list for report generation
+                    all_earnings_data.append(forecast_data_doc)
                 else:
                     st.info("ℹ️ No forecast data available (optional - will generate report without it)")
             except Exception as e:

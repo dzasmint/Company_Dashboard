@@ -1,36 +1,160 @@
-# Vinhomes (VHM) 2Q25 Results - Buy-Side Short Report
+Slide 1 — Executive Summary
 
-## Headline Summary
-Vinhomes reported 2Q25 revenue of VND 19.0 trillion, a YoY decline of 33%, with NPAT at VND 8.3 trillion. Despite the revenue drop, presales performance was robust, driven by retail channels. Our stance remains positive, diverging from the sell-side's in-line assessment, as we see potential for Vinhomes to exceed its full-year guidance.
+- Retail-led demand held up. Total presales VND32.5 tn (-7% QoQ, -8.5% YoY), 100% retail [Supplementary Data] — end-demand is healthy; new launches (Golden City/Hậu Nghĩa) saw strong take-up [Management].
+- Earnings quality mixed. NPATMI 7,553 bn (+181% QoQ) aided by other financial income/compensation [Sell-side – SSI/VCI]; core GP margin fell to 23.8% (vs 32.9% in 1Q) — monitor mix and one-offs.
+- Backlog at record high. Unbilled bookings VND138.2 tn (+16% YoY) [Supplementary Data; Management] — strong H2 revenue visibility as deliveries ramp at Royal Island and OCP2/3.
+- Balance sheet improved. Cash 48.7 tn (+127% QoQ), net debt ~41.7 tn — near-term funding risk reduced; capacity for landbanking and execution.
+- Bulk deals are the swing factor. We expect two bulk sales in 3Q25 [Buy-side] — skew to upside versus FY25 guidance if executed on time [Management].
+- Can Gio (Green Paradise) a potential 4Q25 launch [Buy-side; Management groundwork] — adds a new retail growth leg; supports 2H25/2026 presales.
+- Valuation still appealing to us. Despite share rally, we see c.20% RNAV discount [Buy-side] — more constructive than SSI’s Market Perform stance [Sell-side – SSI].
 
-## Earnings Review (2Q25 vs 1Q25 and 2Q24)
-- **Revenue:** VND 19.0 trillion, down 33% YoY. Adjusted revenue, including BCC bulk, was VND 25.7 trillion, down 35% YoY.
-- **Gross Profit:** VND 4.5 trillion, with a gross margin not disclosed in financial data.
-- **NPAT:** VND 8.3 trillion, with significant contributions from project handovers at VH Ocean Park 2 & 3 and Royal Island.
-- **One-offs:** Included VND 5.4 trillion compensation income from a partner [Sell-side].
-- **Sell-side View:** Results were labeled as in-line [Sell-side – VCI, BSI], but our analysis suggests potential for exceeding guidance due to strong presales and upcoming bulk sales.
 
-## Presales & Sales Pipeline
-- **Contracted Sales:** VND 32.5 trillion, down 8% YoY. However, 1H25 contracted sales grew 31% YoY to VND 67.5 trillion.
-- **Unbilled Backlog:** VND 138.2 trillion, up 16% YoY, with Wonder City & Royal Island contributing 59%.
-- **New Launches:** Vinhomes Golden City and Green City launched with strong initial bookings.
-- **Buy-Side View:** Presales are robust, particularly from retail channels, and new projects are performing well, supporting our positive outlook.
+Slide 2 — Income Statement (Table)
+Quarterly Financial Performance
 
-## Balance Sheet & Leverage
-- **Cash and Equivalents:** VND 17.937 trillion.
-- **Gross Debt:** VND 90.351 trillion, with a total debt to total assets ratio of 13.7%.
-- **Leverage:** Interest coverage at 7.1x, with a favorable debt maturity profile.
-- **Buy-Side View:** Improved financial position due to strong presales, with cash increasing significantly.
+| Field | Current Quarter | Previous Quarter | Last Year Quarter | QoQ Growth | YoY Growth | Comments |
+|-------|-----------------|------------------|-------------------|------------|------------|----------|
+| Revenue | 19,022.22 | 15,697.92 | 28,375.36 | +21.2% | -33.0% | Deliveries at OCP2/3 and services; bulk gains booked in finance income [Management; Sell-side]. |
+| Gross Profit | 4,523.84 | 5,157.93 | 8,688.25 | -12.3% | -47.9% | Margin compressed on higher services/other mix; bulk/comp booked outside COGS. |
+| EBITDA | 3,467.16 | 3,541.73 | 7,307.76 | -2.1% | -52.6% | Softer operating profitability as low-margin lines rose. |
+| NPAT | 8,348.17 | 2,652.03 | 10,715.88 | +214.8% | -22.1% | Boosted by other financial income/BCC profit sharing [Sell-side; Management]. |
+| NPATMI | 7,553.45 | 2,688.95 | 10,891.02 | +180.9% | -30.6% | One-offs/financial income lifted bottom line; core weaker. |
 
-## Guidance & Outlook
-- **Management Guidance:** Maintained full-year revenue target of VND 180 trillion and NPAT of VND 42 trillion [Management].
-- **Buy-Side View:** We believe Vinhomes is likely to exceed guidance, supported by upcoming bulk sales and strong presales momentum.
+Notes: Some sell-side quote “adjusted” EBITDA of 12,404 (bn) [Sell-side – SSI], which differs from our 3,467 (bn) from financial_data; definitions/adjustments vary. We use financial_data as ground truth.
 
-## Valuation & Recommendation
-- **RNAV Discount:** Currently at 20%, with potential for an increase due to new project announcements in Nha Trang and Ha Noi.
-- **Buy-Side Stance:** We maintain a positive outlook, with potential for RNAV uplift, supporting an Accumulate recommendation.
 
-## Catalysts & Risks
-- **Catalysts:** Launch of new mega projects and ongoing sales across existing developments [Management].
-- **Risks:** Large debt maturity approaching within 1 year [Sell-side – BSI].
-- **Buy-Side View:** We see the launch of Vinhomes Can Gio in 4Q25 as a significant catalyst, with risks mitigated by strong cash flows and presales.
+Slide 3 — Earnings Review
+
+- Top line VND19.0 tn (+21% QoQ, -33% YoY) with property sales VND9.9 tn (52%) and construction VND4.1 tn [Management]; deliveries concentrated at OCP2/3 and Royal Island.
+- Profit aided by financial items: compensation (~VND5.4 tn) and BCC/other finance income [Sell-side – SSI/VCI; Management], inflating NPAT despite weaker GP.
+- Core profitability soft: GM 23.8% (vs 32.9% in 1Q25; 30.6% in 2Q24), reflecting mix and timing of bulk via finance line.
+- Versus expectations: HSC highlights a miss on ‘core’ profit (Add, TP VND99,500) [Sell-side – HSC]; SSI is Market Perform (TP VND98,300) [Sell-side – SSI]; VCI sees limited forecast changes [Sell-side – VCI].
+- Our angle: We emphasize retail presales strength and backlog conversion; near-term earnings cadence hinges on bulk execution and handover ramp.
+
+
+Slide 4 — Presales & Unbilled Booking Tables
+
+I. Presales table
+Quarterly Presales Trend:
+Source: [Supplementary Data]
+
+| Quarter | Total Presales | Bulk Presales | Retail Presales | QoQ Change | YoY Change |
+|---------|----------------|---------------|-----------------|------------|------------|
+| Q-4 (2Q24) | 35.5 VND tn | 16.7 VND tn | 18.8 VND tn | - | - |
+| Q-3 (3Q24) | 37.9 VND tn | 3.4 VND tn | 34.5 VND tn | +6.8% | - |
+| Q-2 (4Q24) | 14.3 VND tn | 9.7 VND tn | 4.6 VND tn | -62.3% | - |
+| Q-1 (1Q25) | 35.0 VND tn | N/A | N/A | +144.8% | - |
+| Current (2Q25) | 32.5 VND tn | N/A | 32.5 VND tn | -7.1% | -8.5% |
+
+II. Presales mix breakdown (current quarter)
+- Bulk presales: N/A (no bulk disclosed; effectively 0%) [Supplementary Data]
+- Retail presales: 32.5 VND tn (100%) [Supplementary Data]
+- Mix ratio: 0% / 100%
+
+Mix evolution (last 4 quarters): 2Q24 ~47% bulk; 3Q24 ~9%; 4Q24 ~68%; 1Q25 ~0%; 2Q25 ~0% [Supplementary Data].
+
+III. Unbilled Booking
+Backlog Trend:
+Source: [Supplementary Data]; revenue for ratio from financial_data
+
+| Quarter | Unbilled Booking | QoQ Change | As % of Quarterly Revenue |
+|---------|------------------|------------|---------------------------|
+| Q-4 (2Q24) | 118.7 VND tn | - | 418% |
+| Q-3 (3Q24) | 123.0 VND tn | +3.6% | 369% |
+| Q-2 (4Q24) | 94.2 VND tn | -23.4% | 291% |
+| Q-1 (1Q25) | 120.0 VND tn | +27.3% | 764% |
+| Current (2Q25) | 138.2 VND tn | +15.2% | 726% |
+
+IV. Project contribution to 1H25 presales (closest disclosed)
+Source: [Management]
+
+| Project | Presales Contribution | % of Total | Region | Product Type |
+|---------|----------------------|------------|--------|--------------|
+| Wonder City | N/A | 50.7% | N/A | Mixed |
+| Royal Island | N/A | 27.4% | N/A | Mixed |
+| Green City | N/A | 6.2% | N/A | Mixed |
+| Golden City | N/A | 5.7% | N/A | Mixed |
+| Star City | N/A | 2.9% | N/A | Mixed |
+| Others | N/A | 7.0% | - | - |
+
+Notes: 2Q25 retail-only presales; late-June launches (Golden City/Hậu Nghĩa) saw rapid bookings [Management].
+
+
+Slide 5 — Presales Analysis
+
+- Momentum solid and retail-led: 2Q25 presales VND32.5 tn with 100% retail [Supplementary Data] — high-quality demand; we see sustainability into 2H with ongoing launches [Buy-side vs Management aligned].
+- Mix skewed to retail in 1H25; we expect bulk to resume in 3Q25 [Buy-side] — supports FY targets and cushions margins if pricing holds.
+- New launch execution strong (Golden City, Hậu Nghĩa) [Management; Buy-side] — early sell-through underpins confidence ahead of Can Gio/Lang Vân in 2H25.
+- Backlog depth (VND138.2 tn) [Supplementary Data; Management] — multi-quarter revenue cover, aiding delivery cadence in 2H25.
+- We are above consensus on presales/earnings given anticipated bulk deals; SSI models 137.6 tn FY25 presales and is Market Perform [Sell-side – SSI], while we expect upside [Buy-side].
+
+
+Slide 6 — Balance Sheet & Leverage
+
+| Metric | 2Q25 | 1Q25 | 2Q24 | QoQ | YoY | Comments |
+|--------|------|------|------|-----|-----|----------|
+| Cash & equivalents | 48,672 | 21,493 | 17,180 | +126.5% | +183.3% | Cash up on strong collections; liquidity improved. |
+| Short-term debt | 46,258 | 33,424 | 25,901 | +38.4% | +78.6% | Higher ST borrowings alongside build in inventories. |
+| Long-term debt | 44,093 | 54,526 | 44,600 | -19.1% | -1.1% | LT debt reduced QoQ. |
+| Gross debt | 90,351 | 87,950 | 70,501 | +2.7% | +28.2% | Slightly higher overall. |
+| Net debt | 41,679 | 66,457 | 53,321 | -37.3% | -21.8% | Material deleveraging QoQ. |
+| D/E (gross) | 0.39x | 0.39x | 0.34x | — | — | Within comfort. |
+| Net D/E | 0.18x | 0.30x | 0.26x | — | — | Headroom for pipeline. |
+
+- Repaid VND3.1 tn syndicated loan in 2Q25 [Management]; maturity profile improving.
+- Discrepancy note: Management slides cite different cash/net debt metrics; we rely on financial_data. Definitions/aggregation may differ [Management].
+
+
+Slide 7 — Guidance & Outlook
+
+FY Forecast Progress (internal model)
+- FY25 forecast: Revenue 31,446 bn, NPATMI 6,557 bn [Forecast data]
+- YTD actual (as captured in model): Revenue 19,022 bn (60.5% of FY), NPATMI 7,553 bn (115.2% of FY) [Forecast data]
+- Status: Revenue ahead; NPATMI ahead. Remaining 2 quarters need: 12,424 bn revenue; -996 bn NPATMI (already surpassed) [Forecast data]
+- Important: Model appears to treat 2Q only as “YTD”; our 1H25 by financial_data is Revenue ~34,720 bn; NPATMI ~10,242 bn — even further ahead.
+
+Management Guidance
+- Adjusted revenue target: VND180,000 bn; NPAT target: VND42,000 bn [Management].
+- Presales guidance maintained: VND150–200 tn for FY25, subject to market conditions [Management].
+
+Sell-Side View
+- VCI: Little change to 2025F NPATMI post-2Q [Sell-side – VCI].
+- HSC: Add, TP VND99,500; core profit missed on low deliveries; expects sharp pickup in 2H25 [Sell-side – HSC].
+- SSI: Market Perform, TP VND98,300; presales momentum to support 2H25–2026; FY25 presales forecast ~VND137.6 tn (+32% YoY) [Sell-side – SSI].
+
+Our Assessment
+- Achievability: We see upside vs guidance on expected 3Q25 bulk deals and potential 4Q25 Can Gio launch [Buy-side].
+- Key risks: Launch/delivery timing, bulk execution, mix-driven margin volatility; upside from backlog conversion and new project catalysts.
+
+
+Slide 8 — Valuation & Recommendation
+
+Our Valuation (internal model snapshot)
+- Current price: 100,000 VND; RNAV/share: 103,077 VND; Upside to RNAV: +3.1% (model) [Forecast data].
+- Trading multiples: Trailing P/E 13.1x; 2025F P/E 62.6x; 2026F P/E 9.4x; mean P/E 8.25x — currently at a premium to historical mean [Forecast data].
+- Trailing P/B 1.81x; 2025F P/B 1.81x; 2026F P/B 1.43x [Forecast data].
+
+Buy-Side View
+- We see c.20% discount to our RNAV today and expect to lift RNAV on adding new projects (Nha Trang, Hanoi) [Buy-side].
+- Recommendation: Constructive/positive stance; formal TP under review pending RNAV refresh [Buy-side].
+- Thesis: (1) Retail demand resilience; (2) Backlog conversion plus bulk deals drive H2 earnings; (3) Optionality from mega launches (Can Gio, Lang Vân).
+
+Sell-Side Consensus
+- HSC Add, TP VND99,500; SSI Market Perform, TP VND98,300; VCI near unchanged NPATMI view [Sell-side].
+- Where we differ: We are more positive on FY25 execution (bulk timing) and RNAV upside on new projects.
+
+Catalysts & Risks
+- Catalysts: 3Q25 bulk deals, 4Q25 Can Gio launch, backlog-driven deliveries, regulatory progress.
+- Risks: Delays in launches/deliveries, weaker Tier-2 demand, margin pressure from mix shifts [Sell-side – SSI/HSC].
+
+
+Slide 9 — Appendix — Independent Financial Insights (5Q)
+
+- Gross margin compressed to 23.8% in 2Q25 (vs 32.9% in 1Q25 and 30.6% in 2Q24) — mix and accounting of bulk/financial income weigh on operating profitability.
+- Cash rose to 48.7 tn (+127% QoQ, +183% YoY), driving net D/E down to ~0.18x — stronger liquidity and lower refinancing risk near term.
+- Inventory increased to 80.1 tn (+44% QoQ, +37% YoY) — reflects project build-out ahead of H2 deliveries; watch working capital discipline.
+- NPAT margin rebounded to 43.9% in 2Q25 (from 16.9% in 1Q25) — largely due to financial income; headline margin may not reflect core earnings power.
+
+Discrepancy flags (for reference)
+- EBITDA: SSI cites adjusted 12,404 bn [Sell-side – SSI] vs 3,467 bn in financial_data (our base).
+- Balance sheet: Management slide metrics differ from financial_data (e.g., cash/net debt); we anchor on financial_data and note definitional differences [Management].

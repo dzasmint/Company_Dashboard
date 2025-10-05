@@ -97,11 +97,12 @@ class ForecastDataExtractor:
                 }
             
             # Extract FY forecast metrics
+            # Note: Data is stored in raw VND values, need to convert to billions
             pnl = current_year_forecast.get('pnl', {})
-            fy_revenue = pnl.get('net_revenue', 0)
-            fy_npatmi = pnl.get('npatmi', 0)
-            fy_ebitda = pnl.get('ebitda', 0)
-            fy_gross_profit = pnl.get('gross_profit', 0)
+            fy_revenue = pnl.get('net_revenue', 0) / 1e9 if pnl.get('net_revenue') else 0
+            fy_npatmi = pnl.get('npatmi', 0) / 1e9 if pnl.get('npatmi') else 0
+            fy_ebitda = pnl.get('ebitda', 0) / 1e9 if pnl.get('ebitda') else 0
+            fy_gross_profit = pnl.get('gross_profit', 0) / 1e9 if pnl.get('gross_profit') else 0
             
             # Calculate YTD actuals from quarterly data
             ytd_data = {"revenue_ytd": 0, "npatmi_ytd": 0}
