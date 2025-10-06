@@ -1354,15 +1354,19 @@ class RealEstateFinancialModel:
         st.plotly_chart(fig, use_container_width=True)
     
     def render_generate_report(self):
-        """Render the report generation interface using ReportGenerationTab"""
-        from tabs.ReportGeneration import ReportGenerationTab
+        """Render the quarterly earnings tab (replaces old ReportGenerationTab)"""
+        # Redirect to quarterly earnings tab which provides comprehensive report generation
+        st.info("📊 Report generation is now available in the **Quarterly Earnings** tab")
+        st.markdown("""
+        The Quarterly Earnings tab provides comprehensive report generation with:
+        - Upload/paste earnings presentations, sell-side reports, buy-side commentary
+        - Automated financial data extraction
+        - Supplementary data support
+        - Forecast and valuation integration
+        - PowerPoint-ready 9-slide reports
         
-        # Initialize the report generation tab if not already done
-        if 'report_generation_tab' not in st.session_state:
-            st.session_state.report_generation_tab = ReportGenerationTab(parent=self)
-        
-        # Render the report generation tab
-        st.session_state.report_generation_tab.render()
+        👉 Please use the **Quarterly Earnings** tab in the sidebar navigation.
+        """)
     
     def render_enhanced_ai(self):
         """Render the Enhanced AI Assistant interface"""

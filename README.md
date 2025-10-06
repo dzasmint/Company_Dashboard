@@ -57,10 +57,13 @@ streamlit run pages/Real_Estate_Financial_Model_God_AI.py
 - **Interactive Charts**: Dynamic visualization generation
 - **Multi-source Integration**: CSV files, MongoDB collections, and AI services
 
-### 📄 **Report Generation**
-- **Quarterly Reports**: Automated earnings analysis and commentary
-- **Comprehensive Reports**: Full company analysis with AI-generated insights
-- **Professional Formatting**: Export-ready reports with charts and tables
+### 📄 **Quarterly Earnings Analysis** (NEW)
+- **Multi-Source Integration**: Upload earnings presentations, sell-side reports, buy-side commentary
+- **Automated Data Extraction**: Financial data (5 quarters), supplementary KPIs, forecast integration
+- **AI-Powered Analysis**: GPT-5 for report generation, GPT-5-mini for extraction
+- **PowerPoint-Ready Reports**: 9-slide professional presentations
+- **Forecast Integration**: FY targets, YTD progress tracking, RNAV & valuation metrics
+- **MongoDB Storage**: Unified schema with intelligent merging
 
 ## 🏗️ Architecture
 
@@ -95,7 +98,7 @@ Company_Dashboard/
 │   ├── historical_analysis.py                  # Historical financial analysis
 │   ├── model_forecast.py                       # Financial forecasting
 │   ├── project_pipeline_real_estate.py         # Project pipeline management
-│   ├── ReportGeneration.py                     # Report generation
+│   ├── quarterly_earnings.py                   # Quarterly earnings analysis (NEW)
 │   ├── sector_dashboard.py                     # Sector analysis & peer comparison
 │   └── Valuation.py                            # Valuation analysis
 ├── utils/
@@ -104,6 +107,12 @@ Company_Dashboard/
 │   │   ├── AI_market_data_tools.py             # Market data AI tools
 │   │   ├── AI_real_estate_project_tools.py     # Project analysis AI tools
 │   │   └── AI_visualisation_tool.py            # Visualization AI tools
+│   ├── quarterly_earnings_manager.py           # Quarterly earnings workflow orchestration
+│   ├── quarterly_earnings_extractor.py         # AI extraction (GPT-5-mini)
+│   ├── quarterly_report_generator.py           # Report generation (GPT-5)
+│   ├── financial_data_extractor.py             # 5-quarter financial data extraction
+│   ├── supplementary_data_parser.py            # Excel/CSV time series parser
+│   ├── forecast_data_extractor.py              # FY forecast & valuation extractor
 │   ├── mongodb_utils.py                        # MongoDB operations
 │   ├── perplexity_utils.py                     # Perplexity AI integration
 │   ├── chatgpt_utils.py                        # OpenAI integration
@@ -134,17 +143,36 @@ Company_Dashboard/
 - **Features**: Revenue forecasting, P&L/BS/CF projections, sensitivity analysis
 - **Integration**: Project pipeline data, assumption management
 
-### **4. Sector Dashboard Tab**
+### **4. Quarterly Earnings Tab** (NEW)
+- **Purpose**: Comprehensive quarterly earnings analysis and report generation
+- **Features**: 
+  - Upload/paste: earnings presentations, sell-side reports, buy-side commentary
+  - Automated extraction: 5-quarter financial data from parquet
+  - Supplementary data: Excel/CSV time series (presales, unbilled booking, etc.)
+  - Forecast integration: FY targets, YTD progress, RNAV, P/E, P/B
+  - AI extraction: GPT-5-mini for structured data extraction
+  - Report generation: GPT-5 for PowerPoint-ready 9-slide presentations
+- **Output**: Professional buy-side quarterly earnings reports with:
+  - Executive summary (analytical bullets)
+  - Income statement analysis
+  - Earnings review commentary
+  - Presales data tables & analysis
+  - Balance sheet & leverage
+  - Independent financial analysis
+  - Guidance & outlook with FY progress
+  - Valuation & recommendation
+
+### **5. Sector Dashboard Tab**
 - **Purpose**: Peer comparison and sector analysis
 - **Features**: Comparable tables, dynamic metrics, sector charts, scatter analysis
 - **Metrics**: Revenue, NPATMI, Balance Sheet ratios, P/E, P/B analysis
 
-### **5. Enhanced AI Assistant**
+### **6. Enhanced AI Assistant**
 - **Purpose**: Comprehensive AI-powered analysis
 - **Features**: Multi-source data access, financial analysis tools, chart generation
 - **Capabilities**: Historical analysis, forecast details, project analysis, trend analysis
 
-### **6. Project Pipeline Tab**
+### **7. Project Pipeline Tab**
 - **Purpose**: Manage and analyze real estate project pipeline
 - **Features**: Gantt charts, IRR calculations, cash flow modeling, RNAV analysis
 - **Integration**: MongoDB project data, financial forecasting
@@ -163,8 +191,16 @@ Company_Dashboard/
 - **Land Bank Analysis**: Total land holdings vs market cap visualization
 - **Interactive Features**: Ticker selection, hover tooltips, reference lines
 
+### **Quarterly Earnings System**
+- **Unified Schema**: Single JSON schema for all document types (management, sell-side, buy-side, financial, supplementary, forecast)
+- **Smart Aggregation**: Intelligent merging of multiple data sources
+- **5-Quarter Analysis**: Comprehensive trend analysis with historical context
+- **Flexible Input**: File upload OR text paste for all document types
+- **Automated Integration**: Financial data (parquet), supplementary data (Excel/CSV), forecast data (MongoDB) automatically loaded
+- **MongoDB Storage**: Separate documents with upsert logic to prevent duplicates
+
 ### **AI Integration Framework**
-- **Multi-LLM Support**: OpenAI, Anthropic Claude, Perplexity AI
+- **Multi-LLM Support**: OpenAI GPT-5/GPT-5-mini, Anthropic Claude, Perplexity AI
 - **Tool System**: Comprehensive AI tool registry with 20+ analysis tools
 - **Data Integration**: Seamless integration with all data sources
 - **Error Handling**: Robust fallback mechanisms and error recovery
@@ -256,10 +292,30 @@ streamlit run pages/Real_Estate_Financial_Model_God_AI.py
 ### **Scalability**
 - **Modular Architecture**: Independent component development
 - **Database Optimization**: Efficient MongoDB queries and indexing
-- **Resource Management**: Optimized memory and CPU usage
-- **Extensibility**: Easy addition of new features and data sources
+
+### **MongoDB Collections**
+- **Companies**: Company master data
+- **RealEstateProjects**: Project details and valuations
+- **ProjectDiscovery**: AI discovery session history
+- **CompanyForecast**: Financial forecasts and valuation metrics
+- **QuarterlyEarningsDocuments**: Document metadata and processing status
+- **QuarterlyEarningsData**: Extracted quarterly earnings data (unified schema)
+- **QuarterlySummaries**: Generated reports with caching
+
+### **Resource Management & Extensibility**
+- **Optimized Performance**: Memory and CPU usage optimization
+- **Extensible Design**: Easy addition of new features and data sources
 
 ## 📚 Documentation
+
+- **Main Documentation**: [`README.md`](./README.md) (this file)
+- **AI Agent Guide**: [`AI_AGENT_README.md`](./AI_AGENT_README.md)
+- **Quarterly Earnings**: [`docs/quarterly_earnings/`](./docs/quarterly_earnings/) - 23 detailed guides
+- **Architecture**: [`docs/architecture/`](./docs/architecture/) - System design docs
+- **User Guides**: [`docs/guides/`](./docs/guides/) - Deployment and troubleshooting
+- **Documentation Index**: [`docs/INDEX.md`](./docs/INDEX.md) - Master navigation
+
+## 📖 Key Documentation Files
 
 - **User Guide**: `docs/Real_Estate_Financial_Model_Guide.md`
 - **AI Agent Guide**: `AI_AGENT_README.md`
