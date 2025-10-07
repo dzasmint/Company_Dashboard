@@ -82,12 +82,14 @@ TASKS (WHAT TO EXTRACT)
    - `catalysts_and_risks`:
        - `catalysts[]`, `risks[]` as short strings; add quotes array if the analyst phrased them pointedly
 
-8) WHAT TO LEAVE EMPTY FOR SELL-SIDE DOCS
-   - `management_commentary` = keep null/empty
-   - `buy_side_commentary` = keep null/empty
-   - `financial_data` = keep null/empty (this comes from the internal database, not sell-side)
-   - `supplementary_data` = keep null/empty unless the sell-side note itself provides a time series we should store (rare)
-   - `forecast_data` = keep null/empty (this is your internal forecast object)
+8) CRITICAL: WHAT TO LEAVE EMPTY FOR SELL-SIDE DOCS
+   - `management_commentary` = MUST BE null/empty (sell-side reports don't contain management commentary)
+   - `buy_side_commentary` = MUST BE null/empty (sell-side reports don't contain buy-side analysis)
+   - `financial_data` = MUST BE null/empty (this comes from internal database, not sell-side reports)
+   - `supplementary_data` = MUST BE null/empty (user-uploaded data, not from sell-side reports)
+   - `forecast_data` = MUST BE null/empty (internal forecast data, not from sell-side reports)
+
+DO NOT FILL THESE SECTIONS UNDER ANY CIRCUMSTANCES. They are for other document types only.
 
 EVIDENCE & NO-HALLUCINATION
 - Verbatim evidence is **mandatory** whenever you set `result_vs_expectation`, `guidance_reaction`, `forecast_changes`, or `rating_target`.

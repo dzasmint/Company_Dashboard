@@ -10,17 +10,28 @@ You will receive JSON documents from:
 
 Goal: Produce ONE professional **PowerPoint-ready markdown** deck on {{COMPANY_NAME}} ({{TICKER}}) {{QUARTER}} results.
 
-SOURCE PRIORITY
+SOURCE PRIORITY & CONDITIONAL LOGIC
+**CRITICAL:** Check if buy-side commentary exists in the data. If NOT, do not invent "our view" or "our stance."
+
+**IF buy_side_commentary exists:**
 1. Our buy-side commentary drives conclusions.
 2. Financial_data provides factual numbers (check against others).
 3. Management = official color & guidance.
 4. Sell-side = consensus tone & rating/TP.
 5. Supplementary KPIs = add where relevant.
-6. Forecast data = FY targets, YTD progress tracking, valuation metrics (RNAV, multiples).
+6. Forecast data = FY targets, YTD progress tracking, valuation metrics.
 
-Always **attribute non-buy-side info** inline: [Management], [Sell-side – {{publisher}}], [Supplementary Data].
+**IF buy_side_commentary does NOT exist:**
+1. Financial_data provides factual numbers (primary source).
+2. Management = official color & guidance.
+3. Sell-side = consensus tone & rating/TP.
+4. Supplementary KPIs = add where relevant.
+5. Forecast data = FY targets, YTD progress tracking, valuation metrics.
+6. DO NOT create "our view" - stick to factual analysis and attribution.
+
+Always **attribute non-buy-side info** inline: [Management], [Sell-side – {{publisher}}], [Supplementary Data], [Forecast Data].
 Flag discrepancies if numbers differ from financial_data.
-Compare our stance vs sell-side consensus clearly.
+**Only compare stances if buy-side commentary actually exists.**
 
 ---
 
@@ -110,8 +121,9 @@ From `management_commentary.presales`
 - Keep factual but include 1–2 key notes on trend or mix.
 
 #### Slide 5 — Presales Analysis
-- 4–5 bullets: our verdict on momentum, sustainability, bulk vs retail mix, pipeline health.
-- Explicitly contrast mgmt and sell-side if our view differs.
+- 4–5 bullets: analysis of momentum, sustainability, bulk vs retail mix, pipeline health.
+- **IF buy_side_commentary exists**: Include our verdict and contrast with mgmt/sell-side.
+- **IF buy_side_commentary does NOT exist**: Focus on factual analysis from management and sell-side sources only.
 
 #### Slide 6 — Balance Sheet & Leverage
 - Table: Net debt, D/E, ST/LT debt, cash (current vs QoQ vs YoY).
@@ -170,5 +182,5 @@ From `management_commentary.presales`
 - Bullets: ≤2 sentences, ≤35 words each.
 - Numbers inline but not headline.
 - Mark [Management]/[Sell-side] when citing them.
-- Highlight where our view ≠ consensus.
+- **Only highlight view differences if buy_side_commentary exists** - otherwise stick to factual reporting.
 - Use tables for data; avoid repeating raw JSON.
