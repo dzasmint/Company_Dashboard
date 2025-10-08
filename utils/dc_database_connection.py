@@ -263,7 +263,13 @@ class DCDatabaseConnection:
         
         query += " ORDER BY DATE, KEYCODE"
         
-        return self.execute_query(query, params)
+        df = self.execute_query(query, params)
+        
+        # Convert VALUE column to numeric (handle strings from database)
+        if not df.empty and 'VALUE' in df.columns:
+            df['VALUE'] = pd.to_numeric(df['VALUE'], errors='coerce')
+        
+        return df
     
     def get_annual_financials(self, ticker: str, keycodes: List[str] = None,
                              start_year: int = None, end_year: int = None) -> pd.DataFrame:
@@ -303,7 +309,21 @@ class DCDatabaseConnection:
         
         query += " ORDER BY DATE, KEYCODE"
         
-        return self.execute_query(query, params)
+        df = self.execute_query(query, params)
+        
+        # Convert VALUE column to numeric (handle strings from database)
+        if not df.empty and 'VALUE' in df.columns:
+            df['VALUE'] = pd.to_numeric(df['VALUE'], errors='coerce')
+        
+        # Convert YEAR to int if present
+        if not df.empty and 'YEAR' in df.columns:
+            df['YEAR'] = pd.to_numeric(df['YEAR'], errors='coerce').fillna(0).astype(int)
+        
+        # Convert YoY to float if present
+        if not df.empty and 'YoY' in df.columns:
+            df['YoY'] = pd.to_numeric(df['YoY'], errors='coerce')
+        
+        return df
     
     def get_market_data(self, ticker: str = None, start_date: str = None, 
                        end_date: str = None) -> pd.DataFrame:
