@@ -11,6 +11,9 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+# Import DC database connection
+from utils.dc_database_connection import get_dc_database, load_quarterly_data, load_annual_data
+
 
 class HistoricalAnalysisTab:
     """Historical Analysis Tab with Annual and Quarterly views"""
@@ -42,26 +45,26 @@ class HistoricalAnalysisTab:
     
     @st.cache_data(ttl=600)  # Cache for 10 minutes
     def load_annual_data(_self, ticker):
-        """Load annual financial data from FA_A_processed.parquet."""
+        """Load annual financial data from Dragon Capital database."""
+        # Get DC database connection
+        db = get_dc_database()
+        
+        if not db.is_connected():
+            st.error("❌ Dragon Capital database not connected. Please configure DC_DB_STRING in secrets or environment.")
+            st.info("Set DC_DB_STRING with: Server=host;Database=db;User Id=user;Password=pass")
+            return pd.DataFrame()
+        
         try:
-            # Use FA_A_processed.parquet for annual data
-            fa_path = os.path.join(parent_dir, 'data', 'FA_A_processed.parquet')
+            # Load from database
+            st.info("📡 Loading annual data from Dragon Capital database...")
+            df = db.get_annual_financials(ticker)
             
-            if not os.path.exists(fa_path):
-                st.warning("Annual financial data file not found")
+            if df.empty:
+                st.warning(f"No annual data found for {ticker} in FA_Annual table")
                 return pd.DataFrame()
             
-            # Read parquet file
-            df_fa = pd.read_parquet(fa_path)
-            
-            # Filter for selected ticker
-            ticker_data = df_fa[df_fa['TICKER'] == ticker].copy()
-            
-            if ticker_data.empty:
-                return pd.DataFrame()
-            
-            # Pivot data to create time series
-            pivot_data = ticker_data.pivot_table(
+            # Pivot data to create time series (KEYCODE as columns, DATE as rows)
+            pivot_data = df.pivot_table(
                 index='DATE',
                 columns='KEYCODE',
                 values='VALUE',
@@ -71,34 +74,36 @@ class HistoricalAnalysisTab:
             # Sort by date
             pivot_data.sort_index(inplace=True)
             
+            st.success(f"✅ Loaded {len(pivot_data)} years of annual data from DC database")
+            
             return pivot_data
             
         except Exception as e:
-            st.error(f"Error loading annual data: {str(e)}")
+            st.error(f"❌ Error loading annual data from database: {str(e)}")
             return pd.DataFrame()
     
     @st.cache_data(ttl=600)  # Cache for 10 minutes
     def load_quarterly_data(_self, ticker):
-        """Load quarterly financial data from FA_processed.parquet."""
+        """Load quarterly financial data from Dragon Capital database."""
+        # Get DC database connection
+        db = get_dc_database()
+        
+        if not db.is_connected():
+            st.error("❌ Dragon Capital database not connected. Please configure DC_DB_STRING in secrets or environment.")
+            st.info("Set DC_DB_STRING with: Server=host;Database=db;User Id=user;Password=pass")
+            return pd.DataFrame()
+        
         try:
-            # Use FA_processed.parquet for quarterly data
-            fa_path = os.path.join(parent_dir, 'data', 'FA_processed.parquet')
+            # Load from database
+            st.info("📡 Loading quarterly data from Dragon Capital database...")
+            df = db.get_quarterly_financials(ticker)
             
-            if not os.path.exists(fa_path):
-                st.warning("Quarterly financial data file not found")
-                return pd.DataFrame()
-            
-            # Read parquet file
-            df_fa = pd.read_parquet(fa_path)
-            
-            # Filter for selected ticker
-            ticker_data = df_fa[df_fa['TICKER'] == ticker].copy()
-            
-            if ticker_data.empty:
+            if df.empty:
+                st.warning(f"No quarterly data found for {ticker} in FA_Quarterly table")
                 return pd.DataFrame()
             
             # Pivot data to create time series with quarters as columns
-            pivot_data = ticker_data.pivot_table(
+            pivot_data = df.pivot_table(
                 index='KEYCODE',
                 columns='DATE',
                 values='VALUE',
@@ -106,15 +111,16 @@ class HistoricalAnalysisTab:
             )
             
             # Sort columns (quarters) chronologically
-            # Convert quarter format (e.g., '2023Q1') to sortable format
             sorted_columns = sorted(pivot_data.columns, 
                                   key=lambda x: (int(x[:4]), int(x[5])))
             pivot_data = pivot_data[sorted_columns]
             
+            st.success(f"✅ Loaded {len(pivot_data.columns)} quarters of data from DC database")
+            
             return pivot_data
             
         except Exception as e:
-            st.error(f"Error loading quarterly data: {str(e)}")
+            st.error(f"❌ Error loading quarterly data from database: {str(e)}")
             return pd.DataFrame()
     
     def render_annual_view(self):
