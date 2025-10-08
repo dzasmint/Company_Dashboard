@@ -65,6 +65,7 @@ class DCDatabaseConnection:
         
         Args:
             conn_str: Connection string (e.g., "Server=host;Database=db;User Id=user;Password=pass")
+                     Also handles Azure format with DRIVER, SERVER, Encrypt, etc.
             
         Returns:
             Dict with parsed components
@@ -80,13 +81,13 @@ class DCDatabaseConnection:
         for part in parts:
             if '=' in part:
                 key, value = part.split('=', 1)
-                key = key.strip()
+                key = key.strip().upper()  # Normalize to uppercase for comparison
                 value = value.strip()
                 
                 # Map common variations to standard keys
-                if key in ['Server', 'Data Source']:
+                if key in ['SERVER', 'DATA SOURCE']:
                     # Handle tcp: prefix and port
-                    value = value.replace('tcp:', '')
+                    value = value.replace('tcp:', '').replace('TCP:', '')
                     if ',' in value:
                         host, port = value.rsplit(',', 1)
                         params['host'] = host
@@ -94,12 +95,21 @@ class DCDatabaseConnection:
                     else:
                         params['host'] = value
                         params['port'] = '1433'  # Default port
-                elif key in ['Database', 'Initial Catalog']:
+                elif key in ['DATABASE', 'INITIAL CATALOG']:
                     params['database'] = value
-                elif key in ['User Id', 'UID', 'User']:
+                elif key in ['USER ID', 'UID', 'USER']:
                     params['username'] = value
-                elif key in ['Password', 'PWD']:
+                elif key in ['PASSWORD', 'PWD']:
                     params['password'] = value
+                elif key == 'DRIVER':
+                    # Store driver info but we'll use pymssql
+                    params['driver_info'] = value
+                elif key == 'ENCRYPT':
+                    params['encrypt'] = value.lower() == 'yes'
+                elif key == 'TRUSTSERVERCERTIFICATE':
+                    params['trust_cert'] = value.lower() in ['yes', 'true']
+                elif key == 'CONNECTION TIMEOUT':
+                    params['timeout'] = int(value)
         
         return params
     
