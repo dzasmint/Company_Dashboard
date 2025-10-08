@@ -18,3 +18,5 @@ reportlab
 streamlit-aggrid
 xlsxwriter
 python-docx
+sqlalchemy>=2.0.0
+pymssql>=2.2.0
