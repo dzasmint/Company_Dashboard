@@ -295,9 +295,22 @@ class QuarterlyReportGenerator:
                         )
                     # Append management quotes
                     if "management_quotes" in data["outlook_and_guidance"] and data["outlook_and_guidance"]["management_quotes"]:
+                        # Ensure management_quotes exists and is a string (not None)
                         if "management_quotes" not in aggregated["outlook_and_guidance"]:
                             aggregated["outlook_and_guidance"]["management_quotes"] = ""
-                        aggregated["outlook_and_guidance"]["management_quotes"] += "\n\n" + data["outlook_and_guidance"]["management_quotes"]
+                        elif aggregated["outlook_and_guidance"]["management_quotes"] is None:
+                            aggregated["outlook_and_guidance"]["management_quotes"] = ""
+                        
+                        # Safely convert to string if it's a list
+                        new_quotes = data["outlook_and_guidance"]["management_quotes"]
+                        if isinstance(new_quotes, list):
+                            new_quotes = "\n".join(str(q) for q in new_quotes)
+                        else:
+                            new_quotes = str(new_quotes) if new_quotes else ""
+                        
+                        # Ensure existing quotes is also a string before concatenation
+                        existing_quotes = aggregated["outlook_and_guidance"]["management_quotes"] or ""
+                        aggregated["outlook_and_guidance"]["management_quotes"] = existing_quotes + "\n\n" + new_quotes if existing_quotes else new_quotes
             
             # Collect methodology notes
             if "methodology" in data and data["methodology"]:

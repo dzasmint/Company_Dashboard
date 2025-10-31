@@ -19,6 +19,29 @@ class ForecastDataExtractor:
         """Initialize extractor"""
         pass
     
+    def _safe_get_nested(self, obj, *keys, default=None):
+        """
+        Safely get nested dictionary values
+        
+        Args:
+            obj: Dictionary or None
+            *keys: Variable number of keys to traverse
+            default: Default value if any key is missing or obj is None
+        
+        Returns:
+            Nested value or default
+        """
+        if obj is None or not isinstance(obj, dict):
+            return default
+        
+        current = obj
+        for key in keys:
+            if current is None or not isinstance(current, dict):
+                return default
+            current = current.get(key)
+        
+        return current if current is not None else default
+    
     def _calculate_ytd_from_quarters(self, quarter: str, quarters_data: list) -> Dict[str, float]:
         """
         Calculate YTD values from quarterly financial data
@@ -41,10 +64,27 @@ class ForecastDataExtractor:
             quarter_key = f"{q}Q{str(year)[2:]}"
             # Find matching quarter in financial data
             for q_data in quarters_data:
-                if q_data.get('period', {}).get('quarter') == quarter_key.upper():
-                    fin_data = q_data.get('financial_data', {})
-                    current_q = fin_data.get('current_quarter', {})
-                    income_stmt = current_q.get('income_statement', {})
+                if not q_data or not isinstance(q_data, dict):
+                    continue
+                
+                # Safely get period and quarter
+                period = q_data.get('period')
+                if not period or not isinstance(period, dict):
+                    continue
+                
+                if period.get('quarter') == quarter_key.upper():
+                    # Safely get financial_data
+                    fin_data = q_data.get('financial_data') or {}
+                    if not isinstance(fin_data, dict):
+                        continue
+                    
+                    current_q = fin_data.get('current_quarter') or {}
+                    if not isinstance(current_q, dict):
+                        continue
+                    
+                    income_stmt = current_q.get('income_statement') or {}
+                    if not isinstance(income_stmt, dict):
+                        continue
                     
                     ytd_revenue += income_stmt.get('net_revenue', 0) or 0
                     ytd_npatmi += income_stmt.get('npatmi', 0) or 0
@@ -74,7 +114,16 @@ class ForecastDataExtractor:
             # Load forecast from MongoDB
             forecast_doc = load_company_forecast(ticker)
             
-            if not forecast_doc or not forecast_doc.get('forecast_data'):
+            # Check if forecast_doc exists and is a dict
+            if not forecast_doc or not isinstance(forecast_doc, dict):
+                return {
+                    "error": f"No forecast data found for {ticker} in MongoDB CompanyForecast collection",
+                    "available": False
+                }
+            
+            # Check if forecast_data exists - use safe get helper
+            forecast_data_raw = self._safe_get_nested(forecast_doc, 'forecast_data')
+            if not forecast_data_raw:
                 return {
                     "error": f"No forecast data found for {ticker} in MongoDB CompanyForecast collection",
                     "available": False
@@ -85,24 +134,44 @@ class ForecastDataExtractor:
             year = 2000 + int(quarter[2:])
             year_str = str(year)
             
-            # Get forecast for current year
-            forecast_data = forecast_doc.get('forecast_data', {})
+            # Get forecast for current year - ensure it's a dict
+            forecast_data = forecast_data_raw if isinstance(forecast_data_raw, dict) else {}
+            if not isinstance(forecast_data, dict):
+                return {
+                    "error": f"Invalid forecast_data format in MongoDB for {ticker} (expected dict, got {type(forecast_data_raw).__name__})",
+                    "available": False
+                }
+            
             current_year_forecast = forecast_data.get(year_str)
             
-            if not current_year_forecast:
-                available_years = list(forecast_data.keys())
+            if not current_year_forecast or not isinstance(current_year_forecast, dict):
+                available_years = list(forecast_data.keys()) if forecast_data else []
+                available_years_str = ', '.join(str(y) for y in available_years) if available_years else 'none'
                 return {
-                    "error": f"No forecast for year {year}. Available years: {', '.join(available_years)}",
+                    "error": f"No forecast for year {year}. Available years: {available_years_str}",
                     "available": False
                 }
             
             # Extract FY forecast metrics
             # Note: Data is stored in raw VND values, need to convert to billions
-            pnl = current_year_forecast.get('pnl', {})
-            fy_revenue = pnl.get('net_revenue', 0) / 1e9 if pnl.get('net_revenue') else 0
-            fy_npatmi = pnl.get('npatmi', 0) / 1e9 if pnl.get('npatmi') else 0
-            fy_ebitda = pnl.get('ebitda', 0) / 1e9 if pnl.get('ebitda') else 0
-            fy_gross_profit = pnl.get('gross_profit', 0) / 1e9 if pnl.get('gross_profit') else 0
+            pnl = current_year_forecast.get('pnl') or {}
+            if not isinstance(pnl, dict):
+                pnl = {}
+            
+            # Safely convert values to float, handling None and string values
+            def safe_convert_to_billions(value):
+                if value is None:
+                    return 0
+                try:
+                    numeric_value = float(value) if not isinstance(value, (int, float)) else value
+                    return numeric_value / 1e9
+                except (ValueError, TypeError):
+                    return 0
+            
+            fy_revenue = safe_convert_to_billions(pnl.get('net_revenue'))
+            fy_npatmi = safe_convert_to_billions(pnl.get('npatmi'))
+            fy_ebitda = safe_convert_to_billions(pnl.get('ebitda'))
+            fy_gross_profit = safe_convert_to_billions(pnl.get('gross_profit'))
             
             # Calculate YTD actuals from quarterly data
             ytd_data = {"revenue_ytd": 0, "npatmi_ytd": 0}
@@ -140,11 +209,16 @@ class ForecastDataExtractor:
             else:
                 npatmi_status = "unknown"
             
-            # Extract valuation data
-            valuation_data_raw = forecast_doc.get('valuation_data', {})
-            current_price = valuation_data_raw.get('current_price', 0)
-            rnav_per_share = valuation_data_raw.get('rnav_per_share', 0)
-            multiples = valuation_data_raw.get('multiples', {})
+            # Extract valuation data - use safe get helper
+            valuation_data_raw = self._safe_get_nested(forecast_doc, 'valuation_data', default={})
+            if not isinstance(valuation_data_raw, dict):
+                valuation_data_raw = {}
+            
+            current_price = valuation_data_raw.get('current_price', 0) or 0
+            rnav_per_share = valuation_data_raw.get('rnav_per_share', 0) or 0
+            multiples = valuation_data_raw.get('multiples') or {}
+            if not isinstance(multiples, dict):
+                multiples = {}
             
             # Calculate RNAV metrics
             rnav_upside = ((rnav_per_share / current_price - 1) * 100) if current_price > 0 else None
@@ -195,9 +269,15 @@ class ForecastDataExtractor:
             
             return result
             
+        except AttributeError as e:
+            # Specifically catch 'NoneType' object has no attribute 'get'
+            error_msg = f"Error extracting forecast data: {str(e)}. This usually means a None value was encountered where a dictionary was expected. Please check the MongoDB CompanyForecast collection data structure for {ticker}."
+            st.error(error_msg)
+            return {"error": error_msg, "available": False}
         except Exception as e:
-            st.error(f"Error extracting forecast data: {str(e)}")
-            return {"error": str(e), "available": False}
+            error_msg = f"Error extracting forecast data: {str(e)}"
+            st.error(error_msg)
+            return {"error": error_msg, "available": False}
     
     def structure_for_unified_schema(self, ticker: str, quarter: str, 
                                      company_name: str,

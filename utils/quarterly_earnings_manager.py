@@ -869,7 +869,9 @@ class QuarterlyEarningsManager:
                 )
                 
                 if forecast_data_doc and "error" not in forecast_data_doc:
-                    st.success(f"✅ Loaded forecast for FY{forecast_data_doc.get('forecast_data', {}).get('fy_forecast', {}).get('year', '')}")
+                    forecast_year = forecast_data_doc.get('forecast_data', {}).get('fy_forecast', {}).get('year', '')
+                    forecast_year_str = str(forecast_year) if forecast_year is not None else ''
+                    st.success(f"✅ Loaded forecast for FY{forecast_year_str}")
                     
                     # Save/update forecast data to MongoDB (upsert to avoid duplicates)
                     with st.spinner("💾 Saving forecast data to MongoDB..."):
